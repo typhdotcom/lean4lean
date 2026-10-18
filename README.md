@@ -10,7 +10,15 @@ an implementation of the Lean 4 kernel in mostly pure Lean 4, with a formal
 specification and proofs connecting the implementation to it. The implementation
 derives from Lean's C++ kernel and can share its bugs. This fork extends the
 inductive-type specification and verification, changes some kernel checks, and
-develops the remaining metatheory.
+develops the remaining metatheory. It grew out of other work and is not
+coordinated with upstream.
+
+Upstream's `addDecl.WF` leaves inductive declarations as `sorry`, and its
+`Injectivity.lean` states `sort_inv`, `sort_forallE_inv` and
+`forallE_inv_stratified` with `sorry` proofs. Here the inductive case is proved
+for flat and nested blocks, and a shape model proves the first two. The third,
+with injectivity of inductive type formers, which inductives add, is the
+explicit hypothesis `VEnv.Injective`.
 
 - [Verification status and trust assumptions](#verification-status-and-trust-assumptions)
 - [Build and test](#build-and-test)
@@ -83,6 +91,9 @@ lake exe lean4lean Init.Core
 lake exe lean4lean --fresh Init.System.IO
 ```
 
+The checker replays built `.olean` files; it does not read the export format
+used by `lake check` and the Lean Kernel Arena.
+
 Without a module argument, the checker infers the current package's main module
 from its Lake manifest. Otherwise, each module argument is a **prefix**: it checks
 all matching built modules. Ordinary replay checks each module against its
@@ -142,7 +153,12 @@ See [divergences.md](divergences.md) for the behavior and reproducing tests, and
 
 ## Findings and regression tests
 
-The examples below are specific to the pinned toolchain.
+The examples were found against the pinned toolchain. On `v4.35.0` and
+`v4.36.0-rc1`, Lean's kernel also rejects the BinderScope and FieldViews
+declarations, but still accepts the loose-variable and `_nested_1` declarations
+in NestedInductive. Annotations and UnsafeEq use a custom prelude, which Lean's
+kernel assumes it is not given; this fork checks those cases because its proofs
+need them.
 
 | Example | What is exercised |
 | --- | --- |
@@ -211,6 +227,9 @@ permitted. `projEta` requires those permissions for the expansion's projections.
 The model can be more permissive than the kernel about dependencies of fields
 after the projected field; soundness only needs the fields reached by the
 projection. The `Ex` example in `InductiveSpec` exercises this distinction.
+Lean's planned [kernel renovation](https://github.com/leanprover/lean4/issues/14977)
+removes projections from propositional structures with data fields, which
+would change the cases `ProjAllowed` covers.
 
 `checkConstructors` checks each field's declared domain, its form with `let`s
 unfolded, and its view with annotations stripped. `FieldsKeptWF` and `CtorDoms`
