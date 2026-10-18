@@ -54,7 +54,7 @@ theorem isRecArg.loop.WF {X : Name → Prop} {pre : List Name} {stats : Inductiv
     have hΓ := hΔ.toCtx
     refine WF.bind hsub.consumeTypeAnnotations fun dom_s hds => ?_
     obtain ⟨rfl, hok⟩ := hds
-    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom (Lean.Expr.StripHeads.true _)
     have htyT : cs.IsType ty' := hdomT.defeqU_l henv hΓ hdefty
     obtain ⟨wf, hsub'⟩ := hsub.push (name := name) (bi := bi) hty htyT
     refine WF.withLocalDecl (hsub.trExprS hty) (hsub.isType htyT) ?_
@@ -343,7 +343,7 @@ theorem isRecArg.loop.noOcc {X : Name → Prop} {pre : List Name} {stats : Induc
     have hΓ := hΔ.toCtx
     refine WF.bind hsub.consumeTypeAnnotations fun dom_s hds => ?_
     obtain ⟨rfl, hok⟩ := hds
-    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom (Lean.Expr.StripHeads.true _)
     have htyT : cs.IsType ty' := hdomT.defeqU_l henv hΓ hdefty
     obtain ⟨wf, hsub'⟩ := hsub.push (name := name) (bi := bi) hty htyT
     refine WF.withLocalDecl (hsub.trExprS hty) (hsub.isType htyT) ?_
@@ -504,7 +504,8 @@ structure CtorArgsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
       TrExprS cT.venv cT.lparams Mf.vlctx t (.foralls (Ds.drop fvs.length) R))
   fields : ∀ j D fty, Ds[j]? = some D → ftys[j]? = some fty →
     cT.venv.IsDefEqU cT.lparams.length ((ftys.take j).reverse ++ params.reverse) D fty
-  within : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty → D.StripsTo fty
+  within : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty →
+    D.StripsToBy (fun n => ∃ v, cT.env.find? n = some (.defnInfo v)) fty
   /-- The view `N₀` of the kernel's context, with the fields pushed. -/
   comp : ∃ N ρN, Ext N cb ρN ∧
     VLCtx.FVLift' (Mf.instL (VLevel.shift pre.length cT.lparams.length)).vlctx N.vlctx 0
@@ -636,9 +637,9 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
       have cs := cT.small Mf hMf
       have hΔ : (cT.small Mf hMf).vlctx.WF cT.venv cT.lparams.length := (cT.small Mf hMf).Δwf
       have hΓ := hΔ.toCtx
-      refine WF.bind hI.sub.consumeTypeAnnotations fun dom_s hds => ?_
-      obtain ⟨rfl, hok⟩ := hds
-      obtain ⟨ty', hty, hdefty, hwty⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+      refine WF.bind hI.sub.consumeTypeAnnotations_heads fun dom_s hds => ?_
+      obtain ⟨rfl, hok, hheads⟩ := hds
+      obtain ⟨ty', hty, hdefty, hwty⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom hheads
       have htyT : (cT.small Mf hMf).IsType ty' := hdomT.defeqU_l henv hΓ hdefty
       obtain ⟨N, ρN, hE, hW, hNT, hNk, hNb⟩ := hI.comp
       obtain ⟨wf, hsub', hE', hW'⟩ := hI.sub.push_ext (name := name) (bi := bi) hE hW hty htyT
@@ -949,7 +950,7 @@ theorem loopUArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       show Mx.vlctx.toCtx = _; simp [hI.tele.toCtx]
     refine WF.bind hI.sub.consumeTypeAnnotations fun dom_s hds => ?_
     obtain ⟨rfl, hok⟩ := hds
-    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom (Lean.Expr.StripHeads.true _)
     have htyT : (cT.small Mx hMx).IsType ty' := hdomT.defeqU_l henv hΓ hdefty
     obtain ⟨N, ρN, hE, hW, hNT, hNk, hNb⟩ := hI.comp
     obtain ⟨wf, hsub', hE', hW'⟩ := hI.sub.push_ext (name := name) (bi := bi) hE hW hty htyT
@@ -2495,9 +2496,10 @@ structure CtorOut (cT : VContext) (pre : List Name) (params : List VExpr) (d₀ 
   defeq : ∀ k D f, Ds[k]? = some D → c.fields[k]? = some f →
     cT.venv.IsDefEqU cT.lparams.length
       (((c.fields.take k).map (·.type)).reverse ++ params.reverse) D f.type
-  /-- A field's view is its declared domain with annotations stripped. -/
+  /-- A field's view is its declared domain with annotations stripped, each defined in the
+  environment. -/
   within : ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-    D.StripsTo f.type
+    D.StripsToBy (fun n => ∃ v, cT.env.find? n = some (.defnInfo v)) f.type
   sort : ∀ k f, c.fields[k]? = some f →
     cT.venv.HasType cT.lparams.length
       (((c.fields.take k).map (·.type)).reverse ++ params.reverse) f.type (.sort f.level) ∧

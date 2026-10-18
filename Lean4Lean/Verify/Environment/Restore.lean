@@ -650,9 +650,10 @@ def _root_.Lean.Expr.ConstsOK (p : Name → List Level → Prop) : Expr → Prop
   | .mdata _ e | .proj _ _ e => e.ConstsOK p
   | .bvar _ | .fvar _ | .mvar _ | .sort _ | .lit _ => True
 
-/-- The constants literals stand for. -/
-def litNames : List Name :=
-  [``Nat.zero, ``Nat.succ, ``Char, ``List.nil, ``List.cons, ``String.ofList, ``Char.ofNat]
+/-- The constants a literal stands for. -/
+def _root_.Lean.Literal.constNames : Literal → List Name
+  | .natVal _ => [``Nat.zero, ``Nat.succ]
+  | .strVal _ => [``Char, ``List.nil, ``List.cons, ``String.ofList, ``Char.ofNat]
 
 /-- Built from constants, sorts and literals by applications, without variables or binders. -/
 def _root_.Lean.Expr.Ground : Expr → Prop
@@ -670,15 +671,17 @@ theorem _root_.Lean.Literal.toConstructor_ground {l : Literal} : l.toConstructor
     induction s.toList <;> simp_all [Expr.Ground]
 
 theorem _root_.Lean.Literal.toConstructor_constsOK {p : Name → List Level → Prop}
-    (h : ∀ c ∈ litNames, ∀ ls, p c ls) {l : Literal} : l.toConstructor.ConstsOK p := by
-  have h' := fun c (hc : c ∈ litNames) => h c hc
+    {l : Literal} (h : ∀ c ∈ l.constNames, ∀ ls, p c ls) : l.toConstructor.ConstsOK p := by
   cases l with
-  | natVal n => cases n <;> simp_all [Literal.toConstructor, Expr.natLitToConstructor,
-      Expr.ConstsOK, Expr.natZero, Expr.natSucc, litNames]
+  | natVal n =>
+    have h' := fun c (hc : c ∈ (Literal.natVal n).constNames) => h c hc
+    cases n <;> simp_all [Literal.toConstructor, Expr.natLitToConstructor,
+      Expr.ConstsOK, Expr.natZero, Expr.natSucc, Literal.constNames]
   | strVal s =>
+    have h' := fun c (hc : c ∈ (Literal.strVal s).constNames) => h c hc
     simp only [Literal.toConstructor, Expr.strLitToConstructor, Expr.ConstsOK]
-    refine ⟨h _ (by simp [litNames]) _, ?_⟩
-    induction s.toList <;> simp_all [Expr.ConstsOK, litNames]
+    refine ⟨h _ (by simp [Literal.constNames]) _, ?_⟩
+    induction s.toList <;> simp_all [Expr.ConstsOK, Literal.constNames]
 
 /-- A ground term translates the same way in every context. -/
 theorem PTr.ground (H : PTr Us CL Δ e e') (he : e.Ground) : PTr Us CL Δ' e e' := by
@@ -692,14 +695,15 @@ theorem PTr.ground (H : PTr Us CL Δ e e') (he : e.Ground) : PTr Us CL Δ' e e' 
   | bvar | fvar | lam | forallE | letE => exact he.elim
 
 theorem PTr.ground_constsSat {p : Name → Prop} (H : PTr Us CL Δ e e') (he : e.Ground)
-    (hc : e.ConstsOK fun c _ => p c) (hl : ∀ c ∈ litNames, p c) : e'.ConstsSat p := by
+    (hc : e.ConstsOK fun c _ => p c) (hl : ∀ l, CL l → ∀ c ∈ l.constNames, p c) :
+    e'.ConstsSat p := by
   induction H with
   | sort => trivial
   | const => exact hc
   | app _ _ ih1 ih2 => exact ⟨ih1 he.1 hc.1, ih2 he.2 hc.2⟩
-  | lit _ _ ih =>
+  | lit hl' _ ih =>
     exact ih Literal.toConstructor_ground
-      (Literal.toConstructor_constsOK (p := fun c _ => p c) fun c h _ => hl c h)
+      (Literal.toConstructor_constsOK (p := fun c _ => p c) fun c h _ => hl _ hl' c h)
   | mdata _ ih => exact ih he hc
   | proj _ ih => exact ih he hc
   | bvar | fvar | lam | forallE | letE => exact he.elim
@@ -769,7 +773,7 @@ structure RestoreSpec (r : ElimNestedInductive.Result) (env' : Kernel.Environmen
   aux : ∀ c, (R c).isSome = (r.aux2nested.contains c || (r.getNestedIfAuxCtor env' c).isSome)
   ren_aux : ∀ c, (R c).isSome → auxRec.find? c = none
   n_eq : ∀ c h, R c = some h → h.n = r.nparams
-  lit : ∀ c ∈ litNames, R c = none ∧ auxRec.find? c = none
+  lit : ∀ l, CL l → ∀ c ∈ l.constNames, R c = none ∧ auxRec.find? c = none
   repl : ∀ c h (ls : List Level) ls' (args : Array Expr) Δ ys, R c = some h →
     ls.mapM (VLevel.ofLevel Us) = some ls' → ls.length = lparams.length →
     args.size = r.nparams → List.Forall₂ (PTr Us CL Δ) args.toList ys →
@@ -845,10 +849,10 @@ theorem PTr.noPartial (S : RestoreSpec r env' lparams auxRec Us CL R ren)
   induction H with
   | bvar h | fvar h => exact hΔ _ _ _ h
   | sort | lam | forallE | proj => intro _ _ _ _ h; cases h
-  | lit _ H _ =>
+  | lit hl H _ =>
     have := H.ground_constsSat (p := (R · = none)) Literal.toConstructor_ground
-      (Literal.toConstructor_constsOK (p := fun c _ => R c = none) fun c h _ => (S.lit c h).1)
-      fun c h => (S.lit c h).1
+      (Literal.toConstructor_constsOK (p := fun c _ => R c = none) fun c h _ => (S.lit _ hl c h).1)
+      fun l hl c h => (S.lit l hl c h).1
     intro c ls xs h' he hR
     rw [VExpr.eq_of_constSpine? he, VExpr.ConstsSat.appN] at this
     rw [this.1] at hR; cases hR
@@ -1266,9 +1270,9 @@ theorem PTr.restore (S : RestoreSpec r env' lparams auxRec Us CL R ren)
     refine ⟨_, .lit hl (h.ground Literal.toConstructor_ground), fun _ => ?_⟩
     refine (VExpr.restore_of_constsSat ?_).symm
     refine h.ground_constsSat Literal.toConstructor_ground ?_ ?_
-    · exact Literal.toConstructor_constsOK fun c hc _ => ⟨(S.lit c hc).1, by
-        rw [S.ren_eq]; exact (S.lit c hc).2⟩
-    · exact fun c hc => ⟨(S.lit c hc).1, by rw [S.ren_eq]; exact (S.lit c hc).2⟩
+    · exact Literal.toConstructor_constsOK fun c hc _ => ⟨(S.lit _ hl c hc).1, by
+        rw [S.ren_eq]; exact (S.lit _ hl c hc).2⟩
+    · exact fun l hl c hc => ⟨(S.lit l hl c hc).1, by rw [S.ren_eq]; exact (S.lit l hl c hc).2⟩
   | @mdata _ g g' d Hg ih =>
     have hne : ∀ c ls, Expr.mdata d g ≠ .const c ls := nofun
     have descend (hfn : ElimNestedInductive.Result.restoreFn r env' lparams auxRec (.mdata d g) = none) :

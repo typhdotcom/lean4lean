@@ -357,7 +357,7 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
             (VExpr.bvars 0 Ds.length ++ c.indices)) ∧
           FieldsElab venvAx d d.params.reverse 0 Ds c.fields ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-            D.StripsTo f.type) ∧
+            D.StripsToBy (· ∉ [type].map (·.name)) f.type) ∧
           ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvAx.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
             (u ≈ .zero ↔ f.level ≈ .zero)) cts cvs →
@@ -372,7 +372,7 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
             (VExpr.bvars 0 Ds.length ++ c.indices)) ∧
           FieldsElab venvT d d.params.reverse 0 Ds c.fields ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-            D.StripsTo f.type) ∧
+            D.StripsToBy (· ∉ [type].map (·.name)) f.type) ∧
           ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvT.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
             (u ≈ .zero ↔ f.level ≈ .zero)) cts cvs := by
@@ -453,7 +453,7 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     (hallow : Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (AddInductive.run nparams types 0
       { env, allowPrimitive := true, lparams, fuel, safety := inductSafety isUnsafe }).WF
-      (FlatResult ves env isUnsafe true 0) := by
+      (FlatResult ves env lparams nparams types isUnsafe true 0) := by
   obtain ⟨rfl, rfl, rfl, type, cs, rfl, htype, hshape, hpres⟩ := hallow
   -- the block: `Bool` or `Nat`
   obtain ⟨hI, hct, hcs⟩ : (type.name = ``Bool ∨ type.name = ``Nat) ∧
@@ -726,7 +726,7 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
   have hcAxs : cAx.safety = inductSafety false := by rw [← hcAx]; exact hcs₀
   refine AddInductive.WF.mono (AddInductive.declareRecursors.WF hR hR.largeElim hE.2 hcAxs
     (hK d hR.compat hR.elaborates) mapWFC) fun env' hRecs => ?_
-  obtain ⟨recs, hRc, hRq, hRnd, hRfr, -, hRnames, hRtr⟩ := hRecs
+  obtain ⟨recs, hRc, hRq, hRnd, hRfr, -, hRnames, hRmaj, hRtr⟩ := hRecs
   -- the declaration, elaborated with the type only
   have hdu : d.uvars = 0 := by rw [hR.uvars, hcAxl, hcl]; rfl
   have hdp : d.params = [] := hR.params
@@ -804,7 +804,8 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     have := hRtr envC envR (hcAxv ▸ hleC) hwfC hcc hRadd hwfR
     rw [hcAxl, hR.safety, show cAx.safety = c.safety by rw [← hcAx]; rfl] at this
     exact this
-  obtain ⟨hdecl, ⟨env₂, hstep⟩, -⟩ := AddInductive.assemble_step wf (List.cons_ne_nil _ _) hT
+  obtain ⟨hdecl, hAxd, ⟨env₂, hstep⟩, -⟩ :=
+    AddInductive.assemble_step wf (List.cons_ne_nil _ _) hT
     hDc hDnd hDfr hleT (VEnv.WF.addConstList c.envAt.tr.wf (fun p hp => by
       simp only [List.mem_singleton] at hp; subst hp; exact ⟨_, .sort (by simp [VLevel.WF])⟩) hT₁)
     (by rw [hcl]; exact hT₁) (hchk venvT hIT d) hDC'.1 hDC'.2.2.1 hDC'.2.2.2 hcAxl hR (hcl ▸ hEl) hInd
@@ -872,6 +873,8 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
   refine ⟨d, env₂, hR.isUnsafe, hdecl, hR.aux, hstep, by rw [hRq, hDC'.2.1, hDq, hcenv], nofun,
     fun _ => ⟨fun safety venv₁ venv₂ H hp =>
       hpres hp (Primitive.AddsConsts.of_addInduct H hcs' hrecs'), hsafe⟩,
+    ⟨venvT, level, hAxd, hEl⟩, fun T hT x hx => by simp [hdi T hT] at hx,
+    AddInductive.majorAt_of_recs mapWFC hRc hRnd hRfr hRnames hRmaj, nofun,
     hR.elaborates.stripsTo (by rw [hR.params]; exact hT.nparams)⟩
 
 end Lean4Lean

@@ -111,6 +111,19 @@ def looseDecl : Declaration :=
              (.forallE `y (.bvar 2) (tree (.bvar 2)) .default) .default) .default }] }]
     false
 
+/-- `inductive LTree | node : List LTree → LTree`. Its recursor's rule is for its own constructor,
+and the auxiliary recursor's rules are for `List`'s constructors, restored from the auxiliary
+type's. -/
+def listTreeDecl : Declaration :=
+  let t := mkConst `LTree []
+  .inductDecl [] 0
+    [{ name := `LTree
+       type := .sort 1
+       ctors := [{
+         name := `LTree.node
+         type := .forallE `es (mkApp (mkConst ``List [.zero]) t) t .default }] }]
+    false
+
 /-- An inductive type named `Name.anonymous`, which both kernels accept. A nested occurrence of it
 gets the auxiliary name `_nested_1`, outside the `_nested` namespace `checkNoNestedAux` reserves. -/
 def anonDecl : Declaration :=
@@ -183,6 +196,18 @@ run_meta do
         | some (.ctorInfo a), some (.ctorInfo b) => a == b
         | _, _ => false
       unless same do throwError "`{n}` differs from Lean's"
+
+  -- Each recursor rule names the constructor it reduces on: the block's own, or the one an
+  -- auxiliary constructor stands for.
+  let .ok kenv' := kenv.addDecl {} listTreeDecl | throwError "Lean's kernel rejected `LTree`"
+  match Lean4Lean.addDecl kenv listTreeDecl with
+  | .error e => throwError "`LTree` was rejected: {← (e.toMessageData {}).toString}"
+  | .ok lenv =>
+    for (n, ctors) in [(`LTree.rec, [`LTree.node]), (`LTree.rec_1, [``List.nil, ``List.cons])] do
+      let some (.recInfo a) := kenv'.find? n | throwError "Lean's kernel has no `{n}`"
+      let some (.recInfo b) := lenv.find? n | throwError "lean4lean has no `{n}`"
+      unless a == b do throwError "`{n}` differs from Lean's"
+      unless b.rules.map (·.ctor) == ctors do throwError "`{n}`'s rules are for the wrong constructors"
 
   -- A well-formed nested inductive must be accepted. Storing `aux2nested` abstracted over
   -- the parameters while checking it against a context of free variables regressed this

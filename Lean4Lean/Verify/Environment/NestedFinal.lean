@@ -41,7 +41,7 @@ def nestedFinal (env env' : Environment) (lparams : List Name) (types : List Ind
     let some (.recInfo recInfo) := env'.find? recName | unreachable!
     let rules := recInfo.rules.map fun rule =>
       { rule with
-        ctor := if newRecName == recName then rule.ctor else res.restoreCtorName env' rule.ctor
+        ctor := res.restoreCtorName env' rule.ctor
         rhs := restore rule.rhs }
     return { recInfo with name := newRecName, type := restore recInfo.type, all := allIndNames, rules }
   let auxNames : NameSet := (res.types.drop types.length).foldl (init := .ofList recNames')
@@ -348,7 +348,7 @@ def restoreRec (env' : Environment) (lparams : List Name) (types : List Inductiv
     all := types.map (·.name)
     rules := r₀.rules.map fun rule =>
       { rule with
-        ctor := if (m.getD n n == n) = true then rule.ctor else res.restoreCtorName env' rule.ctor
+        ctor := res.restoreCtorName env' rule.ctor
         rhs := res.restoreNested env' lparams rule.rhs m } }
 
 /-- Every projection in `e` is out of a structure whose name satisfies `p`. -/

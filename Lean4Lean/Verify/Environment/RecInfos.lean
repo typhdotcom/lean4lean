@@ -317,7 +317,7 @@ theorem loopArgs1.WF {c₂ : VContext} {X : Name → Prop} {pre : List Name} {Mp
       subst hin
       refine WF.bind hI.sub.consumeTypeAnnotations fun dom_s hds => ?_
       obtain ⟨rfl, hok⟩ := hds
-      obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+      obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom (Lean.Expr.StripHeads.true _)
       have htyT : (c₂.small m hm).IsType ty' := hdomT.defeqU_l henv hΓ hdefty
       obtain ⟨wf, hsub⟩ := hI.sub.push (name := name) (bi := bi) hty htyT
       refine WF.withLocalDecl (hI.sub.trExprS hty) (hI.sub.isType htyT) ?_

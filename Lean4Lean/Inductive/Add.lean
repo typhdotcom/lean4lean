@@ -925,7 +925,7 @@ def Environment.addInductive (env : Environment) (lparams : List Name) (nparams 
     let some (.recInfo recInfo) := env'.find? recName | unreachable!
     let rules := recInfo.rules.map fun rule =>
       { rule with
-        ctor := if newRecName == recName then rule.ctor else res.restoreCtorName env' rule.ctor
+        ctor := res.restoreCtorName env' rule.ctor
         rhs := restore rule.rhs }
     return { recInfo with name := newRecName, type := restore recInfo.type, all := allIndNames, rules }
   -- Restoring must leave no auxiliary constant behind. A `let`'s value is not part of what the

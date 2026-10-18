@@ -423,7 +423,7 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
       split
       · rw [if_pos (by simp [h₀])]; exact fail
       · exact fail
-    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv' hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv' hΔ hok hdom (Lean.Expr.StripHeads.true _)
     have htyT : c.venv.IsType c.lparams.length c.mlctx.vlctx.toCtx ty' :=
       hdomT.defeqU_l henv' hΓ hdefty
     obtain ⟨u, hdomS⟩ := hdomT
@@ -787,7 +787,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
       rw [List.take_of_length_le (Nat.le_refl _)] at hΔ htele hT hsyn
       refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
       have hΓ := hΔs.toCtx
-      obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv' hΔs hok hdom
+      obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv' hΔs hok hdom (Lean.Expr.StripHeads.true _)
       have htyT : c.venv.IsType c.lparams.length Δs.toCtx tys := hdomT.defeqU_l henv' hΓ hdefty
       obtain ⟨u, hdomS⟩ := hdomT
       have hdomty := hdefty.of_l henv' hΓ hdomS
@@ -1333,7 +1333,7 @@ structure Elaborates (venv : VEnv) (U : List Name) (nparams : Nat) (level : VLev
           (VExpr.bvars nparams Ds.length ++ c.indices)) ∧
         FieldsElab venv d d.params.reverse 0 Ds c.fields ∧
         (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-          D.StripsTo f.type) ∧
+          D.StripsToBy (· ∉ types.map (·.name)) f.type) ∧
         ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
           venv.HasType U.length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
           (u ≈ .zero ↔ f.level ≈ .zero)) t.ctors T.ctors) types d.types
@@ -1348,14 +1348,14 @@ theorem VExpr.foralls_getElem_eq : ∀ {As As' : List VExpr} {B B' : VExpr},
     exact foralls_getElem_eq e.2 k (by simpa using h) (by simpa using h')
 
 /-- A constructor's declared domains strip to its fields' types, at any split of its type past the
-parameters. -/
-theorem Elaborates.stripsTo {venv : VEnv} {U : List Name} {nparams : Nat} {level : VLevel}
+parameters, stripping no annotation named as one of the block's types. -/
+theorem Elaborates.stripsToBy {venv : VEnv} {U : List Name} {nparams : Nat} {level : VLevel}
     {types : List InductiveType} {d : VInductDecl} (H : Elaborates venv U nparams level types d)
     (hp : d.params.length = nparams) :
     ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ (ps Ds : List VExpr) (B : VExpr),
       c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
       ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-      D.StripsTo f.type := by
+      D.StripsToBy (· ∉ types.map (·.name)) f.type := by
   intro T hT c hc ps Ds B hty hps k D f hD hf
   obtain ⟨t, -, -, hcs⟩ := Lean4Lean.List.Forall₂.forall_exists_r H.types T hT
   obtain ⟨ct, -, hct⟩ := Lean4Lean.List.Forall₂.forall_exists_r hcs c hc
@@ -1369,6 +1369,18 @@ theorem Elaborates.stripsTo {venv : VEnv} {U : List Name} {nparams : Nat} {level
   simp only [Nat.add_sub_cancel_left, hps, hp, ← hps'] at e
   rw [List.getElem?_eq_getElem hk] at hD; cases hD
   exact e ▸ hstr k _ f (by simp [hk']) hf
+
+/-- A constructor's declared domains strip to its fields' types, at any split of its type past the
+parameters. -/
+theorem Elaborates.stripsTo {venv : VEnv} {U : List Name} {nparams : Nat} {level : VLevel}
+    {types : List InductiveType} {d : VInductDecl} (H : Elaborates venv U nparams level types d)
+    (hp : d.params.length = nparams) :
+    ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ (ps Ds : List VExpr) (B : VExpr),
+      c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
+      ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      D.StripsTo f.type :=
+  fun T hT c hc ps Ds B hty hps k D f hD hf =>
+    (H.stripsToBy hp T hT c hc ps Ds B hty hps k D f hD hf).toStripsTo
 
 theorem FieldsChecked.defeqDFC {venv : VEnv} {d : VInductDecl} (henv : venv.Ordered) {Γ₀ Γ₁ Γ₂}
     (hΓ : VEnv.IsDefEqCtx venv d.uvars Γ₀ Γ₁ Γ₂) {k Ds} (H : FieldsChecked venv d Γ₁ k Ds) :
@@ -1463,6 +1475,17 @@ def majorInductGo : Nat → Expr → Name
   | 0, e => e.bindingDomain!.getAppFn.constName!
   | n + 1, e => majorInductGo n e.bindingBody!
 
+/-- `e` has `k` binders before one whose domain is an application of `I`. -/
+def MajorAt (I : Name) : Nat → Expr → Prop
+  | 0, .forallE _ dom _ _ => ∃ us, dom.getAppFn = .const I us
+  | k + 1, .forallE _ _ b _ => MajorAt I k b
+  | _, _ => False
+
+theorem MajorAt.go {I : Name} : ∀ {k : Nat} {e : Expr}, MajorAt I k e → majorInductGo k e = I
+  | 0, .forallE _ dom _ _, ⟨us, h⟩ => by simp [majorInductGo, Expr.bindingDomain!, h, Expr.constName!]
+  | k + 1, .forallE _ _ b _, h => by
+    simp only [majorInductGo, Expr.bindingBody!]; exact MajorAt.go (k := k) h
+
 /-- What `mkRecInfos` establishes, for the continuation it calls with `recInfos` in `c`: the
 block elaborates to a declaration `d`, whose recursors' types are what the local variables
 `mkRecInfos` opened abstract to. -/
@@ -1492,6 +1515,8 @@ structure RecInfosData (c₂ : VContext) (nparams : Nat) (types : List Inductive
   largeElim : d.LargeElim ↔ elimLevel ≠ .zero
   typeTr : List.Forall₂ (fun (T : VInductiveType) T' => T.type = T') d.types typeTr
   indices : ∀ T ∈ d.types, T.WF c₂.venv d
+  /-- `mkRecInfos` checked that no index mentions the block. -/
+  idxFree : ∀ T ∈ d.types, ∀ x ∈ T.indices, x.mentions d.names = false
   nindices : ∀ (i : Nat) (T : VInductiveType), d.types[i]? = some T →
     stats.nindices[i]? = some T.indices.length
   /-- The recursor's type mentions the constructors, which the checking environment does not
@@ -1505,8 +1530,8 @@ structure RecInfosData (c₂ : VContext) (nparams : Nat) (types : List Inductive
   nminors : (recInfos.flatMap (·.minors)).size = d.ctors.length
   /-- The recursor's major premise is the type's: what `RecursorVal.getMajorInduct` reads. -/
   major : ∀ (i : Nat) (T : VInductiveType) info, d.types[i]? = some T → recInfos[i]? = some info →
-    majorInductGo (stats.params.size + recInfos.size + (recInfos.flatMap (·.minors)).size +
-      stats.nindices[i]!) (recTypeExpr c.lctx stats recInfos info) = T.name
+    MajorAt T.name (stats.params.size + recInfos.size + (recInfos.flatMap (·.minors)).size +
+      stats.nindices[i]!) (recTypeExpr c.lctx stats recInfos info)
   /-- Without parameters, a constructor's first binder whose domain carries no annotation is its
   first field's type, and an axiom there gives an inductive hypothesis without binders. -/
   first : d.params = [] → List.Forall₂ (fun (t : InductiveType) (T : VInductiveType) =>

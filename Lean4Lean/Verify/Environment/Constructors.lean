@@ -580,7 +580,7 @@ theorem checkPositivity.loop.WF {venv₀ : VEnv} {types : List InductiveType} {U
       simp only [Bool.not_eq_true] at hdocc
       dsimp only
       refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
-      obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔs hok hdom
+      obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔs hok hdom (Lean.Expr.StripHeads.true _)
       have htyT : c.venv.IsType c.lparams.length (Δtop ++ Mp.vlctx).toCtx tys :=
         hdomT.defeqU_l henv hΓ hdefty
       obtain ⟨u, hdomS⟩ := hdomT
@@ -837,7 +837,7 @@ theorem checkConstructors.loop.WF {venv₀ : VEnv} {types : List InductiveType} 
               FieldsChecked c.venv d (ps.reverse ++ Δc.toCtx) Δf.length Ds := by
         refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
         have hΔkΓ := hΔk.toCtx
-        obtain ⟨tys, hty', hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk
+        obtain ⟨tys, hty', hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk (Lean.Expr.StripHeads.true _)
         have htyT : c.venv.IsType c.lparams.length (Δf ++ Mp.vlctx).toCtx tys :=
           ⟨_, hdu.defeqU_l henv hΔkΓ hdefty⟩
         have htyb := hty'.weakFV' henv.ordered W hΔb; simp only [Lift.consN] at htyb
@@ -1298,7 +1298,7 @@ theorem isLargeEliminator.loop.WF {venv : VEnv} {Us : List Name} {stats : Induct
     obtain ⟨dk, hdk⟩ := hA.defeqDFC henv hΔ
     have hdkA := hA.uniq henv hΔ hdk
     refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
-    obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk
+    obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk (Lean.Expr.StripHeads.true _)
     obtain ⟨u₀, hAS⟩ := hAT
     have hdkS : c.venv.HasType c.lparams.length Δk.toCtx dk (.sort u₀) :=
       (hAS.defeqDFC henv.ordered hΔ.defeqCtx).defeqU_l henv hΔk.toCtx

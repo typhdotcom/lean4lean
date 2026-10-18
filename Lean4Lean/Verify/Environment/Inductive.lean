@@ -28,7 +28,7 @@ theorem TrRecVal.mono {env env' : VEnv} {decl : VInductDecl} {lparams : List Nam
     Lean4Lean.List.Forall₂.imp (fun _ _ ⟨a, b, c, d⟩ => ⟨a, b, c, d.mono henv⟩) h11⟩
 
 /-- The names `AddInduct` inserts are those `VEnv.addInduct` adds constants under. -/
-theorem AddInduct.names {decl : VInductDecl} (H : AddInduct safety C₁ env₁ decl C₂ env₂) :
+theorem AddInductN.names {decl : VInductDecl} {nn : Nat} (H : AddInductN nn safety C₁ env₁ decl C₂ env₂) :
     ∃ cis, C₂ = insertConsts C₁ cis ∧ (cis.map (·.name)).Nodup ∧
       (∀ ci ∈ cis, C₁.find? ci.name = none) ∧
       (∀ ci ∈ cis, ci.safety = if decl.isUnsafe then .unsafe else .safe) ∧
@@ -58,6 +58,13 @@ theorem AddInduct.names {decl : VInductDecl} (H : AddInduct safety C₁ env₁ d
       exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => h.1.choose_spec.2.2.1) hct
     · simp only [VInductDecl.recConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
       exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => h.1.1) hrc
+
+theorem AddInduct.names {decl : VInductDecl} (H : AddInduct safety C₁ env₁ decl C₂ env₂) :
+    ∃ cis, C₂ = insertConsts C₁ cis ∧ (cis.map (·.name)).Nodup ∧
+      (∀ ci ∈ cis, C₁.find? ci.name = none) ∧
+      (∀ ci ∈ cis, ci.safety = if decl.isUnsafe then .unsafe else .safe) ∧
+      (cis.map (·.name)).Perm ((decl.typeConsts ++ decl.ctorConsts ++ decl.recConsts).map (·.1)) :=
+  AddInductN.names H
 
 /-- The step at a lower safety level, from a bigger environment that has room for the block. -/
 theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ decl C₂ env₂) (hsf : sf' ≤ sf)

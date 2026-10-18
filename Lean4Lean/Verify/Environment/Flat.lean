@@ -24,7 +24,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     (isUnsafe : Bool) (fuel : FuelConfig) (hne : types ≠ []) :
     (AddInductive.run nparams types nn
       { env, allowPrimitive := false, lparams, fuel, safety := inductSafety isUnsafe }).WF
-      (FlatResult ves env isUnsafe false nn) := by
+      (FlatResult ves env lparams nparams types isUnsafe false nn) := by
   let c₀ := AddInductive.VContext.top (wf.toVEnvAt (inductSafety isUnsafe)) lparams false fuel
   change AddInductive.WF c₀ (AddInductive.run nparams types nn) _
   unfold AddInductive.run
@@ -147,12 +147,12 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     rw [hDC.1]; exact insertConsts_wf mapWFT hDC.2.2.2.1 hDC.2.2.1
   refine AddInductive.WF.mono (AddInductive.declareRecursors.WF hR hR.largeElim
     hE.2 hT.base.safety (hK d hR.compat hR.elaborates) mapWFC) fun env' hRecs => ?_
-  obtain ⟨recs, hRc, hRq, hRnd, hRfr, hRp, hRnames, hRtr⟩ := hRecs
-  exact AddInductive.assemble wf hne hT hDc hDnd hDfr hDp hleAx wfAx.tr.wf hAxEq (hC d) hDC.1
+  obtain ⟨recs, hRc, hRq, hRnd, hRfr, hRp, hRnames, hRmaj, hRtr⟩ := hRecs
+  exact AddInductive.assemble wf hUs hne hT hDc hDnd hDfr hDp hleAx wfAx.tr.wf hAxEq (hC d) hDC.1
     hDC.2.2.1 hDC.2.2.2.1 hDC.2.2.2.2 (c₂ := c.withEnv envAx venvAx wfAx hleAx) rfl rfl hR
     (fun h => hE.1 h d hR.compat hR.elaborates) hRc
     (hRq.trans (hDC.2.1.trans (hDq.trans (by rw [hT.base.env]; rfl)))) hRnd hRfr
-    (fun ci h hp => hR.allowPrimitive ▸ hRp ci h hp) hRnames (hR.safety ▸ hRtr)
+    (fun ci h hp => hR.allowPrimitive ▸ hRp ci h hp) hRnames hRmaj (hR.safety ▸ hRtr)
 
 /-- `AddInductive.run` on a block without nested occurrences. -/
 theorem AddInductive.run.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
@@ -161,7 +161,7 @@ theorem AddInductive.run.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (AddInductive.run nparams types 0
       { env, allowPrimitive, lparams, fuel, safety := inductSafety isUnsafe }).WF
-      (FlatResult ves env isUnsafe allowPrimitive 0) := by
+      (FlatResult ves env lparams nparams types isUnsafe allowPrimitive 0) := by
   cases allowPrimitive with
   | false =>
     exact AddInductive.run.WF_nonPrimitive wf lparams nparams 0 types isUnsafe fuel hne
@@ -174,7 +174,8 @@ theorem addInductive.WF_flat {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (hflat : IsFlat env lparams nparams types fuel)
     (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (Environment.addInductive env lparams nparams types isUnsafe allowPrimitive fuel).WF
-      (FlatResult ves env isUnsafe allowPrimitive 0) := by
+      fun env' => ∃ types',
+        FlatResult ves env lparams nparams types' isUnsafe allowPrimitive 0 env' := by
   unfold Environment.addInductive
   refine Except.WF.bind (Q := fun _ => True) (fun _ _ => trivial) fun _ _ => ?_
   refine Except.WF.bind
@@ -191,39 +192,33 @@ theorem addInductive.WF_flat {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     have := hallow hp; rwa [h0 this.2.2.1]
   exact (AddInductive.run.WF wf lparams nparams res.types isUnsafe allowPrimitive fuel
     hne' hallow').bind
-    fun _ h => .pure h
+    fun _ h => .pure ⟨_, h⟩
 
-theorem addInductive.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
-    (lparams : List Name) (nparams : Nat) (types : List InductiveType)
-    (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig)
-    (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
-    (Environment.addInductive env lparams nparams types isUnsafe allowPrimitive fuel).WF
-      fun env' => ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
-  by_cases hflat : IsFlat env lparams nparams types fuel
-  · refine (addInductive.WF_flat wf lparams nparams types isUnsafe allowPrimitive fuel hflat
-      hallow).mono
-      fun env' ⟨decl, venv', hu, hdecl, haux, H, hq, hnp, hp, _⟩ => ?_
-    subst hu
-    replace H : AddInduct (inductSafety decl.isUnsafe) env.constants
-        (ves.venv (inductSafety decl.isUnsafe)) decl env'.constants venv' := by
-      unfold AddInduct; rw [haux]; exact H
-    cases allowPrimitive with
-    | false =>
-      have hnp := hnp rfl
-      refine addInductBlock.WF wf hdecl H hq (fun _ _ _ H' => H'.hasPrimitives hnp)
-        fun {n ci} h hn => ?_
-      obtain ⟨cis, hC', hnd, hfr, -, hnames⟩ := H.names
-      have hC₁ := (wf.tr (safety := .safe)).map_wf
-      rw [Kernel.Environment.find?, hC', (insertConsts_wf hC₁ hfr hnd).find?'_eq_find?] at h
-      rcases insertConsts_find? hC₁ hfr hnd h with h | h
-      · exact wf.safePrimitives (by rwa [Kernel.Environment.find?, hC₁.find?'_eq_find?]) hn
-      · have := hnp n (hnames.mem_iff.1 (h.2 ▸ List.mem_map_of_mem h.1))
-        simp_all
-    | true =>
-      have ⟨hprim, hsafe⟩ := hp rfl
-      exact addInductBlock.WF wf hdecl H hq hprim hsafe
-  · -- A nested block: its auxiliary types are checked as a flat block and the result translated
-    -- back to the block `VEnv.addInduct` models with `aux`. Not yet verified.
-    sorry
+/-- A flat block's `FlatResult` gives a model of the environment it extends. -/
+theorem FlatResult.ves {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+    {lparams : List Name} {nparams : Nat} {types : List InductiveType}
+    {isUnsafe allowPrimitive : Bool} {env' : Environment}
+    (hR : FlatResult ves env lparams nparams types isUnsafe allowPrimitive 0 env') :
+    ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
+  obtain ⟨decl, venv', hu, hdecl, haux, H, hq, hnp, hp, _⟩ := hR
+  subst hu
+  replace H : AddInduct (inductSafety decl.isUnsafe) env.constants
+      (ves.venv (inductSafety decl.isUnsafe)) decl env'.constants venv' := by
+    unfold AddInduct; rw [haux]; exact H
+  cases allowPrimitive with
+  | false =>
+    have hnp := hnp rfl
+    refine addInductBlock.WF wf hdecl H hq (fun _ _ _ H' => H'.hasPrimitives hnp)
+      fun {n ci} h hn => ?_
+    obtain ⟨cis, hC', hnd, hfr, -, hnames⟩ := H.names
+    have hC₁ := (wf.tr (safety := .safe)).map_wf
+    rw [Kernel.Environment.find?, hC', (insertConsts_wf hC₁ hfr hnd).find?'_eq_find?] at h
+    rcases insertConsts_find? hC₁ hfr hnd h with h | h
+    · exact wf.safePrimitives (by rwa [Kernel.Environment.find?, hC₁.find?'_eq_find?]) hn
+    · have := hnp n (hnames.mem_iff.1 (h.2 ▸ List.mem_map_of_mem h.1))
+      simp_all
+  | true =>
+    have ⟨hprim, hsafe⟩ := hp rfl
+    exact addInductBlock.WF wf hdecl H hq hprim hsafe
 
 end Lean4Lean

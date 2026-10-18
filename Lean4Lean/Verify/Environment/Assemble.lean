@@ -11,10 +11,13 @@ namespace Lean4Lean
 open Lean hiding Environment Exception
 open Kernel
 
-/-- What `addInductive` establishes for a block without nested occurrences: an `AddInduct` step
-at the level the block is checked at, for a well-formed `decl`. A primitive block keeps the
-primitive invariant at every level; any other block adds no primitive name. -/
-def FlatResult (ves : VEnvs) (env : Environment) (isUnsafe allowPrimitive : Bool) (nn : Nat)
+/-- What `addInductive` establishes for a block `types` without nested occurrences: an `AddInduct`
+step at the level the block is checked at, for a well-formed `decl` that `types` elaborates to in
+the environment with its types only. No index of `decl` mentions the block, and each recursor's
+major premise is at its type. A primitive block keeps the primitive invariant at every level; any
+other block adds no primitive name. -/
+def FlatResult (ves : VEnvs) (env : Environment) (lparams : List Name) (nparams : Nat)
+    (types : List InductiveType) (isUnsafe allowPrimitive : Bool) (nn : Nat)
     (env' : Environment) : Prop :=
   ∃ (decl : VInductDecl) (venv' : VEnv), decl.isUnsafe = isUnsafe ∧
     decl.WF (ves.venv (inductSafety isUnsafe)) ∧ decl.aux = [] ∧
@@ -30,10 +33,61 @@ def FlatResult (ves : VEnvs) (env : Environment) (isUnsafe allowPrimitive : Bool
         venv₁.HasPrimitives → venv₂.HasPrimitives) ∧
       ∀ {n ci}, env'.find? n = some ci → Environment.primitives.contains n →
         ci.safety = .safe ∧ ci.levelParams = []) ∧
+    (∃ E₁ level, (ves.venv (inductSafety isUnsafe)).addConstList decl.typeConsts = some E₁ ∧
+      AddInductive.Elaborates E₁ lparams nparams level types decl) ∧
+    (∀ T ∈ decl.types, ∀ x ∈ T.indices, x.mentions decl.names = false) ∧
+    (∀ i T r₀, decl.types[i]? = some T → env'.find? (decl.recName i) = some (.recInfo r₀) →
+      AddInductive.MajorAt T.name r₀.getMajorIdx r₀.type) ∧
+    (allowPrimitive = false → decl.uvars = lparams.length ∧ lparams.Nodup ∧
+      decl.params.length = nparams ∧ (∀ x v, env'.find? x = some (.inductInfo v) →
+        env.find? x = some (.inductInfo v) ∨ v.levelParams = lparams) ∧
+      List.Forall₂ (fun (t : InductiveType) (T : VInductiveType) =>
+        TrExprS (ves.venv (inductSafety isUnsafe)) lparams [] t.type T.type ∧
+        (decl.params.length ≤ t.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
+          ps.length = decl.params.length →
+          (ves.venv (inductSafety isUnsafe)).TeleDefEq decl.uvars [] ps decl.params))
+        types decl.types) ∧
     ∀ T ∈ decl.types, ∀ c ∈ T.ctors, ∀ (ps Ds : List VExpr) (B : VExpr),
       c.type = .foralls (ps ++ Ds) B → ps.length = decl.params.length →
       ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
       D.StripsTo f.type
+
+/-- The recursors `declareRecursors` adds have their major premises at their types, as found by the
+recursors' names. -/
+theorem AddInductive.majorAt_of_recs {envC env' : Environment} {d : VInductDecl}
+    {recs : List RecursorVal} (mapWF : envC.constants.WF)
+    (hRc : env'.constants = insertConsts envC.constants (recs.map .recInfo))
+    (hRnd : ((recs.map ConstantInfo.recInfo).map (·.name)).Nodup)
+    (hRfr : ∀ ci ∈ recs.map ConstantInfo.recInfo, envC.constants.find? ci.name = none)
+    (hRnames : List.Forall₂ (fun v (p : VInductiveType × Nat) => v.name = Lean.mkRecName p.1.name)
+      recs d.types.zipIdx)
+    (hRmaj : List.Forall₂ (fun v (p : VInductiveType × Nat) =>
+      AddInductive.MajorAt p.1.name v.getMajorIdx v.type) recs d.types.zipIdx) :
+    ∀ i T r₀, d.types[i]? = some T → env'.find? (d.recName i) = some (.recInfo r₀) →
+      AddInductive.MajorAt T.name r₀.getMajorIdx r₀.type := by
+  intro i T r₀ hT h
+  rw [VInductDecl.recName_of_types hT] at h
+  have mapWF' : (insertConsts envC.constants (recs.map ConstantInfo.recInfo)).WF :=
+    insertConsts_wf mapWF hRfr hRnd
+  change env'.constants.find?' _ = _ at h
+  rw [hRc, mapWF'.find?'_eq_find?] at h
+  have hz : d.types.zipIdx[i]? = some (T, i) := by simp [List.getElem?_zipIdx, hT]
+  rcases insertConsts_find? mapWF hRfr hRnd h with h' | ⟨hci, hn⟩
+  · obtain ⟨r, hr, hrn⟩ := List.Forall₂.getElem?_r hRnames hz
+    have := hRfr _ (List.mem_map_of_mem (List.mem_of_getElem? hr))
+    change envC.constants.find? r.name = none at this
+    rw [hrn, h'] at this; cases this
+  · obtain ⟨r, hr, he⟩ := List.mem_map.1 hci
+    cases he
+    obtain ⟨j, hj⟩ := List.mem_iff_getElem?.1 hr
+    obtain ⟨⟨T', j'⟩, hp, hrn⟩ := List.Forall₂.getElem?_l hRnames hj
+    obtain ⟨p', hp', hm⟩ := List.Forall₂.getElem?_l hRmaj hj
+    rw [hp] at hp'; cases hp'
+    change r₀.name = _ at hn
+    have : T'.name = T.name := by
+      have := hrn.symm.trans hn
+      simpa [Lean.mkRecName] using this
+    rwa [this] at hm
 
 /-- Everything `run` established about a block without nested occurrences: the elaborated `d` is
 well formed, and the constants `run` added are an `AddInduct` step. `d` elaborates the block
@@ -88,6 +142,7 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
           ⟨d.recUVars, d.recType d.recLevels d.motiveLevel p.2 p.1⟩)
         recs d.types.zipIdx) :
     d.WF (ves.venv (inductSafety isUnsafe)) ∧
+    (ves.venv (inductSafety isUnsafe)).addConstList d.typeConsts = some venvAx ∧
     (∃ env₂, AddInductN nn (inductSafety isUnsafe) env.constants
       (ves.venv (inductSafety isUnsafe)) d env'.constants env₂) ∧
     ∀ n ∈ (d.typeConsts ++ d.ctorConsts ++ d.recConsts).map (·.1),
@@ -202,16 +257,49 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
     refine .mk (lparams := c.lparams) hU.symm htv (hcs ▸ hcv) (by rw [hall]; exact hcs ▸ hrecs)
       hnd hfr ⟨_, List.Perm.refl _, ?_⟩ (hcvenv ▸ hAxd) hCadd hRadd hBadd
     rw [hRc, hDCc, hDc, hcenv, inductConsts, insertConsts_append, insertConsts_append]
-  refine ⟨hcvenv ▸ hdecl, ⟨_, hstep⟩, fun n hn => ?_⟩
+  refine ⟨hcvenv ▸ hdecl, hcvenv ▸ hAxd, ⟨_, hstep⟩, fun n hn => ?_⟩
   rw [← hnames] at hn
   obtain ⟨ci, hci, rfl⟩ := List.mem_map.1 hn
   exact ⟨ci, by simpa [inductConsts] using hci, rfl⟩
+
+theorem AddInductive.inductVals_levelParams {lparams : List Name} {stats : InductiveStats}
+    {numParams numNested : Nat} {types : Array InductiveType} {isUnsafe : Bool} {v : InductiveVal}
+    (hv : v ∈ inductVals lparams stats numParams types numNested isUnsafe) :
+    v.levelParams = lparams := by
+  simp only [inductVals] at hv
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hv
+  simp
+
+/-- A type the three insertions of `run` leave in the environment is one it had, or one of the
+types inserted first. -/
+theorem AddInductive.find_inductInfo_of_inserts {C₀ : ConstMap} (hC₀ : C₀.WF)
+    {ivs : List InductiveVal} {cvs : List ConstructorVal} {rvs : List RecursorVal}
+    (hfr1 : ∀ ci ∈ ivs.map ConstantInfo.inductInfo, C₀.find? ci.name = none)
+    (hnd1 : ((ivs.map ConstantInfo.inductInfo).map (·.name)).Nodup)
+    (hfr2 : ∀ ci ∈ cvs.map ConstantInfo.ctorInfo,
+      (insertConsts C₀ (ivs.map .inductInfo)).find? ci.name = none)
+    (hnd2 : ((cvs.map ConstantInfo.ctorInfo).map (·.name)).Nodup)
+    (hfr3 : ∀ ci ∈ rvs.map ConstantInfo.recInfo, (insertConsts (insertConsts C₀ (ivs.map .inductInfo))
+      (cvs.map .ctorInfo)).find? ci.name = none)
+    (hnd3 : ((rvs.map ConstantInfo.recInfo).map (·.name)).Nodup) {x : Name} {v : InductiveVal}
+    (h : (insertConsts (insertConsts (insertConsts C₀ (ivs.map .inductInfo)) (cvs.map .ctorInfo))
+      (rvs.map .recInfo)).find? x = some (.inductInfo v)) :
+    C₀.find? x = some (.inductInfo v) ∨ v ∈ ivs := by
+  have hC₁ := insertConsts_wf hC₀ hfr1 hnd1
+  have hC₂ := insertConsts_wf hC₁ hfr2 hnd2
+  rcases insertConsts_find? hC₂ hfr3 hnd3 h with h | ⟨h, -⟩
+  · rcases insertConsts_find? hC₁ hfr2 hnd2 h with h | ⟨h, -⟩
+    · rcases insertConsts_find? hC₀ hfr1 hnd1 h with h | ⟨h, -⟩
+      · exact .inl h
+      · obtain ⟨w, hw, e⟩ := List.mem_map.1 h; cases e; exact .inr hw
+    · obtain ⟨w, -, e⟩ := List.mem_map.1 h; cases e
+  · obtain ⟨w, -, e⟩ := List.mem_map.1 h; cases e
 
 /-- Everything `run` established about a block without nested occurrences or primitive names
 gives `FlatResult`: the elaborated `d` is well formed, and the constants `run` added are an
 `AddInduct` step. -/
 theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env)
-    {lparams : List Name} {nparams nn : Nat} {types : List InductiveType}
+    {lparams : List Name} (hUs : lparams.Nodup) {nparams nn : Nat} {types : List InductiveType}
     {isUnsafe : Bool} {fuel : FuelConfig} (hne : types ≠ [])
     {stats : InductiveStats} {c : AddInductive.VContext} {params : List VExpr} {level : VLevel}
     {typeTr : List VExpr}
@@ -256,6 +344,8 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
       Environment.primitives.contains ci.name → c.allowPrimitive)
     (hRnames : List.Forall₂ (fun v (p : VInductiveType × Nat) => v.name = Lean.mkRecName p.1.name)
       recs d.types.zipIdx)
+    (hRmaj : List.Forall₂ (fun v (p : VInductiveType × Nat) =>
+      AddInductive.MajorAt p.1.name v.getMajorIdx v.type) recs d.types.zipIdx)
     (hRtr : ∀ (envC envR : VEnv), venvAx ≤ envC → envC.WF →
       (∀ p ∈ d.ctorConsts, envC.constants p.1 = some p.2) →
       envC.addConstList d.recConsts = some envR → envR.WF →
@@ -264,13 +354,46 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
         TrConstant c.safety envC (.recInfo v)
           ⟨d.recUVars, d.recType d.recLevels d.motiveLevel p.2 p.1⟩)
         recs d.types.zipIdx) :
-    FlatResult ves env isUnsafe false nn env' := by
-  obtain ⟨hdecl, ⟨_, hstep⟩, hnames⟩ := AddInductive.assemble_step wf hne hT hDc hDnd hDfr hleAx
-    henvAx hAx hC hDCc hDCnd hDCfr hc₂U hR (hc₂ ▸ hc₂U ▸ hR.elaborates) (hc₂ ▸ hR.indices) hLE hRc
+    FlatResult ves env lparams nparams types isUnsafe false nn env' := by
+  obtain ⟨hdecl, hAxd, ⟨_, hstep⟩, hnames⟩ := AddInductive.assemble_step wf hne hT hDc hDnd hDfr
+    hleAx henvAx hAx hC hDCc hDCnd hDCfr hc₂U hR (hc₂ ▸ hc₂U ▸ hR.elaborates) (hc₂ ▸ hR.indices) hLE hRc
     hRnd hRfr hRnames hRtr
   have hcp : c.allowPrimitive = false := hT.base.allowPrimitive
+  have hcl : c.lparams = lparams := hT.base.lparams
+  have mapWFC : envCtors.constants.WF := by
+    rw [hDCc]
+    exact insertConsts_wf (by rw [hDc]; exact insertConsts_wf c.envAt.tr.map_wf hDfr hDnd)
+      hDCfr hDCnd
+  have hEl := hR.elaborates
+  rw [hc₂, hc₂U, hcl] at hEl
   refine ⟨d, _, hR.isUnsafe, hdecl, hR.aux, hstep, hRq, fun _ n hn => ?_, nofun,
+    ⟨venvAx, level, hAxd, hEl⟩, hR.idxFree,
+    AddInductive.majorAt_of_recs mapWFC hRc hRnd hRfr hRnames hRmaj, fun _ => ⟨?_, hUs, ?_, ?_, ?_⟩,
     hR.elaborates.stripsTo (by rw [hR.params]; exact hT.nparams)⟩
+  rotate_left
+  · rw [hR.uvars, hc₂U, hcl]
+  · rw [hR.params]; exact hT.nparams
+  · intro x v hx
+    have hC₀ := c.envAt.tr.map_wf
+    have hC' : env'.constants.WF := by
+      rw [hRc]; exact insertConsts_wf mapWFC hRfr hRnd
+    rw [Kernel.Environment.find?, hC'.find?'_eq_find?, hRc, hDCc, hDc] at hx
+    rcases AddInductive.find_inductInfo_of_inserts hC₀ hDfr hDnd (hDc ▸ hDCfr) hDCnd
+      (hDc ▸ hDCc ▸ hRfr) hRnd hx with h | h
+    · left
+      rw [Kernel.Environment.find?, (wf.tr (safety := .safe)).map_wf.find?'_eq_find?]
+      have he : c.env = env := hT.base.env
+      rwa [he] at h
+    · exact .inr (hcl ▸ AddInductive.inductVals_levelParams h)
+  · refine List.forall₂_of_getElem? (Lean4Lean.List.Forall₂.length_eq hR.elaborates.types)
+      fun j t T ht hT' => ?_
+    obtain ⟨T', hT'', hty⟩ := List.Forall₂.getElem?_l hR.typeTr hT'
+    obtain ⟨_, _, htr, -, -, -, -, -, hag⟩ := hT.types j t T' ht hT''
+    rw [hty]
+    refine ⟨htr, fun hl ps B he hpl => ?_⟩
+    rw [hR.uvars, hc₂U, hR.params, hcl]
+    rw [hR.params] at hl hpl
+    exact hag hl ps B he hpl
   obtain ⟨ci, hci, rfl⟩ := hnames n hn
   refine Bool.eq_false_iff.2 fun h => ?_
   simp only [List.mem_append] at hci

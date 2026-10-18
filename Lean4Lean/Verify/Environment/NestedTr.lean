@@ -669,7 +669,7 @@ namespace VInductDecl
 variable {R : Name → Option VAuxHead} {ren : Name → Option Name} {d : VInductDecl} {n : Nat}
   {ns : List VNested} {cname : Name → Name}
 
-theorem restoreNested_types_getElem? {j : Nat} {T : VInductiveType} (hj : j < n)
+theorem restoreNested_types_getElem?_of {j : Nat} {T : VInductiveType} (hj : j < n)
     (hT : d.types[j]? = some T) :
     (d.restoreNested R ren n ns cname).types[j]? = some (T.restore R ren cname none) := by
   have hl := (List.getElem?_eq_some_iff.1 hT).1
@@ -710,7 +710,7 @@ theorem restoredCtor {safety : DefinitionSafety} {venv envT envT' : VEnv} (henv 
   have hcm : c ∈ T.ctors := List.mem_of_getElem? hcT
   obtain ⟨-, -, hown⟩ := H.own j T hj hT
   obtain ⟨-, -, hcn⟩ := hown c hcm
-  have hTj := VInductDecl.restoreNested_types_getElem? (R := R) (ren := ren) (ns := ns)
+  have hTj := VInductDecl.restoreNested_types_getElem?_of (R := R) (ren := ren) (ns := ns)
     (cname := cname) hj hT
   have hTm : T.restore R ren cname none ∈ (d.restoreNested R ren n ns cname).allTypes :=
     List.mem_append_left _ (List.mem_of_getElem? hTj)
@@ -907,10 +907,8 @@ theorem restoredRec {safety : DefinitionSafety} {venv envT envC envR envC' envR'
     (hlitCR : ∀ l, envC'.ContainsLits l → envR'.ContainsLits l)
     (hout : ∀ c h ls args out, R c = some h → r.kRepl env' lparams c ls args = some out →
       ∃ us, out.getAppFn = .const h.name us)
-    (hcn : ∀ j T, n ≤ j → d.types[j]? = some T → ∀ c ∈ T.ctors,
+    (hcn : ∀ (j : Nat) T, d.types[j]? = some T → ∀ c ∈ T.ctors,
       r.restoreCtorName env' c.name = cname c.name)
-    (hrn : ∀ j, n ≤ j → j < d.types.length →
-      ((d.restoreNested R ren n ns cname).recName j == d.recName j) = false)
     (hnames : types.map (·.name) = (d.restoreNested R ren n ns cname).names)
     (hlp : lparams.length = d.uvars) {fuel : FuelConfig} {i : Nat} {T : VInductiveType}
     (hi : d.types[i]? = some T)
@@ -1046,12 +1044,8 @@ theorem restoredRec {safety : DefinitionSafety} {venv envT envC envR envC' envR'
     obtain ⟨T', hT', hc⟩ := VInductDecl.mem_allCtors_iff.1 hjc
     rw [VInductDecl.allTypes_of_aux H.flat, hi] at hT'; cases hT'
     refine ⟨rfl, ?_, by simpa [VConstructor.restore] using hnf, ?_⟩
-    · show (if ((mkAuxRecNameMap env' types).2.getD r₀.name r₀.name == r₀.name) = true then
-          rule.ctor else r.restoreCtorName env' rule.ctor) = cname c.name
-      rw [hname, hgetD, hctor]
-      by_cases hin : j < n
-      · rw [H.recName_own hin, if_pos (by simp), ((H.own j T hin hi).2.2 c hc).2.2]
-      · rw [if_neg (by rw [hrn j (by omega) hil]; simp), hcn j T (by omega) hi c hc]
+    · show r.restoreCtorName env' rule.ctor = cname c.name
+      rw [hctor]; exact hcn j T hi c hc
     · have hra' : ∀ p ∈ c.recFields, p.2.typeIdx < d.allTypes.length := by
         rw [VInductDecl.allTypes_of_aux H.flat]; exact hra c hc
       have hrw := H.restore_iotaRule_rhs d.recLevels d.motiveLevel (VLevel.params d.recUVars)
@@ -1189,6 +1183,157 @@ theorem restoreRec_name {types : List InductiveType} (H : d.RestoreSpec R ren n 
   · rw [(H.recOwn i hin).2, H.recName_own hin]; rfl
   · rw [(H.recAux i (by omega) hil).2]; rfl
 
+/-- The restored block's own types are its translation's, so they are types. -/
+theorem restoreNested_types_isType {venv : VEnv} (henv : venv.WF) (hd : d.WF venv)
+    (hRfresh : ∀ c h, R c = some h → venv.constants c = none)
+    (hrenfresh : ∀ c c', ren c = some c' → venv.constants c = none) :
+    ∀ T ∈ (d.restoreNested R ren n ns cname).types,
+      venv.IsType (d.restoreNested R ren n ns cname).uvars [] T.type := by
+  intro T' hT'
+  obtain ⟨j, T, -, hT, rfl⟩ := VInductDecl.mem_restoreNested_types.1 hT'
+  obtain ⟨hIT, -⟩ := hd.types T (List.mem_of_getElem? hT)
+  have hc := hIT
+  obtain ⟨_, h⟩ := hc
+  have hC := (h.constsSat henv.ordered trivial).1
+  show venv.IsType d.uvars [] (T.type.restore R ren)
+  rw [VExpr.restore_of_constsSat (hC.mono fun c hc => by
+    obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.1 hc
+    refine ⟨?_, ?_⟩
+    · cases h : R c with
+      | none => rfl
+      | some _ => rw [hRfresh c _ h] at hci; cases hci
+    · cases h : ren c with
+      | none => rfl
+      | some _ => rw [hrenfresh c _ h] at hci; cases hci)]
+  exact hIT
+
+/-- The restored block's parameters are its translation's. -/
+theorem restoreNested_params_eq {venv : VEnv} (henv : venv.WF) (hd : d.WF venv)
+    (hRfresh : ∀ c h, R c = some h → venv.constants c = none)
+    (hrenfresh : ∀ c c', ren c = some c' → venv.constants c = none) :
+    (d.restoreNested R ren n ns cname).params = d.params := by
+  have hPC := VEnv.IsTele.constsSat henv.ordered hd.params trivial
+  simp only [VInductDecl.restoreNested]
+  refine (List.map_congr_left fun P hP => VExpr.restore_of_constsSat ((hPC P hP).mono
+    fun c hc => ?_)).trans (List.map_id' _)
+  obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.1 hc
+  refine ⟨?_, ?_⟩
+  · cases h : R c with
+    | none => rfl
+    | some _ => rw [hRfresh c _ h] at hci; cases hci
+  · cases h : ren c with
+    | none => rfl
+    | some _ => rw [hrenfresh c _ h] at hci; cases hci
+
+/-- The final phase's environment with the block's types as axioms is modelled by the
+environment with the restored block's types. -/
+theorem typeAx_venvAt {env envTk envF : Kernel.Environment} {types : List InductiveType}
+    {isUnsafe ap : Bool} {fuel : FuelConfig} {inds : List (InductiveVal × List ConstructorVal)}
+    {recs : List RecursorVal}
+    (hF : NestedFinalOK env env' lparams types r isUnsafe ap fuel inds recs envTk envF)
+    {venv : VEnv} (wf : VEnvAt env (inductSafety isUnsafe) venv) {nn : Nat} {venv' : VEnv}
+    (hflat : AddInductN nn (inductSafety isUnsafe) env.constants venv d env'.constants venv')
+    (hd : d.WF venv) (H : d.RestoreSpec R ren n ns cname)
+    (hn : types.length = n) (hn0 : 0 < n) (hnn : nn = ns.length)
+    (hRfresh : ∀ c h, R c = some h → venv.constants c = none)
+    (hrenfresh : ∀ c c', ren c = some c' → venv.constants c = none)
+    (hnames : types.map (·.name) = (d.restoreNested R ren n ns cname).names)
+    (hap : ap = false)
+    (hlpk : ∀ t ∈ types, ∀ ind, env'.find? t.name = some (.inductInfo ind) →
+      ind.levelParams = lparams)
+    {envT : VEnv} (hTN : venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some envT) :
+    VEnvAt envTk (inductSafety isUnsafe) envT := by
+  have henv := wf.tr.wf
+  have hO := henv.ordered
+  have hCwf : env.constants.WF := wf.tr.map_wf
+  obtain ⟨lps, envT', envC', envR', hl, hT', hC', hR', hRle, hfT, hfC, hfR⟩ :=
+    hflat.flatFind hCwf H.flat
+  have hlen := H.len
+  have hnm (i : Nat) (hi : i < n) (t : InductiveType) (T : VInductiveType)
+      (ht : types[i]? = some t) (hT : d.types[i]? = some T) : t.name = T.name := by
+    have := congrArg (·[i]?) hnames
+    simp only [List.getElem?_map, ht, Option.map_some, VInductDecl.names] at this
+    rw [VInductDecl.restoreNested_types_getElem?_of hi hT] at this
+    simpa [VInductiveType.restore] using this
+  have hTi (i : Nat) (hi : i < n) : ∃ T, d.types[i]? = some T :=
+    ⟨_, List.getElem?_eq_getElem (by omega)⟩
+  have hti (i : Nat) (hi : i < n) : ∃ t, types[i]? = some t :=
+    ⟨_, List.getElem?_eq_getElem (by omega)⟩
+  have hlps : lps = lparams := by
+    obtain ⟨t, ht⟩ := hti 0 hn0
+    obtain ⟨T, hT⟩ := hTi 0 hn0
+    obtain ⟨v, hv, ⟨-, hvl, -⟩, -⟩ := hfT 0 T hT
+    rw [← hvl]
+    exact hlpk t (List.mem_of_getElem? ht) v (hnm 0 hn0 t T ht hT ▸ hv)
+  rw [hlps] at hl hfT hfC hfR
+  obtain ⟨cisN, hpN, heN, hndN, hfrN, hprimN, -⟩ := hF.addConsts hCwf
+  have hindsLen : inds.length = n := by
+    rw [← hn, Lean4Lean.List.Forall₂.length_eq hF.indsSpec]
+  have hinds (i : Nat) (hi : i < n) : ∃ p T v, inds[i]? = some p ∧ d.types[i]? = some T ∧
+      env'.find? T.name = some (.inductInfo v) ∧ p.1 = { v with all := types.map (·.name) } ∧
+      (TrInductValN d lparams nn T v ∧
+        TrConstant (inductSafety isUnsafe) venv (.inductInfo v) ⟨d.uvars, T.type⟩ ∧
+        (d.params.length ≤ v.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
+          ps.length = d.params.length → venv.TeleDefEq d.uvars [] ps d.params)) := by
+    obtain ⟨t, ht⟩ := hti i hi
+    obtain ⟨T, hT⟩ := hTi i hi
+    obtain ⟨p, hp, hPp⟩ := forall₂_getElem?_l hF.indsSpec ht
+    obtain ⟨v, hv, hvT⟩ := hfT i T hT
+    obtain ⟨h1, -⟩ := hPp v (hnm i hi t T ht hT ▸ hv)
+    exact ⟨p, T, v, hp, hT, hv, h1, hvT⟩
+  have hdNlen : (d.restoreNested R ren n ns cname).types.length = n := by
+    simp [VInductDecl.restoreNested]; omega
+  have tyF : List.Forall₂ (fun v T =>
+      TrInductValN (d.restoreNested R ren n ns cname) lparams
+        (d.restoreNested R ren n ns cname).aux.length T v ∧
+      TrConstant (inductSafety isUnsafe) venv (.inductInfo v)
+        ⟨(d.restoreNested R ren n ns cname).uvars, T.type⟩ ∧
+      ((d.restoreNested R ren n ns cname).params.length ≤ v.type.leadingForalls →
+        ∀ ps B, T.type = .foralls ps B → ps.length = (d.restoreNested R ren n ns cname).params.length →
+        venv.TeleDefEq (d.restoreNested R ren n ns cname).uvars [] ps
+          (d.restoreNested R ren n ns cname).params))
+      (inds.map (·.1)) (d.restoreNested R ren n ns cname).types := by
+    refine Lean4Lean.List.forall₂_of_getElem? (by simp [hindsLen, hdNlen]) fun j a b ha hb => ?_
+    have hj : j < n := by
+      have := (List.getElem?_eq_some_iff.1 ha).1; simpa [hindsLen] using this
+    obtain ⟨p, T, v, hp, hT, -, hpv, hvT⟩ := hinds j hj
+    rw [List.getElem?_map, hp, Option.map_some, Option.some.injEq] at ha
+    rw [VInductDecl.restoreNested_types_getElem?_of hj hT, Option.some.injEq] at hb
+    subst ha hb
+    rw [hpv]
+    exact restoredType henv H hd hRfresh hrenfresh hnn hnames hj hT hvT
+  have hTyp := restoreNested_types_isType (n := n) (ns := ns) (cname := cname) henv hd hRfresh
+    hrenfresh
+  have hcsNames : (inductConsts (inds.map (·.1)) (inds.flatMap (·.2)) recs).map (·.name) =
+      (inds.map (·.1)).map (·.name) ++ (inds.flatMap (·.2)).map (·.name) ++
+        recs.map (·.name) := by
+    simp [inductConsts, List.map_map, Function.comp_def, ConstantInfo.name,
+      ConstantInfo.toConstantVal]
+  have hnoprim (nm : Name) (h : nm ∈ (inductConsts (inds.map (·.1)) (inds.flatMap (·.2)) recs).map
+      (·.name)) : Kernel.Environment.primitives.contains nm = false := by
+    obtain ⟨ci, hci, rfl⟩ := List.mem_map.1 h
+    cases hc : Kernel.Environment.primitives.contains ci.name
+    · rfl
+    · exact absurd (hprimN ci hci hc) (by simp [hap])
+  rw [hcsNames] at hnoprim
+  have hax := hF.typeAx
+  have e : typeAxiomsN inds lparams isUnsafe =
+      (inds.map fun p => AxiomVal.mk ⟨p.1.name, lparams, p.1.type⟩ isUnsafe).map .axiomInfo := by
+    simp [typeAxiomsN, List.map_map, Function.comp_def]
+  rw [e] at hax
+  refine CheckedAdds.venvAt wf hax ?_ (fun ax hax' => ?_) hTN
+  · simp only [VInductDecl.typeConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+    have := List.forall₂_map_left_iff.1 tyF
+    refine forall₂_imp_mem₂ (fun p T _ hT ⟨⟨hname, hlp, _, _, _, _, _, _, hpu⟩,
+      ⟨hsafe, hlen, htr⟩, _⟩ => ?_) this
+    refine ⟨hname, ⟨?_, ?_, ?_⟩, hTyp T hT⟩
+    · simp [ConstantInfo.safety, ConstantInfo.isUnsafe, ConstantInfo.isPartial]
+    · change lparams.length = _; rw [← hlp]; exact hlen
+    · change TrExprS venv lparams [] p.1.type T.type; rw [← hlp]; exact htr
+  · obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hax'
+    exact hnoprim _ (List.mem_append_left _ (List.mem_append_left _
+      (List.mem_map_of_mem (List.mem_map_of_mem hp))))
+
 /-- **The restored block's step.** What the final phase of a nested block adds is the restored
 block's `AddInduct` step, given what the check of the translated block established
 (`AddInductN`) and how the restoration relates to the translation. -/
@@ -1201,17 +1346,15 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
     (hd : d.WF venv)
     (H : d.RestoreSpec R ren n ns cname) (hdN : (d.restoreNested R ren n ns cname).WF venv)
     (hn : types.length = n) (hn0 : 0 < n) (hns : ns ≠ []) (hnn : nn = ns.length)
-    (hS : ∀ Us (E : VEnv), venv ≤ E →
+    (hS : ∀ Us (E : VEnv), venv ≤ E → (∀ l, E.ContainsLits l → venv.ContainsLits l) →
       RestoreSpec r env' lparams (mkAuxRecNameMap env' types).2 Us E.ContainsLits R ren)
     (hP : d.LeadFreeParts R ren) (hcL : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.type.LeadFree R ren)
     (hRfresh : ∀ c h, R c = some h → venv.constants c = none)
     (hrenfresh : ∀ c c', ren c = some c' → venv.constants c = none)
     (hout : ∀ c h ls args out, R c = some h → r.kRepl env' lparams c ls args = some out →
       ∃ us, out.getAppFn = .const h.name us)
-    (hcn : ∀ j T, n ≤ j → d.types[j]? = some T → ∀ c ∈ T.ctors,
+    (hcn : ∀ (j : Nat) T, d.types[j]? = some T → ∀ c ∈ T.ctors,
       r.restoreCtorName env' c.name = cname c.name)
-    (hrn : ∀ j, n ≤ j → j < d.types.length →
-      ((d.restoreNested R ren n ns cname).recName j == d.recName j) = false)
     (hnames : types.map (·.name) = (d.restoreNested R ren n ns cname).names)
     (hSN : ∀ c, (R c).isSome ∨ ((mkAuxRecNameMap env' types).2.find? c).isSome →
       (auxNameSet r types (mkAuxRecNameMap env' types).1).contains c)
@@ -1235,7 +1378,7 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
       (ht : types[i]? = some t) (hT : d.types[i]? = some T) : t.name = T.name := by
     have := congrArg (·[i]?) hnames
     simp only [List.getElem?_map, ht, Option.map_some, VInductDecl.names] at this
-    rw [VInductDecl.restoreNested_types_getElem? hi hT] at this
+    rw [VInductDecl.restoreNested_types_getElem?_of hi hT] at this
     simpa [VInductiveType.restore] using this
   have hTi (i : Nat) (hi : i < n) : ∃ T, d.types[i]? = some T :=
     ⟨_, List.getElem?_eq_getElem (by omega)⟩
@@ -1288,7 +1431,7 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
       have := (List.getElem?_eq_some_iff.1 ha).1; simpa [hindsLen] using this
     obtain ⟨p, T, v, hp, hT, -, hpv, hvT, -⟩ := hinds j hj
     rw [List.getElem?_map, hp, Option.map_some, Option.some.injEq] at ha
-    rw [VInductDecl.restoreNested_types_getElem? hj hT, Option.some.injEq] at hb
+    rw [VInductDecl.restoreNested_types_getElem?_of hj hT, Option.some.injEq] at hb
     subst ha hb
     rw [hpv]
     exact restoredType henv H hd hRfresh hrenfresh hnn hnames hj hT hvT
@@ -1398,7 +1541,7 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
       have := (List.getElem?_eq_some_iff.1 hp).1; simpa [hindsLen] using this
     obtain ⟨p', T, v, hp', hT, -, -, -, hctors⟩ := hinds j hj
     rw [hp] at hp'; cases hp'
-    rw [List.getElem?_zipIdx, VInductDecl.restoreNested_types_getElem? hj hT] at hTj
+    rw [List.getElem?_zipIdx, VInductDecl.restoreNested_types_getElem?_of hj hT] at hTj
     cases hTj
     have hpm : p ∈ inds := List.mem_of_getElem? hp
     have hTm : T ∈ d.types := List.mem_of_getElem? hT
@@ -1414,7 +1557,8 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
     have e := hce c₀ hc₀f
     subst e
     simp only [Nat.zero_add]
-    refine restoredCtor (fuel := fuel) henv H hdN hTN (hS lparams envT' (VEnv.addConstList_le hT'))
+    refine restoredCtor (fuel := fuel) henv H hdN hTN (hS lparams envT' (VEnv.addConstList_le hT')
+      fun l h => hlit l (VEnv.ContainsLits.mono hT'le h))
       hRT hSN
       (fun l h => VEnv.ContainsLits.mono hTle (hlit l (VEnv.ContainsLits.mono hT'le h)))
       hj hc₀ (hcL T hTm c hc) (hcleanAll _ ?_) (fun hlet => ?_)
@@ -1518,7 +1662,7 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
     refine ⟨T, _, hT, hr₁, ?_⟩
     have hname : r₀.name = d.recName i := hr₀.1
     rw [← hname]
-    refine restoredRecType (fuel := fuel) henv H hdN hTN hCN hP (hS _ envC' hC'le') hRC hSN
+    refine restoredRecType (fuel := fuel) henv H hdN hTN hCN hP (hS _ envC' hC'le' fun l h => hlit l (VEnv.ContainsLits.mono hC'le h)) hRC hSN
       (fun l h => VEnv.ContainsLits.mono (hTle.trans hCle) (hlit l (VEnv.ContainsLits.mono hC'le h)))
       hT hr₀c (hcleanAll _ ?_) (fun hlet => ?_)
     · exact hrecMem i _ (hname ▸ hr₁) _ (.head _)
@@ -1536,7 +1680,7 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
     simp only [List.getElem_map, VInductDecl.recConsts, List.getElem_zipIdx, Nat.zero_add]
     rw [List.getElem?_eq_getElem (by simpa using h1 : i < recs.length), Option.some.injEq] at hr₁
     rw [hr₁]
-    exact restoreRec_name H ((hS lparams venv VEnv.LE.rfl).ren_eq) hi r₀
+    exact restoreRec_name H ((hS lparams venv VEnv.LE.rfl fun _ h => h).ren_eq) hi r₀
   obtain ⟨envR, hRN⟩ : ∃ envR,
       envC.addConstList (d.restoreNested R ren n ns cname).recConsts = some envR := by
     refine VEnv.exists_addConstList (fun p hp => ?_) ?_
@@ -1573,7 +1717,7 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
       have hname : r₁.name = (d.restoreNested R ren n ns cname).recName i := by
         obtain ⟨_, r₀, _, -, hr₁'', -, e, -, -⟩ := hrecs i hi
         rw [hr₁] at hr₁''; cases hr₁''
-        rw [e]; exact restoreRec_name H ((hS lparams venv VEnv.LE.rfl).ren_eq) hi r₀
+        rw [e]; exact restoreRec_name H ((hS lparams venv VEnv.LE.rfl fun _ h => h).ren_eq) hi r₀
       refine ⟨hname, ⟨?_, hlen, htr⟩, ?_⟩
       · simp [ConstantInfo.safety, ConstantInfo.isUnsafe, ConstantInfo.isPartial]
       · exact VInductDecl.recConsts_WF henv hdN hTN hCN _ (List.mem_map.2 ⟨_,
@@ -1609,11 +1753,11 @@ theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List Indu
     subst e
     rw [← hname] at hrT ⊢
     have hrm := hrecMem i _ (hname ▸ hr₁)
-    refine restoredRec (fuel := fuel) henv H hdN hn0 hns hTN hCN hRN hP (hS _ envR' hR'le) hRR hSN
+    refine restoredRec (fuel := fuel) henv H hdN hn0 hns hTN hCN hRN hP (hS _ envR' hR'le fun l h => hlit l (VEnv.ContainsLits.mono hRle h)) hRR hSN
       (fun l h => VEnv.ContainsLits.mono ((hTle.trans hCle).trans hRNle)
         (hlit l (VEnv.ContainsLits.mono hRle h)))
       (fun l h => VEnv.ContainsLits.mono (VEnv.addConstList_le hR') h)
-      hout hcn hrn hnames hl hT (hra T (List.mem_of_getElem? hT)) ⟨hr₀, hr₀c⟩ hrT
+      hout hcn hnames hl hT (hra T (List.mem_of_getElem? hT)) ⟨hr₀, hr₀c⟩ hrT
       (hM i T r₀ hT hr₀f) (fun rule hrule => hcleanAll _ (hrm _ (.tail _ (List.mem_map.2
         ⟨_, List.mem_map.2 ⟨rule, hrule, rfl⟩, rfl⟩)))) (fun rule hrule hlet => ?_)
     have hmem := hrm _ (.tail _ (List.mem_map.2 ⟨_, List.mem_map.2 ⟨rule, hrule, rfl⟩, rfl⟩))

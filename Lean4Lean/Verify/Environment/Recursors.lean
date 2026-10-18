@@ -51,6 +51,19 @@ theorem majorInductGo_inferImplicit :
         exact majorInductGo_inferImplicit n k body b
     | _ => simp [Expr.inferImplicit]
 
+theorem MajorAt.inferImplicit {I : Name} :
+    ∀ (n : Nat) {k : Nat} {e : Expr} (b : Bool), MajorAt I k e → MajorAt I k (e.inferImplicit n b)
+  | 0, k, e, b, h => by cases e <;> simpa [Expr.inferImplicit] using h
+  | n + 1, k, e, b, h => by
+    cases e with
+    | forallE nm dom body bi =>
+      cases k with
+      | zero => simpa [Expr.inferImplicit, mkForall, MajorAt] using h
+      | succ k =>
+        simp only [Expr.inferImplicit, mkForall, MajorAt] at h ⊢
+        exact MajorAt.inferImplicit n b h
+    | _ => simp [MajorAt] at h
+
 theorem forIn'_list_WF {c : VContext} {β : Type} (I : Nat → β → Nat → Prop) :
     ∀ (l : List Nat) (k : Nat) {f : (a : Nat) → a ∈ l → β → StateT Nat M (ForInStep β)},
     (∀ i (hi : i < l.length), l[i] = k + i) →
@@ -293,6 +306,8 @@ theorem declareRecursors.WF {c₂ c : VContext} {nparams : Nat} {types : List In
           Environment.primitives.contains ci.name → c.allowPrimitive) ∧
         List.Forall₂ (fun v (p : VInductiveType × Nat) => v.name = Lean.mkRecName p.1.name)
           recs d.types.zipIdx ∧
+        List.Forall₂ (fun v (p : VInductiveType × Nat) => MajorAt p.1.name v.getMajorIdx v.type)
+          recs d.types.zipIdx ∧
         ∀ (envC envR : VEnv), c₂.venv ≤ envC → envC.WF →
           (∀ p ∈ d.ctorConsts, envC.constants p.1 = some p.2) →
           envC.addConstList d.recConsts = some envR → envR.WF →
@@ -305,7 +320,7 @@ theorem declareRecursors.WF {c₂ c : VContext} {nparams : Nat} {types : List In
     Lean4Lean.List.Forall₂.length_eq hR.elaborates.types
   -- what each recursor added so far satisfies
   let RecOK (v : RecursorVal) (p : VInductiveType × Nat) : Prop :=
-    v.name = Lean.mkRecName p.1.name ∧
+    v.name = Lean.mkRecName p.1.name ∧ MajorAt p.1.name v.getMajorIdx v.type ∧
     ∀ (envC envR : VEnv), c₂.venv ≤ envC → envC.WF →
       (∀ p ∈ d.ctorConsts, envC.constants p.1 = some p.2) →
       envC.addConstList d.recConsts = some envR → envR.WF →
@@ -379,14 +394,16 @@ theorem declareRecursors.WF {c₂ c : VContext} {nparams : Nat} {types : List In
         rw [getElem!_pos _ i hisz]; exact Array.getElem?_eq_getElem hisz
       have hname : mkRecName types.toArray[i].name = mkRecName d.types[i].name := by
         simp [htT]
-      refine ⟨hname, fun envC envR h1 h2 h3 h4 h5 => ⟨?_, ?_⟩⟩
+      refine ⟨hname, ?_, fun envC envR h1 h2 h3 h4 h5 => ⟨?_, ?_⟩⟩
+      · have := (hR.major i _ _ hTi hinfo).inferImplicit 1000 false
+        simpa [RecursorVal.getMajorIdx, recTypeExpr] using this
       · unfold TrRecVal
         refine ⟨hname.trans (VInductDecl.recName_of_types hTi).symm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
           hK, ?_, by
             rw [VInductDecl.allCtors_of_aux hR.aux]; exact hrules envC envR h1 h2 h3 h4 h5⟩
         · rw [getMajorInduct_eq, majorInductGo_inferImplicit,
             hR.nested _ (List.getElem_mem hit)]
-          simpa [RecursorVal.getMajorIdx, recTypeExpr] using hR.major i _ _ hTi hinfo
+          simpa [RecursorVal.getMajorIdx, recTypeExpr] using (hR.major i _ _ hTi hinfo).go
         · intro hl
           rcases hEu with rfl | ⟨u, rfl, hu⟩
           · exact absurd rfl (hE.1 hl)
@@ -427,8 +444,9 @@ theorem declareRecursors.WF {c₂ c : VContext} {nparams : Nat} {types : List In
       rw [List.take_of_length_le (by simp [hdlen])]
     rw [htk] at hrecs
     exact ⟨recs, hc, hq, hnd, hfr, hpr, Lean4Lean.List.Forall₂.imp (fun _ _ h => h.1) hrecs,
+      Lean4Lean.List.Forall₂.imp (fun _ _ h => h.2.1) hrecs,
       fun envC envR h1 h2 h3 h4 h5 =>
-        Lean4Lean.List.Forall₂.imp (fun _ _ h => h.2 envC envR h1 h2 h3 h4 h5) hrecs⟩
+        Lean4Lean.List.Forall₂.imp (fun _ _ h => h.2.2 envC envR h1 h2 h3 h4 h5) hrecs⟩
 
 
 

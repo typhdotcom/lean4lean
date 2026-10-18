@@ -195,6 +195,48 @@ theorem AddInductive.stripAnnotations.WF {env : Environment} {venv : VEnv}
     refine .pure ⟨(Lean.Expr.consumeTypeAnnotations'.eq_5 e h1 h2 h3 h4).symm, ?_⟩
     rw [VEnv.StripOK.eq_5 venv e h1 h2 h3 h4]; trivial
 
+/-- The annotations `consumeTypeAnnotations'` strips from the head of `e` are named by `P`. -/
+def _root_.Lean.Expr.StripHeads (P : Name → Prop) : Expr → Prop
+  | .app (.app (.const ``optParam _) A) _ => P ``optParam ∧ A.StripHeads P
+  | .app (.app (.const ``autoParam _) A) _ => P ``autoParam ∧ A.StripHeads P
+  | .app (.const ``outParam _) A => P ``outParam ∧ A.StripHeads P
+  | .app (.const ``semiOutParam _) A => P ``semiOutParam ∧ A.StripHeads P
+  | _ => True
+
+theorem _root_.Lean.Expr.StripHeads.true (e : Expr) : e.StripHeads fun _ => True := by
+  induction e using Lean.Expr.consumeTypeAnnotations'.induct with
+  | case1 _ A _ ih | case2 _ A _ ih | case3 _ A ih | case4 _ A ih =>
+    simp only [Lean.Expr.StripHeads]; exact ⟨trivial, ih⟩
+  | case5 e h1 h2 h3 h4 => rw [Lean.Expr.StripHeads.eq_5 _ e h1 h2 h3 h4]; trivial
+
+theorem _root_.Lean.Expr.StripHeads.mono {P Q : Name → Prop} (h : ∀ n, P n → Q n) {e : Expr}
+    (H : e.StripHeads P) : e.StripHeads Q := by
+  induction e using Lean.Expr.consumeTypeAnnotations'.induct with
+  | case1 _ A _ ih | case2 _ A _ ih | case3 _ A ih | case4 _ A ih =>
+    simp only [Lean.Expr.StripHeads] at H ⊢; exact ⟨h _ H.1, ih H.2⟩
+  | case5 e h1 h2 h3 h4 => rw [Lean.Expr.StripHeads.eq_5 _ e h1 h2 h3 h4]; trivial
+
+/-- Stripping succeeds only where the environment defines each annotation it strips. -/
+theorem AddInductive.stripAnnotations_heads {env : Environment} :
+    ∀ {e r : Expr}, stripAnnotations env e = .ok r →
+      e.StripHeads fun n => ∃ v, env.find? n = some (.defnInfo v) := by
+  have hc {n k} (h : checkTypeAnnotation env n k = .ok ()) :
+      ∃ v, env.find? n = some (.defnInfo v) := by
+    unfold checkTypeAnnotation at h
+    split at h <;> [skip; cases h]
+    rename_i v _ hv
+    exact ⟨_, hv⟩
+  intro e
+  induction e using Lean.Expr.consumeTypeAnnotations'.induct with
+  | case1 _ A _ ih | case2 _ A _ ih | case3 _ A ih | case4 _ A ih =>
+    intro r h
+    simp only [stripAnnotations, bind, Except.bind] at h
+    split at h <;> [cases h; skip]
+    rename_i u hu
+    simp only [Lean.Expr.StripHeads]
+    exact ⟨hc hu, ih h⟩
+  | case5 e h1 h2 h3 h4 => intros; rw [Lean.Expr.StripHeads.eq_5 _ e h1 h2 h3 h4]; trivial
+
 open private Lean.Kernel.Environment.add from Lean.Environment
 
 /-- Adding constants one by one, each after `checkName`: the names are fresh and distinct, and
@@ -230,23 +272,26 @@ theorem addChecked.WF {env : Environment} (mapWF : env.constants.WF) (allow : Bo
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ) in
 /-- Stripping type annotations the kernel checked does not change a translation, up to defeq. -/
-theorem TrExprS.consumeTypeAnnotations' {e e'} (hok : env.StripOK e) (H : TrExprS env Us Δ e e') :
+theorem TrExprS.consumeTypeAnnotations' {e e'} (hok : env.StripOK e) (H : TrExprS env Us Δ e e')
+    {P : Name → Prop} (hP : e.StripHeads P) :
     ∃ e'', TrExprS env Us Δ e.consumeTypeAnnotations' e'' ∧
-      env.IsDefEqU Us.length Δ.toCtx e' e'' ∧ e'.StripsTo e'' := by
+      env.IsDefEqU Us.length Δ.toCtx e' e'' ∧ e'.StripsToBy P e'' := by
   have hΓ := hΔ.toCtx
   induction e using Lean.Expr.consumeTypeAnnotations'.induct generalizing e' with
   | case1 _ A _ ih | case2 _ A _ ih =>
     cases H with | app h1 h2 hf _ => cases hf with | app _ _ hc hA => cases hc with | const =>
     have := hok.1 _ _ _ [_, _] hΓ rfl ⟨_, h1.app h2⟩
-    obtain ⟨A'', h3, h4, h5⟩ := ih hok.2 hA
+    simp only [Lean.Expr.StripHeads] at hP
+    obtain ⟨A'', h3, h4, h5⟩ := ih hok.2 hA hP.2
     refine ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
-      this.trans henv hΓ (by simpa using h4), .app2 (by simp) h5⟩
+      this.trans henv hΓ (by simpa using h4), .app2 (by simp) hP.1 h5⟩
   | case3 _ A ih | case4 _ A ih =>
     cases H with | app h1 h2 hc hA => cases hc with | const =>
     have := hok.1 _ _ _ [_] hΓ rfl ⟨_, h1.app h2⟩
-    obtain ⟨A'', h3, h4, h5⟩ := ih hok.2 hA
+    simp only [Lean.Expr.StripHeads] at hP
+    obtain ⟨A'', h3, h4, h5⟩ := ih hok.2 hA hP.2
     refine ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
-      this.trans henv hΓ (by simpa using h4), .app1 (by simp) h5⟩
+      this.trans henv hΓ (by simpa using h4), .app1 (by simp) hP.1 h5⟩
   | case5 e h1 h2 h3 h4 =>
     refine ⟨e', ?_, H.wf henv.ordered hΔ, .refl⟩
     unfold Lean.Expr.consumeTypeAnnotations'

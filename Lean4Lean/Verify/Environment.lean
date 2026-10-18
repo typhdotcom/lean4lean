@@ -1,4 +1,4 @@
-import Lean4Lean.Verify.Environment.Flat
+import Lean4Lean.Verify.Environment.NestedBranch
 import Lean4Lean.Verify.Environment.Quot
 
 namespace Lean4Lean

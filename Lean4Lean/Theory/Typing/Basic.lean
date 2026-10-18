@@ -47,6 +47,28 @@ inductive VExpr.StripsTo : VExpr → VExpr → Prop
   | app1 {c : Lean.Name} : c = ``outParam ∨ c = ``semiOutParam → StripsTo A e →
     StripsTo (.app (.const c ls) A) e
 
+/-- `StripsTo`, stripping only annotations whose names satisfy `P`. -/
+inductive VExpr.StripsToBy (P : Lean.Name → Prop) : VExpr → VExpr → Prop
+  | refl : StripsToBy P e e
+  | app2 {c : Lean.Name} : c = ``optParam ∨ c = ``autoParam → P c → StripsToBy P A e →
+    StripsToBy P (.app (.app (.const c ls) A) v) e
+  | app1 {c : Lean.Name} : c = ``outParam ∨ c = ``semiOutParam → P c → StripsToBy P A e →
+    StripsToBy P (.app (.const c ls) A) e
+
+theorem VExpr.StripsToBy.toStripsTo {P : Lean.Name → Prop} {e e' : VExpr}
+    (H : e.StripsToBy P e') : e.StripsTo e' := by
+  induction H with
+  | refl => exact .refl
+  | app2 hc _ _ ih => exact .app2 hc ih
+  | app1 hc _ _ ih => exact .app1 hc ih
+
+theorem VExpr.StripsToBy.mono {P Q : Lean.Name → Prop} (h : ∀ c, P c → Q c) {e e' : VExpr}
+    (H : e.StripsToBy P e') : e.StripsToBy Q e' := by
+  induction H with
+  | refl => exact .refl
+  | app2 hc hP _ ih => exact .app2 hc (h _ hP) ih
+  | app1 hc hP _ ih => exact .app1 hc (h _ hP) ih
+
 theorem VExpr.StripsTo.skips {e e' : VExpr} (H : e.StripsTo e') {n k : Nat} (h : e.Skips n k) :
     e'.Skips n k := by
   induction H with

@@ -111,6 +111,102 @@ theorem peel_instantiate1_fvar {x : FVarId} : ∀ {m e k},
 /-- Only the free variables a term mentions, constrained by `P`. -/
 abbrev FVOnly (P : FVarId → Prop) : Supp := ⟨P, fun _ => True, fun _ => True⟩
 
+/-- Detects the constants `f` picks out. -/
+def _root_.Lean4Lean.constP (f : Name → Bool) : Expr → Bool
+  | .const c _ => f c
+  | _ => false
+
+/-! `e.anySub (constP f) = false`: `e` names no constant `f` picks out. Unlike `SuppIn`, it does not
+count the constants a literal expands into. -/
+
+theorem anySub_constP_liftLooseBVars {f : Name → Bool} :
+    ∀ {e : Expr} {s d}, (e.liftLooseBVars' s d).anySub (constP f) = e.anySub (constP f) := by
+  intro e; induction e <;> intros <;> simp_all [Expr.liftLooseBVars', Expr.anySub, constP]
+
+theorem anySub_constP_instantiate1 {f : Name → Bool} {a : Expr}
+    (ha : a.anySub (constP f) = false) :
+    ∀ {e : Expr} {d}, e.anySub (constP f) = false →
+      (e.instantiate1' a d).anySub (constP f) = false := by
+  intro e; induction e <;> intros <;> simp_all [Expr.instantiate1', Expr.anySub, constP]
+  split <;> [simp [Expr.anySub, constP]; split <;>
+    simp [Expr.anySub, constP, anySub_constP_liftLooseBVars, ha]]
+
+theorem anySub_constP_instantiate' {f : Name → Bool} {as : List Expr}
+    (ha : ∀ a ∈ as, a.anySub (constP f) = false) :
+    ∀ {e : Expr} {d}, e.anySub (constP f) = false →
+      (e.instantiate' as d).anySub (constP f) = false := by
+  intro e; induction e <;> intros <;> simp_all [Expr.instantiate', Expr.anySub, constP]
+  split
+  · simp [Expr.anySub, constP]
+  · split
+    · rw [anySub_constP_liftLooseBVars]; exact ha _ (List.getElem_mem _)
+    · simp [Expr.anySub, constP]
+
+theorem anySub_constP_instantiateRevRange {f : Name → Bool} {as : Array Expr} {i j : Nat}
+    (ha : ∀ a ∈ as, a.anySub (constP f) = false) {e : Expr}
+    (he : e.anySub (constP f) = false) :
+    (e.instantiateRevRange i j as).anySub (constP f) = false := by
+  rw [Expr.instantiateRevRange_eq, Expr.instantiateRev_eq, Expr.instantiate_eq']
+  refine anySub_constP_instantiate' (fun a h => ha a ?_) he
+  have h' : a ∈ (as.extract i j).reverse := Array.mem_def.2 h
+  exact Array.mem_def.2 (List.mem_of_mem_drop (List.mem_of_mem_take
+    (by rw [Array.mem_reverse, Array.mem_def, Array.toList_extract] at h'; exact h')))
+
+theorem anySub_constP_abstract1 {f : Name → Bool} {v : FVarId} :
+    ∀ {e : Expr} {k}, (e.abstract1 v k).anySub (constP f) = e.anySub (constP f) := by
+  intro e; induction e <;> intros <;> simp_all [Expr.abstract1, Expr.anySub, constP]
+  split <;> simp [Expr.anySub, constP]
+
+theorem anySub_constP_abstractList {f : Name → Bool} :
+    ∀ {vs : List FVarId} {e : Expr} {k},
+      (e.abstractList vs k).anySub (constP f) = e.anySub (constP f)
+  | [], _, _ => rfl
+  | _ :: vs, e, k => by
+    simp only [Expr.abstractList]; rw [anySub_constP_abstractList (vs := vs), anySub_constP_abstract1]
+
+theorem anySub_constP_instantiateLevelParams {f : Name → Bool} {e : Expr} {ps ls} :
+    (e.instantiateLevelParams ps ls).anySub (constP f) = e.anySub (constP f) := by
+  rw [Expr.instantiateLevelParams_eq]
+  generalize (!ps.isEmpty && !ls.isEmpty) = red
+  induction e <;> simp_all [Expr.instantiateLevelParamsCore', Expr.anySub, constP]
+
+theorem anySub_constP_appList {f : Name → Bool} {g : Expr} :
+    ∀ {es : List Expr}, (g.mkAppList es).anySub (constP f) = false ↔
+      g.anySub (constP f) = false ∧ ∀ e ∈ es, e.anySub (constP f) = false
+  | [] => by simp [Expr.mkAppList]
+  | e :: es => by
+    rw [Expr.mkAppList, anySub_constP_appList]
+    simp [Expr.anySub, constP, and_assoc]
+
+theorem anySub_constP_app {f : Name → Bool} {g a : Expr} :
+    (Expr.app g a).anySub (constP f) = false ↔
+      g.anySub (constP f) = false ∧ a.anySub (constP f) = false := by
+  simp [Expr.anySub, constP]
+
+theorem anySub_constP_lam {f : Name → Bool} {n t b bi} :
+    (Expr.lam n t b bi).anySub (constP f) = false ↔
+      t.anySub (constP f) = false ∧ b.anySub (constP f) = false := by
+  simp [Expr.anySub, constP]
+
+theorem anySub_constP_forallE {f : Name → Bool} {n t b bi} :
+    (Expr.forallE n t b bi).anySub (constP f) = false ↔
+      t.anySub (constP f) = false ∧ b.anySub (constP f) = false := by
+  simp [Expr.anySub, constP]
+
+theorem anySub_constP_letE {f : Name → Bool} {n t v b nd} :
+    (Expr.letE n t v b nd).anySub (constP f) = false ↔
+      t.anySub (constP f) = false ∧ v.anySub (constP f) = false ∧
+        b.anySub (constP f) = false := by
+  simp [Expr.anySub, constP, and_assoc]
+
+theorem anySub_constP_mdata {f : Name → Bool} {b : Expr} {m} :
+    (Expr.mdata m b).anySub (constP f) = false ↔ b.anySub (constP f) = false := by
+  simp [Expr.anySub, constP]
+
+theorem anySub_constP_proj {f : Name → Bool} {b : Expr} {s i} :
+    (Expr.proj s i b).anySub (constP f) = false ↔ b.anySub (constP f) = false := by
+  simp [Expr.anySub, constP]
+
 theorem abstract_instantiate1 {x : FVarId} {e : Expr} {k}
     (h : e.SuppIn (FVOnly (· ≠ x))) : (Expr.instantiate1' e (.fvar x) k).abstract1 x k = e := by
   induction e generalizing k with simp_all [Expr.instantiate1', Expr.abstract1, Expr.SuppIn]
@@ -270,6 +366,159 @@ theorem Opens.mkForall {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') (
     rw [Nat.zero_add] at e
     rw [setBody_abstract1 hps hb, Nat.zero_add, e, Expr.abstract'_nil]
 
+/-! ### Metavariables
+
+`FVarsIn (fun _ => True)` says a term has no metavariables, which `run` keeps of what it records. -/
+
+theorem _root_.Lean.Level.hasMVar'_mkLevelMax' {u v : Level} (hu : u.hasMVar' = false)
+    (hv : v.hasMVar' = false) : (mkLevelMax' u v).hasMVar' = false := by
+  let subsumes (u v : Level) : Bool :=
+    if v.isExplicit && u.getOffset ≥ v.getOffset then true
+    else match u with
+      | Level.max u₁ u₂ => v == u₁ || v == u₂
+      | _ => false
+  let mkLevelMaxCore (u v : Level) :=
+    if u == v then u
+    else if u.isZero then v
+    else if v.isZero then u
+    else if subsumes u v then u
+    else if subsumes v u then v
+    else if u.getLevelOffset == v.getLevelOffset then
+      if u.getOffset ≥ v.getOffset then u else v
+    else
+      .max u v
+  change (mkLevelMaxCore u v).hasMVar' = false
+  simp only [mkLevelMaxCore]
+  repeat' split
+  all_goals first | exact hu | exact hv | simp [Level.hasMVar', hu, hv]
+
+theorem _root_.Lean.Level.hasMVar'_mkLevelIMax' {u v : Level} (hu : u.hasMVar' = false)
+    (hv : v.hasMVar' = false) : (mkLevelIMax' u v).hasMVar' = false := by
+  let mkLevelIMaxCore (u v : Level) :=
+    if v.isNeverZero then _root_.Lean.mkLevelMax' u v
+    else if v.isZero then v
+    else if u.isZero then v
+    else if u == v then u
+    else Level.imax u v
+  change (mkLevelIMaxCore u v).hasMVar' = false
+  simp only [mkLevelIMaxCore]
+  repeat' split
+  all_goals first | exact hu | exact hv | simp [Level.hasMVar', hu, hv] |
+    exact Level.hasMVar'_mkLevelMax' hu hv
+
+theorem level_hasMVar'_substParams' {s : Name → Level}
+    (hs : ∀ x, (s x).hasMVar' = false) :
+    ∀ {l : Level} {red}, l.hasMVar' = false → (l.substParams' s red).hasMVar' = false
+  | .zero, _, _ => rfl
+  | .mvar _, _, h => h
+  | .succ l, _, h => level_hasMVar'_substParams' (l := l) hs h
+  | .max a b, red, h => by
+    simp only [Level.hasMVar', Bool.or_eq_false_iff] at h
+    simp only [Level.substParams']; split
+    · exact Level.hasMVar'_mkLevelMax' (level_hasMVar'_substParams' hs h.1)
+        (level_hasMVar'_substParams' hs h.2)
+    · simp [Level.hasMVar', level_hasMVar'_substParams' hs h.1, level_hasMVar'_substParams' hs h.2]
+  | .imax a b, red, h => by
+    simp only [Level.hasMVar', Bool.or_eq_false_iff] at h
+    simp only [Level.substParams']; split
+    · exact Level.hasMVar'_mkLevelIMax' (level_hasMVar'_substParams' hs h.1)
+        (level_hasMVar'_substParams' hs h.2)
+    · simp [Level.hasMVar', level_hasMVar'_substParams' hs h.1, level_hasMVar'_substParams' hs h.2]
+  | .param n, _, _ => hs n
+
+theorem fvarsIn_instantiateLevelParams {P : FVarId → Prop} {e : Expr} {ps : List Name}
+    {ls : List Level} (h : e.FVarsIn P) (hls : ∀ l ∈ ls, l.hasMVar' = false) :
+    (e.instantiateLevelParams ps ls).FVarsIn P := by
+  rw [Expr.instantiateLevelParams_eq]
+  generalize (!ps.isEmpty && !ls.isEmpty) = red
+  have hs : ∀ x, (((ps.idxOf? x).bind (ls[·]?)).getD (.param x)).hasMVar' = false := by
+    intro x
+    cases h : ps.idxOf? x with
+    | none => rfl
+    | some i =>
+      cases h' : ls[i]? with
+      | none => simp [h', Level.hasMVar']
+      | some l => simpa [h'] using hls l (List.mem_of_getElem? h')
+  induction e <;> simp_all [Expr.instantiateLevelParamsCore', FVarsIn]
+  · exact level_hasMVar'_substParams' hs h
+  · exact fun u hu => level_hasMVar'_substParams' hs (h u hu)
+
+theorem fvarsIn_instantiate' {P : FVarId → Prop} {as : List Expr} (ha : ∀ a ∈ as, a.FVarsIn P) :
+    ∀ {e : Expr} {d}, e.FVarsIn P → (e.instantiate' as d).FVarsIn P := by
+  intro e; induction e <;> intros <;> simp_all [FVarsIn, Expr.instantiate']
+  split
+  · simp [FVarsIn]
+  · split
+    · exact (ha _ (List.getElem_mem _)).liftLooseBVars
+    · simp [FVarsIn]
+
+theorem fvarsIn_instantiateRevRange {P : FVarId → Prop} {e : Expr} {as : Array Expr} {i j : Nat}
+    (ha : ∀ a ∈ as, a.FVarsIn P) (h : e.FVarsIn P) :
+    (e.instantiateRevRange i j as).FVarsIn P := by
+  rw [Expr.instantiateRevRange_eq, Expr.instantiateRev_eq, Expr.instantiate_eq']
+  refine fvarsIn_instantiate' (fun a h => ha a ?_) h
+  simp only [Array.toList_reverse, List.mem_reverse, Array.mem_toList_iff] at h
+  exact Array.mem_def.2 (List.mem_of_mem_drop (List.mem_of_mem_take
+    (by rwa [Array.mem_def, Array.toList_extract] at h)))
+
+theorem fvarsIn_abstract' {P : FVarId → Prop} {vs : List FVarId} : ∀ {e : Expr} {k},
+    e.FVarsIn (fun x => P x ∨ x ∈ vs) → (e.abstract' vs k).FVarsIn P := by
+  intro e; induction e <;> intros <;> simp_all [FVarsIn, Expr.abstract']
+  rename_i v _ h
+  split
+  · simp [FVarsIn]
+  · rename_i hv; refine h.resolve_right fun hm => ?_
+    rw [List.idxOf?_eq_none_iff] at hv; exact hv (List.mem_reverse.2 hm)
+
+theorem fvarsIn_abstractList {P : FVarId → Prop} :
+    ∀ {vs : List FVarId} {e : Expr} {k}, e.FVarsIn P → (e.abstractList vs k).FVarsIn P
+  | [], _, _, h => h
+  | _ :: vs, _, _, h => fvarsIn_abstractList (vs := vs) h.abstract1
+
+theorem fvarsIn_peel {P : FVarId → Prop} : ∀ {m e B}, peel m e = some B → e.FVarsIn P →
+    B.FVarsIn P
+  | 0, _, _, h, he => by cases h; exact he
+  | m + 1, .forallE .., _, h, he => fvarsIn_peel (m := m) h he.2
+  | _ + 1, .bvar .., _, h, _ | _ + 1, .fvar .., _, h, _ | _ + 1, .mvar .., _, h, _
+  | _ + 1, .sort .., _, h, _ | _ + 1, .const .., _, h, _ | _ + 1, .app .., _, h, _
+  | _ + 1, .lam .., _, h, _ | _ + 1, .letE .., _, h, _ | _ + 1, .lit .., _, h, _
+  | _ + 1, .mdata .., _, h, _ | _ + 1, .proj .., _, h, _ => by simp [peel] at h
+
+theorem fvarsIn_setBody {P : FVarId → Prop} {b : Expr} (hb : b.FVarsIn P) :
+    ∀ {n e}, e.FVarsIn P → (setBody n e b).FVarsIn P
+  | 0, _, _ => hb
+  | n + 1, .forallE .., h => ⟨h.1, fvarsIn_setBody hb (n := n) h.2⟩
+  | _ + 1, .bvar .., h | _ + 1, .fvar .., h | _ + 1, .mvar .., h | _ + 1, .sort .., h
+  | _ + 1, .const .., h | _ + 1, .app .., h | _ + 1, .lam .., h | _ + 1, .letE .., h
+  | _ + 1, .lit .., h | _ + 1, .mdata .., h | _ + 1, .proj .., h => h
+
+theorem fvarsIn_mkAppList {P : FVarId → Prop} :
+    ∀ {f : Expr} {as : List Expr}, (f.mkAppList as).FVarsIn P ↔ f.FVarsIn P ∧ ∀ a ∈ as, a.FVarsIn P
+  | f, [] => by simp
+  | f, a :: as => by
+    rw [Expr.mkAppList, fvarsIn_mkAppList]
+    simp [FVarsIn, and_assoc]
+
+/-- No metavariables, and free variables only where `SuppIn` allows them. -/
+theorem fvarsIn_of_suppIn {P : FVarId → Prop} : ∀ {e : Expr}, e.SuppIn (FVOnly P) →
+    e.FVarsIn (fun _ => True) → e.FVarsIn P
+  | .bvar _, _, _ | .lit _, _, _ => trivial
+  | .mvar _, _, h | .sort _, _, h | .const .., _, h => h
+  | .fvar _, h, _ => h
+  | .app .., h1, h2 | .lam .., h1, h2 | .forallE .., h1, h2 =>
+    ⟨fvarsIn_of_suppIn h1.1 h2.1, fvarsIn_of_suppIn h1.2 h2.2⟩
+  | .letE .., h1, h2 =>
+    ⟨fvarsIn_of_suppIn h1.1 h2.1, fvarsIn_of_suppIn h1.2.1 h2.2.1, fvarsIn_of_suppIn h1.2.2 h2.2.2⟩
+  | .mdata _ e, h1, h2 | .proj _ _ e, h1, h2 => fvarsIn_of_suppIn (e := e) h1 h2
+
+theorem Opens.fvarsIn_true {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') :
+    ty.FVarsIn (fun _ => True) → ty'.FVarsIn (fun _ => True) := by
+  induction H with
+  | nil => exact id
+  | cons _ ih =>
+    intro h
+    exact ih (by rw [Expr.instantiate1_eq]; exact FVarsIn.instantiate1 h.2 trivial)
+
 /-! ### Hoare triples -/
 
 /-- Run from a state satisfying `P`, `x` ends in one satisfying `Q` of its result. -/
@@ -381,13 +630,16 @@ theorem replaceParams_eq {params As : Array Expr} (h : As.size = params.size) (e
 
 /-- The auxiliary type `T` that `replaceIfNested` creates, under the key `K`, while processing a
 constructor opened at `As` in `lctx`: the earlier type `J` of the occurrence, its first `nI`
-arguments being its parameters, instantiated at the occurrence's levels and parameters. -/
-def Created (env : Environment) (lctx : LocalContext) (params As : Array Expr) (K : Expr)
+arguments being its parameters, instantiated at the occurrence's levels and parameters. The
+occurrence is part of `B`, so its arguments name no constant `B` does not. -/
+def Created (env : Environment) (lctx : LocalContext) (params As : Array Expr) (B K : Expr)
     (T : InductiveType) : Prop :=
   ∃ J Ls args nI Jv v, K = replaceParamsVal params (mkAppRange (.const J Ls) 0 nI args) As ∧
     env.find? J = some (.inductInfo Jv) ∧ nI ≤ args.size ∧
     (∀ i < nI, ∀ a, args[i]? = some a → a.looseBVarRange' = 0) ∧
     (∀ a ∈ args, a.SuppIn (FVOnly (.fvar · ∈ As))) ∧
+    (∀ a ∈ args, a.FVarsIn fun _ => True) ∧ (∀ l ∈ Ls, l.hasMVar' = false) ∧
+    (∀ f : Name → Bool, B.anySub (constP f) = false → ∀ a ∈ args, a.anySub (constP f) = false) ∧
     instantiateForallParams (Jv.type.instantiateLevelParams Jv.levelParams Ls) nI args = .ok v ∧
     T.type = lctx.mkForall As v ∧ env.contains T.name = false ∧
     List.Forall₂ (fun Jc c => c.name = Jc.replacePrefix J T.name ∧ ∃ ci v', env.find? Jc = some ci ∧
@@ -396,21 +648,35 @@ def Created (env : Environment) (lctx : LocalContext) (params As : Array Expr) (
       Jv.ctors T.ctors ∧
     ∃ I Iv, env.find? I = some (.inductInfo Iv) ∧ J ∈ Iv.all ∧ nI = Iv.numParams
 
+theorem Created.mono {env lctx params As B B' K T}
+    (H : Created env lctx params As B K T)
+    (h : ∀ f : Name → Bool, B'.anySub (constP f) = false → B.anySub (constP f) = false) :
+    Created env lctx params As B' K T :=
+  let ⟨J, Ls, args, nI, Jv, v, h1, h2, h3, h4, h5, h6, h7, h8, rest⟩ := H
+  ⟨J, Ls, args, nI, Jv, v, h1, h2, h3, h4, h5, h6, h7, fun f hB => h8 f (h f hB), rest⟩
+
 /-- `s'` is `s` with auxiliary types added that were created while processing a constructor
-opened at `As` in `lctx`. -/
-def Extends (env : Environment) (lctx : LocalContext) (params As : Array Expr) (s s' : State) :
-    Prop :=
+opened at `As` in `lctx`, at occurrences in `B`. -/
+def Extends (env : Environment) (lctx : LocalContext) (params As : Array Expr) (B : Expr)
+    (s s' : State) : Prop :=
   s'.lvls = s.lvls ∧ s'.ngen = s.ngen ∧ ∃ new : List ((Expr × Name) × InductiveType),
     s'.nestedAux.toList = s.nestedAux.toList ++ new.map (·.1) ∧
     s'.newTypes.toList = s.newTypes.toList ++ new.map (·.2) ∧
-    ∀ p ∈ new, p.2.name = p.1.2 ∧ Created env lctx params As p.1.1 p.2
+    ∀ p ∈ new, p.2.name = p.1.2 ∧ Created env lctx params As B p.1.1 p.2
 
-theorem Extends.refl {env lctx params As} {s : State} : Extends env lctx params As s s :=
+theorem Extends.refl {env lctx params As B} {s : State} : Extends env lctx params As B s s :=
   ⟨rfl, rfl, [], by simp, by simp, nofun⟩
 
-theorem Extends.trans {env lctx params As} {s₁ s₂ s₃ : State}
-    (h₁ : Extends env lctx params As s₁ s₂) (h₂ : Extends env lctx params As s₂ s₃) :
-    Extends env lctx params As s₁ s₃ := by
+theorem Extends.mono {env lctx params As B B'} {s s' : State}
+    (H : Extends env lctx params As B s s')
+    (h : ∀ f : Name → Bool, B'.anySub (constP f) = false → B.anySub (constP f) = false) :
+    Extends env lctx params As B' s s' :=
+  let ⟨a, b, new, c, d, e⟩ := H
+  ⟨a, b, new, c, d, fun p hp => ⟨(e p hp).1, (e p hp).2.mono h⟩⟩
+
+theorem Extends.trans {env lctx params As B} {s₁ s₂ s₃ : State}
+    (h₁ : Extends env lctx params As B s₁ s₂) (h₂ : Extends env lctx params As B s₂ s₃) :
+    Extends env lctx params As B s₁ s₃ := by
   obtain ⟨a1, b1, n1, c1, d1, e1⟩ := h₁
   obtain ⟨a2, b2, n2, c2, d2, e2⟩ := h₂
   refine ⟨a2.trans a1, b2.trans b1, n1 ++ n2, by simp [c1, c2], by simp [d1, d2], ?_⟩
@@ -418,7 +684,7 @@ theorem Extends.trans {env lctx params As} {s₁ s₂ s₃ : State}
   · exact e1 p h
   · exact e2 p h
 
-theorem Extends.sub {env lctx params As} {s s' : State} (h : Extends env lctx params As s s') :
+theorem Extends.sub {env lctx params As B} {s s' : State} (h : Extends env lctx params As B s s') :
     s.nestedAux.toList ⊆ s'.nestedAux.toList := by
   obtain ⟨-, -, _, h, -⟩ := h; rw [h]; exact List.subset_append_left _ _
 
@@ -577,9 +843,10 @@ theorem mkAppN_eq_mkAppList (f : Expr) (args : Array Expr) :
   rw [Expr.mkAppList_eq_foldl, Array.foldl_toList]; rfl
 
 theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params As : Array Expr}
-    (hAs : As.size = params.size) {e : Expr} (hfv : e.SuppIn (FVOnly (.fvar · ∈ As))) {s r s'}
+    (hAs : As.size = params.size) {e : Expr} (hfv : e.SuppIn (FVOnly (.fvar · ∈ As)))
+    (hmv : e.FVarsIn fun _ => True) {s r s'}
     (h : replaceIfNested lctx params As e env s = .ok (r, s')) :
-    Extends env lctx params As s s' ∧
+    Extends env lctx params As e s s' ∧
       ∀ Y, r = some Y → NodeRep s'.nestedAux.toList s.lvls params As e Y := by
   unfold replaceIfNested at h
   obtain ⟨r₀, s₁, h1, h⟩ := bind_ok h
@@ -592,6 +859,9 @@ theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params A
   dsimp only at h
   have he : e = mkAppN (.const fn ls) e.getAppArgs := by
     rw [mkAppN_eq_mkAppList, ← hfn, Expr.getAppArgs_toList, Expr.mkAppList_getAppArgsList]
+  have hmv' : (Expr.const fn ls).FVarsIn (fun _ => True) ∧
+      ∀ a ∈ e.getAppArgs.toList, a.FVarsIn fun _ => True := by
+    rw [← fvarsIn_mkAppList, ← mkAppN_eq_mkAppList, ← he]; exact hmv
   rw [if_pos hle] at h
   obtain ⟨Ip, s₂, h2, h⟩ := bind_ok h
   rw [replaceParams_eq hAs] at h2; cases h2
@@ -604,7 +874,7 @@ theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params A
     obtain ⟨res, s₅, h5, h⟩ := bind_ok h
     -- what the loop over the earlier type's block keeps
     let LI (result : Option Expr) (st : State) : Prop :=
-      Extends env lctx params As s₁ st ∧
+      Extends env lctx params As e s₁ st ∧
         ∀ Y, result = some Y → NodeRep st.nestedAux.toList s₁.lvls params As e Y
     have hloop : LI res s₅ := by
       refine Triple.forIn_list (I := LI) ?_ s₁ res s₅ h5 ⟨.refl, nofun⟩
@@ -641,7 +911,7 @@ theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params A
                   e.getAppArgs.size e.getAppArgs)) :
               LI (stepVal x) st' := by
             subst hst hs hs₁₂
-            have hE' : Extends env lctx params As st
+            have hE' : Extends env lctx params As e st
                 { s₇ with nestedAux := s₇.nestedAux.push (K, auxJ), newTypes := s₇.newTypes.push T₀ } := by
               refine ⟨hl7, hg7, [((K, auxJ), T₀)], by simp [hn7], by simp [ht7], ?_⟩
               simp only [List.mem_singleton]
@@ -649,7 +919,11 @@ theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params A
               subst hT₀ hK
               exact ⟨rfl, J_name, ls, e.getAppArgs, I_val.numParams, J_info, v, rfl, get_ok hg, hle,
                 fun i hi a ha => by have := hlb i hi; rwa [getElem!_def, ha] at this,
-                hfv.getAppArgs, hv, rfl, hfresh, hcs, fn, I_val, hci, hJmem, rfl⟩
+                hfv.getAppArgs, fun a ha => hmv'.2 a (Array.mem_toList_iff.2 ha), hmv'.1,
+                fun f hB a ha => by
+                  rw [he, mkAppN_eq_mkAppList, anySub_constP_appList] at hB
+                  exact hB.2 a (Array.mem_toList_iff.2 ha), hv, rfl,
+                hfresh, hcs, fn, I_val, hci, hJmem, rfl⟩
             refine ⟨hE.trans hE', fun Y hYr => ?_⟩
             have hsub := hE'.sub
             rcases hres Y hYr with hY' | ⟨rfl, rfl⟩
@@ -715,55 +989,55 @@ theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params A
 
 theorem replaceAllNested_spec {env : Environment} {lctx : LocalContext} {params As : Array Expr}
     (hAs : As.size = params.size) : ∀ (e : Expr) {s Y s'},
-    e.SuppIn (FVOnly (.fvar · ∈ As)) →
+    e.SuppIn (FVOnly (.fvar · ∈ As)) → e.FVarsIn (fun _ => True) →
     replaceAllNested lctx params As e env s = .ok (Y, s') →
-    Extends env lctx params As s s' ∧
+    Extends env lctx params As e s s' ∧
       Replaced (NodeRep s'.nestedAux.toList s.lvls params As) e Y := by
   intro e
   unfold replaceAllNested Expr.replaceM
   induction e with
   | bvar | fvar | mvar | sort | const | lit =>
-    intro s Y s' hfv h
+    intro s Y s' hfv hmv h
     unfold Expr.replaceNoCacheT at h
     obtain ⟨r, s₁, hf, h⟩ := bind_ok h
-    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hf
+    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hmv hf
     cases r with
     | some Y' => cases h; exact ⟨E, .node (hr _ rfl)⟩
     | none => cases h; exact ⟨E, .refl⟩
   | app f a ih1 ih2 =>
-    intro s Y s' hfv h
+    intro s Y s' hfv hmv h
     unfold Expr.replaceNoCacheT at h
     obtain ⟨r, s₁, hf, h⟩ := bind_ok h
-    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hf
+    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hmv hf
     cases r with
     | some Y' => cases h; exact ⟨E, .node (hr _ rfl)⟩
     | none =>
       obtain ⟨f', s₂, h1, h⟩ := bind_ok h
       obtain ⟨a', s₃, h2, h⟩ := bind_ok h
       cases h
-      obtain ⟨E1, R1⟩ := ih1 hfv.1 h1
-      obtain ⟨E2, R2⟩ := ih2 hfv.2 h2
+      obtain ⟨E1, R1⟩ := ih1 hfv.1 hmv.1 h1
+      obtain ⟨E2, R2⟩ := ih2 hfv.2 hmv.2 h2
       have lv1 := E.1; have lv2 := E1.1
-      refine ⟨E.trans (E1.trans E2), ?_⟩
+      refine ⟨E.trans ((E1.mono (fun _ h => by simp_all [Expr.anySub, constP])).trans (E2.mono (fun _ h => by simp_all [Expr.anySub, constP]))), ?_⟩
       simp only [Expr.updateApp!]
       refine .app (R1.mono fun _ _ h => ?_) (R2.mono fun _ _ h => ?_)
       · rw [lv1] at h; exact h.mono E2.sub
       · rw [lv2, lv1] at h; exact h
   | lam n d b bi ih1 ih2 | forallE n d b bi ih1 ih2 =>
-    intro s Y s' hfv h
+    intro s Y s' hfv hmv h
     unfold Expr.replaceNoCacheT at h
     obtain ⟨r, s₁, hf, h⟩ := bind_ok h
-    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hf
+    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hmv hf
     cases r with
     | some Y' => cases h; exact ⟨E, .node (hr _ rfl)⟩
     | none =>
       obtain ⟨d', s₂, h1, h⟩ := bind_ok h
       obtain ⟨b', s₃, h2, h⟩ := bind_ok h
       cases h
-      obtain ⟨E1, R1⟩ := ih1 hfv.1 h1
-      obtain ⟨E2, R2⟩ := ih2 hfv.2 h2
+      obtain ⟨E1, R1⟩ := ih1 hfv.1 hmv.1 h1
+      obtain ⟨E2, R2⟩ := ih2 hfv.2 hmv.2 h2
       have lv1 := E.1; have lv2 := E1.1
-      refine ⟨E.trans (E1.trans E2), ?_⟩
+      refine ⟨E.trans ((E1.mono (fun _ h => by simp_all [Expr.anySub, constP])).trans (E2.mono (fun _ h => by simp_all [Expr.anySub, constP]))), ?_⟩
       first
       | (simp only [Expr.updateLambdaE!, Expr.updateLambda!]
          refine .lam (R1.mono fun _ _ h => ?_) (R2.mono fun _ _ h => ?_))
@@ -772,10 +1046,10 @@ theorem replaceAllNested_spec {env : Environment} {lctx : LocalContext} {params 
       · rw [lv1] at h; exact h.mono E2.sub
       · rw [lv2, lv1] at h; exact h
   | letE n t v b nd ih1 ih2 ih3 =>
-    intro s Y s' hfv h
+    intro s Y s' hfv hmv h
     unfold Expr.replaceNoCacheT at h
     obtain ⟨r, s₁, hf, h⟩ := bind_ok h
-    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hf
+    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hmv hf
     cases r with
     | some Y' => cases h; exact ⟨E, .node (hr _ rfl)⟩
     | none =>
@@ -783,29 +1057,30 @@ theorem replaceAllNested_spec {env : Environment} {lctx : LocalContext} {params 
       obtain ⟨v', s₃, h2, h⟩ := bind_ok h
       obtain ⟨b', s₄, h3, h⟩ := bind_ok h
       cases h
-      obtain ⟨E1, R1⟩ := ih1 hfv.1 h1
-      obtain ⟨E2, R2⟩ := ih2 hfv.2.1 h2
-      obtain ⟨E3, R3⟩ := ih3 hfv.2.2 h3
+      obtain ⟨E1, R1⟩ := ih1 hfv.1 hmv.1 h1
+      obtain ⟨E2, R2⟩ := ih2 hfv.2.1 hmv.2.1 h2
+      obtain ⟨E3, R3⟩ := ih3 hfv.2.2 hmv.2.2 h3
       have lv1 := E.1; have lv2 := E1.1; have lv3 := E2.1
-      refine ⟨E.trans (E1.trans (E2.trans E3)), ?_⟩
+      refine ⟨E.trans ((E1.mono (fun _ h => by simp_all [Expr.anySub, constP])).trans
+        ((E2.mono (fun _ h => by simp_all [Expr.anySub, constP])).trans (E3.mono (fun _ h => by simp_all [Expr.anySub, constP])))), ?_⟩
       simp only [Expr.updateLet!]
       refine .letE (R1.mono fun _ _ h => ?_) (R2.mono fun _ _ h => ?_) (R3.mono fun _ _ h => ?_)
       · rw [lv1] at h; exact h.mono (E2.sub.trans E3.sub)
       · rw [lv2, lv1] at h; exact h.mono E3.sub
       · rw [lv3, lv2, lv1] at h; exact h
   | mdata m b ih | proj _ _ b ih =>
-    intro s Y s' hfv h
+    intro s Y s' hfv hmv h
     unfold Expr.replaceNoCacheT at h
     obtain ⟨r, s₁, hf, h⟩ := bind_ok h
-    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hf
+    obtain ⟨E, hr⟩ := replaceIfNested_spec hAs hfv hmv hf
     cases r with
     | some Y' => cases h; exact ⟨E, .node (hr _ rfl)⟩
     | none =>
       obtain ⟨b', s₂, h1, h⟩ := bind_ok h
       cases h
-      obtain ⟨E1, R1⟩ := ih hfv h1
+      obtain ⟨E1, R1⟩ := ih hfv hmv h1
       have lv1 := E.1
-      refine ⟨E.trans E1, ?_⟩
+      refine ⟨E.trans (E1.mono (fun _ h => by simp_all [Expr.anySub, constP])), ?_⟩
       first
       | (simp only [Expr.updateMData!]; refine .mdata (R1.mono fun _ _ h => ?_))
       | (simp only [Expr.updateProj!]; refine .proj (R1.mono fun _ _ h => ?_))
@@ -843,10 +1118,11 @@ theorem Opens.suppIn {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') :
 replaced, closed again. -/
 theorem ctorStep_spec {env : Environment} {nparams : Nat} {params : Array Expr} {ctor : Constructor}
     {s c s'} (hP : params.size = nparams) (hc : ctor.type.SuppIn (FVOnly fun _ => False))
+    (hcm : ctor.type.FVarsIn fun _ => True)
     (h : ctorStep nparams params ctor env s = .ok (c, s')) :
     ∃ lctx body Y, Opens {} ctor.type (freshIds s.ngen nparams) lctx body ∧
       body.SuppIn (FVOnly (· ∈ freshIds s.ngen nparams)) ∧
-      Extends env lctx params ((freshIds s.ngen nparams).map .fvar).toArray
+      Extends env lctx params ((freshIds s.ngen nparams).map .fvar).toArray body
         { s with ngen := advance s.ngen nparams } s' ∧
       Replaced (NodeRep s'.nestedAux.toList s.lvls params
         ((freshIds s.ngen nparams).map .fvar).toArray) body Y ∧
@@ -865,7 +1141,7 @@ theorem ctorStep_spec {env : Environment} {nparams : Nat} {params : Array Expr} 
   obtain ⟨E, R⟩ := replaceAllNested_spec (by simp [hP, freshIds_length]) body
     (Expr.SuppIn.mono (S := FVOnly (· ∈ freshIds s.ngen nparams))
       (S' := FVOnly (.fvar · ∈ ((freshIds s.ngen nparams).map Expr.fvar).toArray))
-      ⟨fun x hx => by simpa using hx, fun _ => id, fun _ => id⟩ hfv) h1
+      ⟨fun x hx => by simpa using hx, fun _ => id, fun _ => id⟩ hfv) (ho.fvarsIn_true hcm) h1
   exact ⟨lctx, body, Y, ho, hfv, E, R, rfl, rfl⟩
 
 end Lean4Lean.ElimNestedInductive
@@ -994,6 +1270,15 @@ theorem Opens.mkForall_closed {ty xs lctx body} (H : Opens {} ty xs lctx body) (
         fun _ => True⟩) ⟨fun _ h => Or.inr h, fun _ => id, fun _ => id⟩ hZ)
   · have := abstractList_looseBVarRange (xs := xs) (e := Z); omega
 
+theorem Opens.mkForall_noMVar {ty xs lctx body} (H : Opens {} ty xs lctx body) (hnd : xs.Nodup)
+    (hx : ∀ x ∈ xs, ty.SuppIn (FVOnly (· ≠ x))) (hcl : ty.looseBVarRange' = 0)
+    (hty : ty.FVarsIn fun _ => True) {Z : Expr} (hZ : Z.FVarsIn fun _ => True)
+    (hZc : Z.looseBVarRange' = 0) :
+    (lctx.mkForall (xs.map .fvar).toArray Z).FVarsIn fun _ => True := by
+  have : (xs.map Expr.fvar).toArray = ⟨xs.map .fvar⟩ := rfl
+  rw [this, H.mkForall .nil (fun _ _ => LocalContext.find?_empty) hnd hx hcl Z hZc]
+  exact fvarsIn_setBody (fvarsIn_abstractList hZ) hty
+
 theorem forall₂_mem_right {R : α → β → Prop} :
     ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ → ∀ {b}, b ∈ l₂ → ∃ a ∈ l₁, R a b
   | _, _, .cons h _, _, .head _ => ⟨_, .head _, h⟩
@@ -1003,7 +1288,8 @@ theorem forall₂_mem_right {R : α → β → Prop} :
 environment do. -/
 def EnvClosed (env : Environment) : Prop :=
   ∀ n ci, env.find? n = some ci →
-    ci.type.SuppIn (FVOnly fun _ => False) ∧ ci.type.looseBVarRange' = 0
+    ci.type.SuppIn (FVOnly fun _ => False) ∧ ci.type.looseBVarRange' = 0 ∧
+      ci.type.FVarsIn fun _ => True
 
 theorem instantiateForallParams_suppIn {e : Expr} {hi : Nat} {args : Array Expr} {v}
     {P : FVarId → Prop} (h : instantiateForallParams e hi args = .ok v)
@@ -1015,15 +1301,17 @@ theorem instantiateForallParams_suppIn {e : Expr} {hi : Nat} {args : Array Expr}
 /-- A type with no free or loose variables in its type or its constructors' types. -/
 def TypeClosed (T : InductiveType) : Prop :=
   T.type.SuppIn (FVOnly fun _ => False) ∧ T.type.looseBVarRange' = 0 ∧
-    ∀ c ∈ T.ctors, c.type.SuppIn (FVOnly fun _ => False) ∧ c.type.looseBVarRange' = 0
+    ∀ c ∈ T.ctors, c.type.SuppIn (FVOnly fun _ => False) ∧ c.type.looseBVarRange' = 0 ∧
+      c.type.FVarsIn fun _ => True
 
 /-- The types an auxiliary type is created with mention no free or loose variable. -/
 theorem Created.closed {env : Environment} (henv : EnvClosed env) {cty xs lctx body}
     (H : Opens {} cty xs lctx body) (hnd : xs.Nodup) (hx : ∀ x ∈ xs, cty.SuppIn (FVOnly (· ≠ x)))
-    (hty : cty.SuppIn (FVOnly fun _ => False)) (htc : cty.looseBVarRange' = 0) {params K T₀}
-    (hC : Created env lctx params (xs.map .fvar).toArray K T₀) :
+    (hty : cty.SuppIn (FVOnly fun _ => False)) (htc : cty.looseBVarRange' = 0)
+    (htm : cty.FVarsIn fun _ => True) {params K T₀}
+    {B : Expr} (hC : Created env lctx params (xs.map .fvar).toArray B K T₀) :
     TypeClosed T₀ := by
-  obtain ⟨J, Ls, args, nI, Jv, v, -, hJ, hnI, hlb, hargs, hv, hT, -, hcs, -⟩ := hC
+  obtain ⟨J, Ls, args, nI, Jv, v, -, hJ, hnI, hlb, hargs, hargm, hLs, -, hv, hT, -, hcs, -⟩ := hC
   have hargs' : ∀ a ∈ args, a.SuppIn (FVOnly (· ∈ xs)) := fun a ha =>
     Expr.SuppIn.mono (S := FVOnly (.fvar · ∈ (xs.map Expr.fvar).toArray)) (S' := FVOnly (· ∈ xs))
       ⟨fun _ h => by simpa using h, fun _ => id, fun _ => id⟩ (hargs a ha)
@@ -1054,12 +1342,95 @@ theorem Created.closed {env : Environment} (henv : EnvClosed env) {cty xs lctx b
   have hcons {n : Name} {ci : ConstantInfo} {v'} (h1 : env.find? n = some ci)
       (h2 : instantiateForallParams (ci.type.instantiateLevelParams ci.levelParams Ls) nI args =
         .ok v') :=
-    H.mkForall_closed hnd hx hty htc (hcl (henv _ ci h1).1 h2) (hlc (henv _ ci h1).2 h2)
+    H.mkForall_closed hnd hx hty htc (hcl (henv _ ci h1).1 h2) (hlc (henv _ ci h1).2.1 h2)
+  have hmv {n : Name} {ci : ConstantInfo} {v'} (h1 : env.find? n = some ci)
+      (h2 : instantiateForallParams (ci.type.instantiateLevelParams ci.levelParams Ls) nI args =
+        .ok v') : (lctx.mkForall (xs.map .fvar).toArray v').FVarsIn fun _ => True := by
+    refine H.mkForall_noMVar hnd hx htc htm ?_ (hlc (henv _ ci h1).2.1 h2)
+    obtain ⟨b, hb, rfl⟩ := instantiateForallParams_ok h2
+    exact fvarsIn_instantiateRevRange hargm
+      (fvarsIn_peel hb (fvarsIn_instantiateLevelParams (henv _ ci h1).2.2 hLs))
   refine ⟨hT ▸ (hcons hJ hv).1, hT ▸ (hcons hJ hv).2, fun c hc => ?_⟩
   obtain ⟨Jc, -, ⟨-, ci, v', hci, hv', hct⟩⟩ := forall₂_mem_right hcs hc
-  exact hct ▸ hcons hci hv'
+  exact hct ▸ ⟨(hcons hci hv').1, (hcons hci hv').2, hmv hci hv'⟩
 
 
+
+theorem anySub_constP_peel {f : Name → Bool} : ∀ {m e B}, peel m e = some B →
+    e.anySub (constP f) = false → B.anySub (constP f) = false
+  | 0, _, _, h, he => by cases h; exact he
+  | m + 1, .forallE .., B, h, he => by
+    simp only [Expr.anySub, constP, Bool.or_eq_false_iff] at he
+    exact anySub_constP_peel (m := m) h he.2
+  | _ + 1, .bvar .., _, h, _ | _ + 1, .fvar .., _, h, _ | _ + 1, .mvar .., _, h, _
+  | _ + 1, .sort .., _, h, _ | _ + 1, .const .., _, h, _ | _ + 1, .app .., _, h, _
+  | _ + 1, .lam .., _, h, _ | _ + 1, .letE .., _, h, _ | _ + 1, .lit .., _, h, _
+  | _ + 1, .mdata .., _, h, _ | _ + 1, .proj .., _, h, _ => by simp [ElimNestedInductive.peel] at h
+
+theorem anySub_constP_setBody {f : Name → Bool} {b : Expr} (hb : b.anySub (constP f) = false) :
+    ∀ {n e}, e.anySub (constP f) = false → (setBody n e b).anySub (constP f) = false
+  | 0, _, _ => hb
+  | n + 1, .forallE .., h => by
+    simp only [Expr.anySub, constP, Bool.or_eq_false_iff, setBody] at h ⊢
+    exact ⟨h.1, anySub_constP_setBody hb (n := n) h.2⟩
+  | _ + 1, .bvar .., h | _ + 1, .fvar .., h | _ + 1, .mvar .., h | _ + 1, .sort .., h
+  | _ + 1, .const .., h | _ + 1, .app .., h | _ + 1, .lam .., h | _ + 1, .letE .., h
+  | _ + 1, .lit .., h | _ + 1, .mdata .., h | _ + 1, .proj .., h => h
+
+theorem Opens.anySub_constP {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty')
+    {f : Name → Bool} (h : ty.anySub (constP f) = false) : ty'.anySub (constP f) = false := by
+  induction H with
+  | nil => exact h
+  | cons _ ih =>
+    refine ih ?_
+    rw [Expr.instantiate1_eq]
+    simp only [Expr.anySub, constP, Bool.or_eq_false_iff] at h
+    exact anySub_constP_instantiate1 rfl h.2
+
+theorem instantiateForallParams_closed {e : Expr} {nI : Nat} {args : Array Expr} {v : Expr}
+    (hnI : nI ≤ args.size) (hlb : ∀ i < nI, ∀ a, args[i]? = some a → a.looseBVarRange' = 0)
+    (he : e.looseBVarRange' = 0) (h : instantiateForallParams e nI args = .ok v) :
+    v.looseBVarRange' = 0 := by
+  obtain ⟨b, hb, rfl⟩ := instantiateForallParams_ok h
+  have hb' := peel_looseBVarRange (k := 0) hb (Nat.le_of_eq he)
+  have hex : ∀ a ∈ (args.extract 0 nI).toList, a.looseBVarRange' = 0 := by
+    intro a ha
+    rw [Array.toList_extract] at ha
+    simp [List.extract] at ha
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem ha
+    exact hlb i (by simp at hi; omega) _ (by simp [List.getElem_take])
+  rw [Expr.instantiateRevRange_eq, Expr.instantiateRev_eq_instantiateList
+    (fun a ha => hex a (Array.mem_toList_iff.2 ha))]
+  have := Expr.instantiateList_looseBVarRange (n := 0) (k := 0) (e := b)
+    (as := (args.extract 0 nI).toList.reverse) (by simp; omega)
+    (fun a ha => Nat.le_of_eq (hex a (List.mem_reverse.1 ha)))
+  omega
+
+/-- The constants of `env` name none of those `f` picks out. -/
+def EnvFree (env : Environment) (f : Name → Bool) : Prop :=
+  ∀ n ci, env.find? n = some ci → ci.type.anySub (constP f) = false
+
+/-- An auxiliary type created while processing a constructor of type `cty` names, in its
+constructors, only constants that `env` or `cty` name. -/
+theorem Created.ctors_anySub {env : Environment} (henv : EnvClosed env) {cty xs lctx body}
+    (H : Opens {} cty xs lctx body) (hnd : xs.Nodup) (hx : ∀ x ∈ xs, cty.SuppIn (FVOnly (· ≠ x)))
+    (htc : cty.looseBVarRange' = 0) {params K T₀}
+    (hC : Created env lctx params (xs.map .fvar).toArray body K T₀) {f : Name → Bool}
+    (hfenv : EnvFree env f) (hty : cty.anySub (constP f) = false) :
+    ∀ c ∈ T₀.ctors, c.type.anySub (constP f) = false := by
+  obtain ⟨J, Ls, args, nI, Jv, v, -, hJ, hnI, hlb, -, -, -, hargB, -, -, -, hcs, -⟩ := hC
+  have hargs := hargB f (H.anySub_constP hty)
+  intro c hc
+  obtain ⟨Jc, -, ⟨-, ci, v', hci, hv', hct⟩⟩ := forall₂_mem_right hcs hc
+  have hlc : v'.looseBVarRange' = 0 := instantiateForallParams_closed hnI hlb
+    ((instantiateLevelParams_looseBVarRange _ _ _).trans (henv _ ci hci).2.1) hv'
+  rw [hct, show (xs.map Expr.fvar).toArray = ⟨xs.map .fvar⟩ from rfl,
+    H.mkForall .nil (fun _ _ => LocalContext.find?_empty) hnd hx htc v' hlc]
+  refine anySub_constP_setBody ?_ hty
+  rw [anySub_constP_abstractList]
+  obtain ⟨b, hb, rfl⟩ := instantiateForallParams_ok hv'
+  exact anySub_constP_instantiateRevRange hargs
+    (anySub_constP_peel hb (by rw [anySub_constP_instantiateLevelParams]; exact hfenv _ _ hci))
 
 /-- The auxiliary type `p.2`, recorded under the key `p.1.1` and the name `p.1.2`: created while
 processing a constructor of type `cty`, opened at the fresh variables `xs` in `lctx`. -/
@@ -1068,7 +1439,7 @@ def AuxMade (env : Environment) (params : Array Expr) (nparams : Nat)
   p.2.name = p.1.2 ∧ ∃ cty xs lctx body, Opens {} cty xs lctx body ∧ xs.length = nparams ∧
     xs.Nodup ∧ (∀ x ∈ xs, cty.SuppIn (FVOnly (· ≠ x))) ∧ (∀ x ∈ xs, .fvar x ∉ params) ∧
     cty.SuppIn (FVOnly fun _ => False) ∧ cty.looseBVarRange' = 0 ∧
-    Created env lctx params (xs.map .fvar).toArray p.1.1 p.2
+    Created env lctx params (xs.map .fvar).toArray body p.1.1 p.2
 
 /-- The constructor `c₀` as `run` leaves it: opened at fresh variables `xs`, its nested occurrences
 replaced by auxiliary types recorded in `pairs`, and closed again. -/
@@ -1096,18 +1467,29 @@ theorem TypeDone.mono {pairs pairs' : List (Expr × Name)} {lvls params nparams 
     TypeDone pairs' lvls params nparams T₀ T :=
   ⟨H.1, H.2.1, Lean4Lean.List.Forall₂.imp (fun _ _ H' => H'.mono h) H.2.2⟩
 
-/-- How `run`'s state grows while it processes constructors. -/
-def Grows (env : Environment) (params : Array Expr) (nparams : Nat) (s s' : State) : Prop :=
+/-- How `run`'s state grows while it processes constructors: the auxiliary types it creates name
+no constant `f` picks out when neither `env` nor the constructors (`Src f`) do. -/
+def Grows (env : Environment) (params : Array Expr) (nparams : Nat)
+    (Src : (Name → Bool) → Prop) (s s' : State) : Prop :=
   s'.lvls = s.lvls ∧ s.ngen ≤ s'.ngen ∧ ∃ new : List ((Expr × Name) × InductiveType),
     s'.nestedAux.toList = s.nestedAux.toList ++ new.map (·.1) ∧
     s'.newTypes.toList = s.newTypes.toList ++ new.map (·.2) ∧
-    ∀ p ∈ new, AuxMade env params nparams p ∧ TypeClosed p.2
+    ∀ p ∈ new, AuxMade env params nparams p ∧ TypeClosed p.2 ∧
+      ∀ f, EnvFree env f → Src f → ∀ c ∈ p.2.ctors, c.type.anySub (constP f) = false
 
-theorem Grows.refl {env params nparams} {s : State} : Grows env params nparams s s :=
+theorem Grows.refl {env params nparams Src} {s : State} : Grows env params nparams Src s s :=
   ⟨rfl, NameGenerator.LE.rfl, [], by simp, by simp, nofun⟩
 
-theorem Grows.trans {env params nparams} {s₁ s₂ s₃ : State} (h₁ : Grows env params nparams s₁ s₂)
-    (h₂ : Grows env params nparams s₂ s₃) : Grows env params nparams s₁ s₃ := by
+theorem Grows.mono {env params nparams Src Src'} {s s' : State}
+    (H : Grows env params nparams Src s s') (h : ∀ f, Src' f → Src f) :
+    Grows env params nparams Src' s s' :=
+  let ⟨a, b, new, c, d, e⟩ := H
+  ⟨a, b, new, c, d, fun p hp =>
+    ⟨(e p hp).1, (e p hp).2.1, fun f hf hs => (e p hp).2.2 f hf (h f hs)⟩⟩
+
+theorem Grows.trans {env params nparams Src} {s₁ s₂ s₃ : State}
+    (h₁ : Grows env params nparams Src s₁ s₂)
+    (h₂ : Grows env params nparams Src s₂ s₃) : Grows env params nparams Src s₁ s₃ := by
   obtain ⟨a1, b1, n1, c1, d1, e1⟩ := h₁
   obtain ⟨a2, b2, n2, c2, d2, e2⟩ := h₂
   refine ⟨a2.trans a1, b1.trans b2, n1 ++ n2, by simp [c1, c2], by simp [d1, d2], ?_⟩
@@ -1115,7 +1497,7 @@ theorem Grows.trans {env params nparams} {s₁ s₂ s₃ : State} (h₁ : Grows 
   · exact e1 p h
   · exact e2 p h
 
-theorem Grows.sub {env params nparams} {s s' : State} (h : Grows env params nparams s s') :
+theorem Grows.sub {env params nparams Src} {s s' : State} (h : Grows env params nparams Src s s') :
     s.nestedAux.toList ⊆ s'.nestedAux.toList := by
   obtain ⟨-, -, _, h, -⟩ := h; rw [h]; exact List.subset_append_left _ _
 
@@ -1126,10 +1508,11 @@ def ParamsReserved (g : NameGenerator) (params : Array Expr) : Prop :=
 theorem ctorStep_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat}
     {params : Array Expr} {ctor : Constructor} {s c s'} (hP : params.size = nparams)
     (hpr : ParamsReserved s.ngen params) (hc : ctor.type.SuppIn (FVOnly fun _ => False))
-    (hcl : ctor.type.looseBVarRange' = 0)
+    (hcl : ctor.type.looseBVarRange' = 0) (hcm : ctor.type.FVarsIn fun _ => True)
     (h : ctorStep nparams params ctor env s = .ok (c, s')) :
-    Grows env params nparams s s' ∧ CtorDone s'.nestedAux.toList s.lvls params nparams ctor c := by
-  obtain ⟨lctx, body, Y, ho, hfv, E, R, hn, hty⟩ := ctorStep_spec hP hc h
+    Grows env params nparams (fun f => ctor.type.anySub (constP f) = false) s s' ∧
+      CtorDone s'.nestedAux.toList s.lvls params nparams ctor c := by
+  obtain ⟨lctx, body, Y, ho, hfv, E, R, hn, hty⟩ := ctorStep_spec hP hc hcm h
   have hnd := freshIds_nodup (g := s.ngen) (n := nparams)
   have hx : ∀ x ∈ freshIds s.ngen nparams, ctor.type.SuppIn (FVOnly (· ≠ x)) := fun x _ =>
     Expr.SuppIn.mono (S := FVOnly fun _ => False) (S' := FVOnly (· ≠ x))
@@ -1145,24 +1528,28 @@ theorem ctorStep_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat
   · rw [hg]; exact le_advance
   · obtain ⟨hp1, hp2⟩ := h3 p hp
     exact ⟨⟨hp1, _, _, lctx, body, ho, freshIds_length, hnd, hx, hpx, hc, hcl, hp2⟩,
-      Created.closed henv ho hnd hx hc hcl hp2⟩
+      Created.closed henv ho hnd hx hc hcl hcm hp2,
+      fun f hf hs => Created.ctors_anySub henv ho hnd hx hcl hp2 hf hs⟩
 
 theorem ctors_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat}
     {params : Array Expr} (hP : params.size = nparams) :
     ∀ {cs₀ cs s s'}, Chain env (ctorStep nparams params) cs₀ cs s s' →
       ParamsReserved s.ngen params →
-      (∀ c ∈ cs₀, c.type.SuppIn (FVOnly fun _ => False) ∧ c.type.looseBVarRange' = 0) →
-      Grows env params nparams s s' ∧
+      (∀ c ∈ cs₀, c.type.SuppIn (FVOnly fun _ => False) ∧ c.type.looseBVarRange' = 0 ∧
+        c.type.FVarsIn fun _ => True) →
+      Grows env params nparams (fun f => ∀ c ∈ cs₀, c.type.anySub (constP f) = false) s s' ∧
         List.Forall₂ (CtorDone s'.nestedAux.toList s.lvls params nparams) cs₀ cs := by
   intro cs₀ cs s s' H
   induction H with
   | nil => exact fun _ _ => ⟨.refl, .nil⟩
   | cons h1 _ ih =>
     intro hpr hc
-    obtain ⟨G1, D1⟩ := ctorStep_grows henv hP hpr (hc _ (.head _)).1 (hc _ (.head _)).2 h1
+    obtain ⟨G1, D1⟩ := ctorStep_grows henv hP hpr (hc _ (.head _)).1 (hc _ (.head _)).2.1
+      (hc _ (.head _)).2.2 h1
     obtain ⟨G2, D2⟩ := ih (fun p hp => let ⟨x, h, hr⟩ := hpr p hp; ⟨x, h, hr.mono G1.2.1⟩)
       fun c hc' => hc c (.tail _ hc')
-    refine ⟨G1.trans G2, .cons (D1.mono G2.sub) ?_⟩
+    refine ⟨(G1.mono fun f h => h _ (.head _)).trans (G2.mono fun f h c hc => h c (.tail _ hc)),
+      .cons (D1.mono G2.sub) ?_⟩
     rw [G1.1] at D2; exact D2
 
 /-- What `run.loop` keeps, before its `i`th type: the types so far processed, the rest as given or
@@ -1171,7 +1558,10 @@ def LoopInv (env : Environment) (lparams : List Name) (types : List InductiveTyp
     (nparams : Nat) (params : Array Expr) (i : Nat) (s : State) : Prop :=
   s.lvls = lparams.map .param ∧ params.size = nparams ∧ ParamsReserved s.ngen params ∧
   ∃ auxs, List.Forall₂ (fun e T => AuxMade env params nparams (e, T)) s.nestedAux.toList auxs ∧
-    (∀ T ∈ types ++ auxs, TypeClosed T) ∧ i ≤ (types ++ auxs).length ∧
+    (∀ T ∈ types ++ auxs, TypeClosed T) ∧
+    (∀ f, EnvFree env f → (∀ T ∈ types, ∀ c ∈ T.ctors, c.type.anySub (constP f) = false) →
+      ∀ T ∈ types ++ auxs, ∀ c ∈ T.ctors, c.type.anySub (constP f) = false) ∧
+    i ≤ (types ++ auxs).length ∧
     ∃ dones, s.newTypes.toList = dones ++ (types ++ auxs).drop i ∧
       List.Forall₂ (TypeDone s.nestedAux.toList (lparams.map .param) params nparams)
         ((types ++ auxs).take i) dones
@@ -1212,7 +1602,7 @@ theorem run.loop_inv {env : Environment} (henv : EnvClosed env) {lparams : List 
       obtain ⟨_, s₂, hm, h⟩ := bind_ok h
       cases hm
       refine run.loop_inv henv fuel (i + 1) _ res s' h ?_
-      obtain ⟨hl, hP, hpr, auxs, hA, hcl, hle, dones, hnt, hD⟩ := hI
+      obtain ⟨hl, hP, hpr, auxs, hA, hcl, hfree, hle, dones, hnt, hD⟩ := hI
       have hlen : dones.length = i := by
         rw [← List.Forall₂.length_eq hD, List.length_take]; omega
       have hi' : i < (types ++ auxs).length := by
@@ -1241,14 +1631,19 @@ theorem run.loop_inv {env : Environment} (henv : EnvClosed env) {lparams : List 
       obtain ⟨G, hcs⟩ := ctors_grows henv hP (mapM_ok hv) hpr (hcl T hTmem).2.2
       obtain ⟨hl1, hg1, new, hn1, ht1, hnew⟩ := G
       refine ⟨by simp [hl1, hl], hP, fun p hp => let ⟨x, h, hr⟩ := hpr p hp; ⟨x, h, hr.mono hg1⟩,
-        auxs ++ new.map (·.2), ?_, ?_, ?_, dones ++ [{ T with ctors := ctors }], ?_, ?_⟩
+        auxs ++ new.map (·.2), ?_, ?_, ?_, ?_, dones ++ [{ T with ctors := ctors }], ?_, ?_⟩
       · simp only [hn1]
         exact forall₂_append_map hA fun p hp => (hnew p hp).1
       · intro T' hT'
         simp only [← List.append_assoc, List.mem_append, List.mem_map] at hT'
         rcases hT' with hT' | ⟨p, hp, rfl⟩
         · exact hcl T' (List.mem_append.2 hT')
-        · exact (hnew p hp).2
+        · exact (hnew p hp).2.1
+      · intro f hf hin T' hT'
+        simp only [← List.append_assoc, List.mem_append, List.mem_map] at hT'
+        rcases hT' with hT' | ⟨p, hp, rfl⟩
+        · exact hfree f hf hin T' (List.mem_append.2 hT')
+        · exact (hnew p hp).2.2 f hf (hfree f hf hin T hTmem)
       · simp; omega
       · simp only [Array.toList_setIfInBounds, Array.set!_eq_setIfInBounds, ht1, hnt, hTr]
         rw [← List.append_assoc, List.drop_append_of_le_length (by simp; omega), hdrop]
@@ -1263,7 +1658,7 @@ theorem run.loop_inv {env : Environment} (henv : EnvClosed env) {lparams : List 
     · rename_i hi
       cases h
       have hsz : i = s.newTypes.size := by
-        obtain ⟨-, -, -, auxs, -, -, hle, dones, hnt, hD⟩ := hI
+        obtain ⟨-, -, -, auxs, -, -, -, hle, dones, hnt, hD⟩ := hI
         have h1 := congrArg List.length hnt
         have h2 := List.Forall₂.length_eq hD
         simp only [Array.length_toList, List.length_append, List.length_drop, List.length_take]
@@ -1290,7 +1685,9 @@ theorem run_spec {env : Environment} (henv : EnvClosed env) {fuel nparams : Nat}
         res.aux2nested = pairs.foldl (fun m (e, n) => m.insert n e) {} ∧
         (∀ T ∈ types ++ auxs, TypeClosed T) ∧
         List.Forall₂ (TypeDone pairs (lparams.map .param) res.params nparams) (types ++ auxs)
-          res.types := by
+          res.types ∧
+        ∀ f, EnvFree env f → (∀ T ∈ types, ∀ c ∈ T.ctors, c.type.anySub (constP f) = false) →
+          ∀ T ∈ types ++ auxs, ∀ c ∈ T.ctors, c.type.anySub (constP f) = false := by
   obtain ⟨⟨res', s'⟩, h1, h2⟩ : ∃ p, run fuel nparams types env
       { lvls := lparams.map .param, newTypes := types.toArray } = .ok p ∧ p.1 = res := by
     revert h; unfold StateT.run'
@@ -1306,10 +1703,10 @@ theorem run_spec {env : Environment} (henv : EnvClosed env) {fuel nparams : Nat}
         simp only [List.mem_toArray, List.mem_map] at hp
         obtain ⟨x, hx, rfl⟩ := hp
         exact ⟨x, rfl, (freshIds_reserves hx).1⟩, [], by exact .nil, by simpa using hT,
-        Nat.zero_le _, [], by simp, .nil⟩
-    obtain ⟨-, -, -, auxs, hA, hcl, hle, dones, hnt, hD⟩ := hI
+        fun _ _ h => by simpa using h, Nat.zero_le _, [], by simp, .nil⟩
+    obtain ⟨-, -, -, auxs, hA, hcl, hfree, hle, dones, hnt, hD⟩ := hI
     refine ⟨I, rest, rfl, _, ty, hl ▸ ho, freshIds_length, freshIds_nodup, hp, ?_, auxs,
-      sf.nestedAux.toList, hp ▸ hA, ?_, hcl, ?_⟩
+      sf.nestedAux.toList, hp ▸ hA, ?_, hcl, ?_, hfree⟩
     · rw [hn]; simp [freshIds_length]
     · rw [ha, Array.foldl_toList]
     · have hsz : sf.newTypes.size = (I :: rest ++ auxs).length := by
@@ -1576,22 +1973,31 @@ def NotAux (r : Result) (env' : Environment) (auxRec : NameMap Name) (c : Name) 
 /-- Only the constants a term mentions, constrained by `P`. -/
 abbrev ConstOnly (P : Name → Prop) : Supp := ⟨fun _ => True, fun _ => True, P⟩
 
-theorem spineHead?_suppIn {S : Supp} : ∀ {t : Expr} {c n}, Result.spineHead? t = some (c, n) →
-    t.SuppIn S → S.const c
-  | .const .., _, _, h, ht => by cases h; exact ht.1
-  | .app f _, c, n, h, ht => by
+/-- The names restoring replaces. -/
+def isAuxB (r : Result) (env' : Environment) (auxRec : NameMap Name) (c : Name) : Bool :=
+  (auxRec.find? c).isSome || r.aux2nested.contains c || (r.getNestedIfAuxCtor env' c).isSome
+
+theorem notAux_of_isAuxB {r : Result} {env' : Environment} {auxRec : NameMap Name} {c : Name}
+    (h : isAuxB r env' auxRec c = false) : NotAux r env' auxRec c := by
+  simp only [isAuxB, Bool.or_eq_false_iff] at h
+  exact ⟨Option.isSome_eq_false_iff.1 h.1.1 |> Option.isNone_iff_eq_none.1, h.1.2, h.2⟩
+
+theorem spineHead?_anySub {f : Name → Bool} : ∀ {t : Expr} {c n},
+    Result.spineHead? t = some (c, n) → t.anySub (constP f) = false → f c = false
+  | .const .., _, _, h, ht => by cases h; simpa [Expr.anySub, constP] using ht
+  | .app g _, c, n, h, ht => by
     simp only [Result.spineHead?, Option.map_eq_some_iff] at h
     obtain ⟨⟨c', n'⟩, h, e⟩ := h; cases e
-    exact spineHead?_suppIn h ht.1
+    exact spineHead?_anySub h (anySub_constP_app.1 ht).1
   | .bvar .., _, _, h, _ | .fvar .., _, _, h, _ | .mvar .., _, _, h, _ | .sort .., _, _, h, _
   | .lam .., _, _, h, _ | .forallE .., _, _, h, _ | .letE .., _, _, h, _ | .lit .., _, _, h, _
   | .mdata .., _, _, h, _ | .proj .., _, _, h, _ => by simp [Result.spineHead?] at h
 
 theorem restoreFn_none {r : Result} {env' : Environment} {lparams : List Name}
-    {auxRec : NameMap Name} {t : Expr} (ht : t.SuppIn (ConstOnly (NotAux r env' auxRec))) :
+    {auxRec : NameMap Name} {t : Expr} (ht : t.anySub (constP (isAuxB r env' auxRec)) = false) :
     restoreFn r env' lparams auxRec t = none := by
   have hc : ∀ c n, Result.spineHead? t = some (c, n) → NotAux r env' auxRec c :=
-    fun c n h => spineHead?_suppIn h ht
+    fun c n h => notAux_of_isAuxB (spineHead?_anySub h ht)
   unfold restoreFn
   cases hs : Result.spineHead? t with
   | none =>
@@ -1601,31 +2007,38 @@ theorem restoreFn_none {r : Result} {env' : Environment} {lparams : List Name}
     obtain ⟨h1, h2, h3⟩ := hc c n hs
     cases t <;> simp_all [Result.spineHead?]
 
-theorem replaceNoCache_id_of {S : Supp} {f : Expr → Option Expr}
-    (hf : ∀ t, t.SuppIn S → f t = none) : ∀ e : Expr, e.SuppIn S → e.replaceNoCache f = e := by
+theorem replaceNoCache_id_of_anySub {p : Expr → Bool} {f : Expr → Option Expr}
+    (hf : ∀ t, t.anySub p = false → f t = none) : ∀ e : Expr, e.anySub p = false →
+      e.replaceNoCache f = e := by
   intro e he
   induction e with
   | bvar | fvar | mvar | sort | const | lit => unfold Expr.replaceNoCache; simp [hf _ he]
   | app f' a ih1 ih2 =>
-    unfold Expr.replaceNoCache; simp [hf _ he, ih1 he.1, ih2 he.2, Expr.updateApp!]
+    have h := he; simp only [Expr.anySub, Bool.or_eq_false_iff] at h
+    unfold Expr.replaceNoCache; simp [hf _ he, ih1 h.1.2, ih2 h.2, Expr.updateApp!]
   | lam n d b bi ih1 ih2 =>
+    have h := he; simp only [Expr.anySub, Bool.or_eq_false_iff] at h
     unfold Expr.replaceNoCache
-    simp [hf _ he, ih1 he.1, ih2 he.2, Expr.updateLambdaE!, Expr.updateLambda!]
+    simp [hf _ he, ih1 h.1.2, ih2 h.2, Expr.updateLambdaE!, Expr.updateLambda!]
   | forallE n d b bi ih1 ih2 =>
+    have h := he; simp only [Expr.anySub, Bool.or_eq_false_iff] at h
     unfold Expr.replaceNoCache
-    simp [hf _ he, ih1 he.1, ih2 he.2, Expr.updateForallE!, Expr.updateForall!]
+    simp [hf _ he, ih1 h.1.2, ih2 h.2, Expr.updateForallE!, Expr.updateForall!]
   | letE n t v b nd ih1 ih2 ih3 =>
+    have h := he; simp only [Expr.anySub, Bool.or_eq_false_iff] at h
     unfold Expr.replaceNoCache
-    simp [hf _ he, ih1 he.1, ih2 he.2.1, ih3 he.2.2, Expr.updateLet!]
+    simp [hf _ he, ih1 h.1.1.2, ih2 h.1.2, ih3 h.2, Expr.updateLet!]
   | mdata m b ih =>
-    unfold Expr.replaceNoCache; simp [hf _ he, ih he, Expr.updateMData!]
+    have h := he; simp only [Expr.anySub, Bool.or_eq_false_iff] at h
+    unfold Expr.replaceNoCache; simp [hf _ he, ih h.2, Expr.updateMData!]
   | proj s' i b ih =>
-    unfold Expr.replaceNoCache; simp [hf _ he, ih he, Expr.updateProj!]
+    have h := he; simp only [Expr.anySub, Bool.or_eq_false_iff] at h
+    unfold Expr.replaceNoCache; simp [hf _ he, ih h.2, Expr.updateProj!]
 
 theorem restore_id {r : Result} {env' : Environment} {lparams : List Name}
-    {auxRec : NameMap Name} {e : Expr} (he : e.SuppIn (ConstOnly (NotAux r env' auxRec))) :
+    {auxRec : NameMap Name} {e : Expr} (he : e.anySub (constP (isAuxB r env' auxRec)) = false) :
     e.replaceNoCache (restoreFn r env' lparams auxRec) = e :=
-  replaceNoCache_id_of (fun _ ht => restoreFn_none ht) e he
+  replaceNoCache_id_of_anySub (fun _ ht => restoreFn_none ht) e he
 
 theorem spineHead?_mkAppList {c : Name} :
     ∀ {xs : List Expr} {f : Expr} {k}, Result.spineHead? f = some (c, k) →
@@ -1688,7 +2101,7 @@ theorem restore_spine {r : Result} {env' : Environment} {lparams : List Name}
     (hBs : Bs.length = r.nparams) (hN : r.aux2nested.find? aux = some N)
     (hR : auxRec.find? aux = none) :
     ∀ (n : Nat) (Rs : List Expr), Rs.length = n →
-      (∀ R ∈ Rs, R.SuppIn (ConstOnly (NotAux r env' auxRec))) →
+      (∀ R ∈ Rs, R.anySub (constP (isAuxB r env' auxRec)) = false) →
       (Expr.mkAppList (.const aux lvls) (Bs ++ Rs)).replaceNoCache (restoreFn r env' lparams auxRec) =
         Expr.mkAppList ((Result.instantiateLevelParamsRaw (N.abstract r.params) lparams lvls).instantiateRev
           Bs.toArray) Rs
@@ -1903,6 +2316,45 @@ theorem instantiateRev_eqv {e₁ e₂ : Expr} (h : e₁ == e₂) (as : Array Exp
     e₁.instantiateRev as == e₂.instantiateRev as := by
   simp only [Expr.instantiateRev_eq_instantiate']; exact Expr.instantiate'_eqv h
 
+/-- A nested occurrence's key, abstracted over the block's parameters `ps`: the occurrence,
+abstracted over the constructor's parameters `xs`. -/
+theorem replaceParamsVal_abstract {params : Array Expr} {ps xs : List FVarId}
+    (hpar : params = (ps.map .fvar).toArray) (hps : ps.Nodup) (hxs : xs.Nodup)
+    (hpl : ps.length = xs.length) {I : Name} {Ls : List Level} {args : Array Expr} {nI : Nat}
+    (hnI : nI ≤ args.size) (hlb : ∀ i < nI, ∀ a, args[i]? = some a → a.looseBVarRange' = 0)
+    (hargs : ∀ a ∈ args.toList, a.SuppIn (FVOnly (· ∈ xs))) :
+    (replaceParamsVal params (mkAppRange (.const I Ls) 0 nI args) (xs.map .fvar).toArray).abstract
+        params = (Expr.mkAppList (.const I Ls) (args.toList.take nI)).abstractList xs := by
+  have hNas : mkAppRange (.const I Ls) 0 nI args = Expr.mkAppList (.const I Ls) (args.toList.take nI) := by
+    rw [Expr.mkAppRange_eq (args := args) (l₁ := []) (l₂ := args.toList.take nI)
+      (l₃ := args.toList.drop nI) (i := 0) (by simp) rfl (by simp [Nat.min_eq_left hnI])]
+  obtain ⟨Nas, hNas_def⟩ : ∃ N, N = Expr.mkAppList (.const I Ls) (args.toList.take nI) := ⟨_, rfl⟩
+  have hNlb : Nas.looseBVarRange' = 0 := by
+    rw [hNas_def]
+    refine Nat.le_zero.1 (looseBVarRange_mkAppList (by simp [Expr.looseBVarRange']) ?_)
+    intro a ha
+    obtain ⟨i, hi, e⟩ := List.getElem_of_mem ha
+    have := hlb i (by simp at hi; omega) a (by
+      rw [← e]; simp [List.getElem_take])
+    omega
+  have hNfv : Nas.SuppIn ⟨fun x => x ∉ ps ∨ x ∈ xs, fun _ => True, fun _ => True⟩ := by
+    rw [hNas_def]
+    refine Expr.SuppIn.appList.2 ⟨by simp [Expr.SuppIn, Level.LParamsIn.true], fun a ha => ?_⟩
+    exact Expr.SuppIn.mono (S := FVOnly (· ∈ xs))
+      (S' := ⟨fun x => x ∉ ps ∨ x ∈ xs, fun _ => True, fun _ => True⟩)
+      ⟨fun _ h => Or.inr h, fun _ => id, fun _ _ => trivial⟩ (hargs a (List.mem_of_mem_take ha))
+  rw [hpar, hNas, ← hNas_def]
+  show ((Nas.abstract ⟨xs.map .fvar⟩).instantiateRev ⟨ps.map .fvar⟩).abstract ⟨ps.map .fvar⟩ = _
+  rw [Expr.abstract_eq', Expr.abstract_eq', Expr.abstract'_eq_abstractList (by omega) hxs,
+    Expr.instantiateRev_eq_instantiateList (by simp [Expr.looseBVarRange'])]
+  rw [Expr.abstract'_eq_abstractList (k := 0) ?_ hps]
+  · exact abstractList_instantiateList_fvars _ rfl hps (Expr.SuppIn.abstractList hNfv)
+  · have := Expr.instantiateList_looseBVarRange (n := 0) (k := 0)
+      (e := Nas.abstractList xs) (as := (ps.map Expr.fvar).reverse)
+      (by have := abstractList_looseBVarRange (xs := xs) (e := Nas); simp; omega)
+      (by simp [Expr.looseBVarRange'])
+    simpa using this
+
 /-- Restoring a replaced nested occurrence, abstracted with the constructor's parameters, gives
 the occurrence back. -/
 theorem restore_node {r : Result} {env' : Environment} {lparams : List Name}
@@ -1916,14 +2368,18 @@ theorem restore_node {r : Result} {env' : Environment} {lparams : List Name}
     (hmem : (K, aux) ∈ pairs)
     (hK : K == replaceParamsVal r.params (mkAppRange (.const I Ls) 0 nI args)
       (xs.map .fvar).toArray)
-    (hX : (mkAppN (.const I Ls) args).SuppIn ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩)
+    (hXf : (mkAppN (.const I Ls) args).SuppIn (FVOnly (· ∈ xs)))
+    (hXc : (mkAppN (.const I Ls) args).anySub (constP (isAuxB r env' auxRec)) = false)
     (d : Nat) :
     (((mkAppRange (mkAppN (.const aux (lparams.map .param)) (xs.map .fvar).toArray) nI
         args.size args).abstractList xs d).replaceNoCache (restoreFn r env' lparams auxRec)) ==
       (mkAppN (.const I Ls) args).abstractList xs d := by
-  have hargs : ∀ a ∈ args.toList, a.SuppIn ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩ := by
-    rw [mkAppN_eq_mkAppList] at hX
-    intro a ha; exact (Expr.SuppIn.appList.1 hX).2 a ha
+  have hargs : ∀ a ∈ args.toList, a.SuppIn (FVOnly (· ∈ xs)) := by
+    rw [mkAppN_eq_mkAppList] at hXf
+    intro a ha; exact (Expr.SuppIn.appList.1 hXf).2 a ha
+  have hargsc : ∀ a ∈ args.toList, a.anySub (constP (isAuxB r env' auxRec)) = false := by
+    rw [mkAppN_eq_mkAppList] at hXc
+    intro a ha; exact (anySub_constP_appList.1 hXc).2 a ha
   have htd : args.toList = args.toList.take nI ++ args.toList.drop nI ++ [] := by simp
   have hY : mkAppRange (mkAppN (.const aux (lparams.map .param)) (xs.map .fvar).toArray) nI
       args.size args = Expr.mkAppList (.const aux (lparams.map .param))
@@ -1949,7 +2405,7 @@ theorem restore_node {r : Result} {env' : Environment} {lparams : List Name}
   have hNfv : Nas.SuppIn ⟨fun x => x ∉ ps ∨ x ∈ xs, fun _ => True, fun _ => True⟩ := by
     rw [hNas_def]
     refine Expr.SuppIn.appList.2 ⟨by simp [Expr.SuppIn, Level.LParamsIn.true], fun a ha => ?_⟩
-    exact Expr.SuppIn.mono (S := ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩)
+    exact Expr.SuppIn.mono (S := FVOnly (· ∈ xs))
       (S' := ⟨fun x => x ∉ ps ∨ x ∈ xs, fun _ => True, fun _ => True⟩)
       ⟨fun _ h => Or.inr h, fun _ => id, fun _ _ => trivial⟩ (hargs a (List.mem_of_mem_take ha))
   -- the auxiliary type's key, abstracted over the block's parameters
@@ -1973,13 +2429,10 @@ theorem restore_node {r : Result} {env' : Environment} {lparams : List Name}
   have hfind : r.aux2nested.find? aux = some K := hmap ▸ auxMap_find? hnd hmem
   have hauxrec : auxRec.find? aux = none := hrec _ (List.mem_map_of_mem (f := (·.2)) hmem)
   have hrest : ∀ R ∈ (args.toList.drop nI).map (·.abstractList xs d),
-      R.SuppIn (ConstOnly (NotAux r env' auxRec)) := by
+      R.anySub (constP (isAuxB r env' auxRec)) = false := by
     intro R hR
     obtain ⟨a, ha, rfl⟩ := List.mem_map.1 hR
-    exact Expr.SuppIn.abstractList (S := ConstOnly (NotAux r env' auxRec))
-      (Expr.SuppIn.mono (S := ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩)
-        (S' := ⟨fun x => True ∨ x ∈ xs, fun _ => True, NotAux r env' auxRec⟩)
-        ⟨fun _ h => Or.inr h, fun _ => id, fun _ => id⟩ (hargs a (List.mem_of_mem_drop ha)))
+    rw [anySub_constP_abstractList]; exact hargsc a (List.mem_of_mem_drop ha)
   rw [hY, abstractList_mkAppList, abstractList_const, List.map_append, abstractList_fvars hxs,
     restore_spine (by simp [hnp, bvs_length]) hfind hauxrec _ _ rfl hrest,
     instantiateLevelParamsRaw_self, hXe, abstractList_mkAppList, ← hNas_def]
@@ -2022,7 +2475,7 @@ theorem Replaced.spineHead {r : Result} {env' : Environment} {auxRec : NameMap N
     {pairs : List (Expr × Name)} {lvls : List Level} {xs : List FVarId}
     (hnp : r.nparams = xs.length) {X Y : Expr}
     (R : Replaced (NodeRep pairs lvls r.params (xs.map .fvar).toArray) X Y)
-    (hX : X.SuppIn ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩) :
+    (hX : X.anySub (constP (isAuxB r env' auxRec)) = false) :
     ∀ c k, Result.spineHead? Y = some (c, k) →
       NotAux r env' auxRec c ∨ (c ∈ pairs.map (·.2) ∧ r.nparams ≤ k) := by
   induction R with
@@ -2034,14 +2487,14 @@ theorem Replaced.spineHead {r : Result} {env' : Environment} {auxRec : NameMap N
       mkAppN_eq_mkAppList, ← Expr.mkAppList_append, spineHead?_const_mkAppList] at hs
     cases hs
     exact .inr ⟨List.mem_map_of_mem (f := (·.2)) hmem, by simp [hnp]⟩
-  | refl => exact fun c k hs => .inl (spineHead?_suppIn hs hX)
+  | refl => exact fun c k hs => .inl (notAux_of_isAuxB (spineHead?_anySub hs hX))
   | app _ _ ih1 _ =>
     intro c k hs
     simp only [Result.spineHead?, Option.map_eq_some_iff] at hs
     obtain ⟨⟨c', k'⟩, hs, e⟩ := hs
     simp only [Prod.mk.injEq] at e
     obtain ⟨rfl, rfl⟩ := e
-    rcases ih1 hX.1 _ k' hs with h | h
+    rcases ih1 (anySub_constP_app.1 hX).1 _ k' hs with h | h
     · exact .inl h
     · exact .inr ⟨h.1, by omega⟩
   | lam | forallE | letE | proj | mdata => intro c k hs; simp [Result.spineHead?] at hs
@@ -2078,72 +2531,59 @@ theorem Replaced.restore {r : Result} {env' : Environment} {lparams : List Name}
     (hrec : ∀ c ∈ pairs.map (·.2), auxRec.find? c = none)
     (hinst : InstantiateBVars) {X Y : Expr}
     (R : Replaced (NodeRep pairs (lparams.map .param) r.params (xs.map .fvar).toArray) X Y)
-    (hX : X.SuppIn ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩) :
+    (hXf : X.SuppIn (FVOnly (· ∈ xs)))
+    (hX : X.anySub (constP (isAuxB r env' auxRec)) = false) :
     ∀ d, (Y.abstractList xs d).replaceNoCache (restoreFn r env' lparams auxRec) ==
       X.abstractList xs d := by
-  have hfree {e : Expr} (he : e.SuppIn ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩) (d : Nat) :
-      (e.abstractList xs d).SuppIn (ConstOnly (NotAux r env' auxRec)) :=
-    Expr.SuppIn.abstractList (S := ConstOnly (NotAux r env' auxRec))
-      (Expr.SuppIn.mono (S := ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩)
-        (S' := ⟨fun x => True ∨ x ∈ xs, fun _ => True, NotAux r env' auxRec⟩)
-        ⟨fun _ h => Or.inr h, fun _ => id, fun _ => id⟩ he)
   induction R with
   | node h =>
     obtain ⟨I, Ls, args, nI, K, aux, rfl, hnI, hlb, hmem, hK, rfl⟩ := h
-    exact restore_node hmap hnd hpar hps hnp hxs hpl hrec hinst hnI hlb hmem hK hX
-  | refl => intro d; rw [restore_id (hfree hX d)]; exact Expr.eqv_refl _
+    exact restore_node hmap hnd hpar hps hnp hxs hpl hrec hinst hnI hlb hmem hK hXf hX
+  | refl => intro d; rw [restore_id (by rw [anySub_constP_abstractList]; exact hX)]
+            exact Expr.eqv_refl _
   | @app F a F' a' R1 _ ih1 ih2 =>
     intro d
     simp only [abstractList_app]
     unfold Expr.replaceNoCache
     rw [restoreFn_none_head (by simp) ?_]
-    · simp only [Expr.updateApp!, mkApp]; exact eqv_app' (ih1 hX.1 d) (ih2 hX.2 d)
+    · simp only [Expr.updateApp!, mkApp]; exact eqv_app' (ih1 hXf.1 (anySub_constP_app.1 hX).1 d)
+        (ih2 hXf.2 (anySub_constP_app.1 hX).2 d)
     · intro c k hs
       simp only [Result.spineHead?, Option.map_eq_some_iff, spineHead?_abstractList] at hs
       obtain ⟨⟨c', k'⟩, hs, e⟩ := hs
       simp only [Prod.mk.injEq] at e; obtain ⟨rfl, rfl⟩ := e
-      rcases R1.spineHead hnp hX.1 _ k' hs with h | h
+      rcases R1.spineHead hnp (anySub_constP_app.1 hX).1 _ k' hs with h | h
       · exact .inl h
       · exact .inr (by omega)
   | lam _ _ ih1 ih2 =>
     intro d; simp only [abstractList_lam]; unfold Expr.replaceNoCache
     rw [restoreFn_none_head (by simp) (by simp [Result.spineHead?])]
     simp only [Expr.updateLambdaE!, Expr.updateLambda!, mkLambda]
-    exact eqv_lam' (ih1 hX.1 d) (ih2 hX.2 (d + 1))
+    exact eqv_lam' (ih1 hXf.1 (anySub_constP_lam.1 hX).1 d)
+      (ih2 hXf.2 (anySub_constP_lam.1 hX).2 (d + 1))
   | forallE _ _ ih1 ih2 =>
     intro d; simp only [abstractList_forallE]; unfold Expr.replaceNoCache
     rw [restoreFn_none_head (by simp) (by simp [Result.spineHead?])]
     simp only [Expr.updateForallE!, Expr.updateForall!, mkForall]
-    exact eqv_forallE' (ih1 hX.1 d) (ih2 hX.2 (d + 1))
+    exact eqv_forallE' (ih1 hXf.1 (anySub_constP_forallE.1 hX).1 d)
+      (ih2 hXf.2 (anySub_constP_forallE.1 hX).2 (d + 1))
   | letE _ _ _ ih1 ih2 ih3 =>
     intro d; simp only [abstractList_letE]; unfold Expr.replaceNoCache
     rw [restoreFn_none_head (by simp) (by simp [Result.spineHead?])]
     simp only
-    exact eqv_letE' (ih1 hX.1 d) (ih2 hX.2.1 d) (ih3 hX.2.2 (d + 1))
+    exact eqv_letE' (ih1 hXf.1 (anySub_constP_letE.1 hX).1 d)
+      (ih2 hXf.2.1 (anySub_constP_letE.1 hX).2.1 d)
+      (ih3 hXf.2.2 (anySub_constP_letE.1 hX).2.2 (d + 1))
   | proj _ ih =>
     intro d; simp only [abstractList_proj]; unfold Expr.replaceNoCache
     rw [restoreFn_none_head (by simp) (by simp [Result.spineHead?])]
     simp only [Expr.updateProj!, mkProj]
-    exact eqv_proj' (ih hX d)
+    exact eqv_proj' (ih hXf (anySub_constP_proj.1 hX) d)
   | mdata _ ih =>
     intro d; simp only [abstractList_mdata]; unfold Expr.replaceNoCache
     rw [restoreFn_none_head (by simp) (by simp [Result.spineHead?])]
     simp only [Expr.updateMData!, mkMData]
-    exact eqv_mdata' (ih hX d)
-
-theorem SuppIn.combine {P : FVarId → Prop} {Q : Name → Prop} {e : Expr}
-    (h1 : e.SuppIn (FVOnly P)) (h2 : e.SuppIn (ConstOnly Q)) :
-    e.SuppIn ⟨P, fun _ => True, Q⟩ := by
-  induction e <;> simp_all [Expr.SuppIn, Level.LParamsIn.true]
-
-theorem Opens.consts {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') {Q : Name → Prop}
-    (h : ty.SuppIn (ConstOnly Q)) : ty'.SuppIn (ConstOnly Q) := by
-  induction H with
-  | nil => exact h
-  | cons _ ih =>
-    refine ih ?_
-    rw [Expr.instantiate1_eq]
-    exact Expr.SuppIn.instantiate1 (S := ConstOnly Q) (a := .fvar _) trivial h.2
+    exact eqv_mdata' (ih hXf (anySub_constP_mdata.1 hX) d)
 
 theorem setBody_peel : ∀ {n e b}, peel n e = some b → setBody n e b = e
   | 0, _, _, h => by cases h; rfl
@@ -2156,7 +2596,7 @@ theorem setBody_peel : ∀ {n e b}, peel n e = some b → setBody n e b = e
 theorem restore_setBody {r : Result} {env' : Environment} {lparams : List Name}
     {auxRec : NameMap Name} {W W' : Expr}
     (hW : W.replaceNoCache (restoreFn r env' lparams auxRec) == W') :
-    ∀ {n e}, (peel n e).isSome → e.SuppIn (ConstOnly (NotAux r env' auxRec)) →
+    ∀ {n e}, (peel n e).isSome → e.anySub (constP (isAuxB r env' auxRec)) = false →
       (setBody n e W).replaceNoCache (restoreFn r env' lparams auxRec) == setBody n e W'
   | 0, _, _, _ => hW
   | n + 1, .forallE nm d b bi, h, he => by
@@ -2164,8 +2604,8 @@ theorem restore_setBody {r : Result} {env' : Environment} {lparams : List Name}
     unfold Expr.replaceNoCache
     rw [restoreFn_none_head (by simp) (by simp [Result.spineHead?])]
     simp only [Expr.updateForallE!, Expr.updateForall!, mkForall]
-    rw [restore_id he.1]
-    exact eqv_forallE' (Expr.eqv_refl _) (restore_setBody hW (n := n) h he.2)
+    rw [restore_id (anySub_constP_forallE.1 he).1]
+    exact eqv_forallE' (Expr.eqv_refl _) (restore_setBody hW (n := n) h (anySub_constP_forallE.1 he).2)
   | _ + 1, .bvar .., h, _ | _ + 1, .fvar .., h, _ | _ + 1, .mvar .., h, _
   | _ + 1, .sort .., h, _ | _ + 1, .const .., h, _ | _ + 1, .app .., h, _
   | _ + 1, .lam .., h, _ | _ + 1, .letE .., h, _ | _ + 1, .lit .., h, _
@@ -2180,7 +2620,7 @@ theorem CtorDone.restore {r : Result} {env' : Environment} {lparams : List Name}
     (hpl : ps.length = nparams)
     (hrec : ∀ c ∈ pairs.map (·.2), auxRec.find? c = none) (hinst : InstantiateBVars)
     {c₀ c : Constructor} (H : CtorDone pairs (lparams.map .param) r.params nparams c₀ c)
-    (hc₀ : c₀.type.SuppIn (ConstOnly (NotAux r env' auxRec)))
+    (hc₀ : c₀.type.anySub (constP (isAuxB r env' auxRec)) = false)
     (hcl : c₀.type.looseBVarRange' = 0) :
     r.restoreNested env' lparams c.type auxRec == c₀.type := by
   obtain ⟨-, xs, lctx, body, Y, ho, hlen, hxs, hx, -, hfv, R, hty⟩ := H
@@ -2192,7 +2632,7 @@ theorem CtorDone.restore {r : Result} {env' : Environment} {lparams : List Name}
   conv => lhs; arg 2; rw [← setBody_peel hpeel]
   exact restore_setBody (R.restore hmap hnd hpar hps (hnp.trans hlen.symm) hxs
     (hpl.trans hlen.symm) hrec hinst
-    (SuppIn.combine hfv (ho.consts hc₀)) 0) (by rw [hpeel]; rfl) hc₀
+    hfv (ho.anySub_constP hc₀) 0) (by rw [hpeel]; rfl) hc₀
 
 /-! ### Where the auxiliary constants sit -/
 
@@ -2216,7 +2656,6 @@ def AuxPlaced (isAux : Name → Bool) (lvls : List Level) (n : Nat) : Nat → Ex
   | k, .letE _ t v b _ =>
     AuxPlaced isAux lvls n k t ∧ AuxPlaced isAux lvls n k v ∧ AuxPlaced isAux lvls n (k + 1) b
   | k, .mdata _ e | k, .proj _ _ e => AuxPlaced isAux lvls n k e
-  | _, .lit l => l.SuppIn (isAux · = false)
   | _, _ => True
 
 theorem spineNM_suppIn {S : Supp} : ∀ {t : Expr} {c ls xs}, spineNM t = some (c, ls, xs) →
@@ -2232,23 +2671,41 @@ theorem spineNM_suppIn {S : Supp} : ∀ {t : Expr} {c ls xs}, spineNM t = some (
   | .letE .., _, _, _, h, _ | .lit .., _, _, _, h, _ | .mdata .., _, _, _, h, _
   | .proj .., _, _, _, h, _ => by simp [spineNM] at h
 
+theorem spineNM_anySub {f : Name → Bool} : ∀ {t : Expr} {c ls xs},
+    spineNM t = some (c, ls, xs) → t.anySub (constP f) = false → f c = false
+  | .const .., _, _, _, h, ht => by cases h; simpa [Expr.anySub, constP] using ht
+  | .app g _, c, ls, xs, h, ht => by
+    simp only [spineNM, Option.map_eq_some_iff] at h
+    obtain ⟨⟨c', ls', xs'⟩, h, e⟩ := h
+    simp only [Prod.mk.injEq] at e; obtain ⟨rfl, rfl, rfl⟩ := e
+    exact spineNM_anySub h (anySub_constP_app.1 ht).1
+  | .bvar .., _, _, _, h, _ | .fvar .., _, _, _, h, _ | .mvar .., _, _, _, h, _
+  | .sort .., _, _, _, h, _ | .lam .., _, _, _, h, _ | .forallE .., _, _, _, h, _
+  | .letE .., _, _, _, h, _ | .lit .., _, _, _, h, _ | .mdata .., _, _, _, h, _
+  | .proj .., _, _, _, h, _ => by simp [spineNM] at h
+
 theorem auxPlaced_of_free {isAux : Name → Bool} {lvls n} :
-    ∀ {e : Expr} {k}, e.SuppIn (ConstOnly (isAux · = false)) → AuxPlaced isAux lvls n k e := by
+    ∀ {e : Expr} {k}, e.anySub (constP isAux) = false → AuxPlaced isAux lvls n k e := by
   intro e
   induction e with
-  | const c ls => intro k h h'; simp_all [Expr.SuppIn]
+  | const c ls => intro k h h'; simp_all [Expr.anySub, constP]
   | app f a ih1 ih2 =>
     intro k h
+    have h' := anySub_constP_app.1 h
     unfold AuxPlaced
     split
     · rename_i c ls xs hs
-      rw [if_neg (fun h' => by have := spineNM_suppIn hs h; simp_all)]
-      exact ⟨ih1 h.1, ih2 h.2⟩
-    · exact ⟨ih1 h.1, ih2 h.2⟩
-  | lam _ t b _ ih1 ih2 | forallE _ t b _ ih1 ih2 => intro k h; exact ⟨ih1 h.1, ih2 h.2⟩
-  | letE _ t v b _ ih1 ih2 ih3 => intro k h; exact ⟨ih1 h.1, ih2 h.2.1, ih3 h.2.2⟩
-  | mdata _ e ih | proj _ _ e ih => intro k h; exact ih h
-  | lit l => intro k h; exact h
+      rw [if_neg (fun hc => by have := spineNM_anySub hs h; simp_all)]
+      exact ⟨ih1 h'.1, ih2 h'.2⟩
+    · exact ⟨ih1 h'.1, ih2 h'.2⟩
+  | lam _ t b _ ih1 ih2 =>
+    intro k h; have h' := anySub_constP_lam.1 h; exact ⟨ih1 h'.1, ih2 h'.2⟩
+  | forallE _ t b _ ih1 ih2 =>
+    intro k h; have h' := anySub_constP_forallE.1 h; exact ⟨ih1 h'.1, ih2 h'.2⟩
+  | letE _ t v b _ ih1 ih2 ih3 =>
+    intro k h; have h' := anySub_constP_letE.1 h; exact ⟨ih1 h'.1, ih2 h'.2.1, ih3 h'.2.2⟩
+  | mdata _ e ih => intro k h; exact ih (anySub_constP_mdata.1 h)
+  | proj _ _ e ih => intro k h; exact ih (anySub_constP_proj.1 h)
   | _ => intros; trivial
 
 theorem spineNM_mkAppList {c : Name} {ls : List Level} :
@@ -2265,7 +2722,7 @@ theorem spineNM_mkAppList {c : Name} {ls : List Level} :
 arguments mentioning no auxiliary constant. -/
 theorem auxPlaced_node {isAux : Name → Bool} {lvls : List Level} {c : Name} (hc : isAux c)
     {k : Nat} : ∀ (m : Nat) {n : Nat} (rest : List Expr), rest.length = m →
-      (∀ R ∈ rest, R.SuppIn (ConstOnly (isAux · = false))) →
+      (∀ R ∈ rest, R.anySub (constP isAux) = false) →
       AuxPlaced isAux lvls n k (Expr.mkAppList (.const c lvls) (bvs n k ++ rest))
   | 0, n, rest, hl, _ => by
     obtain rfl := List.eq_nil_of_length_eq_zero hl
@@ -2333,7 +2790,7 @@ theorem spineNM_abstractList {xs : List FVarId} {d : Nat} :
 theorem Replaced.spineNM {isAux : Name → Bool} {pairs : List (Expr × Name)} {lvls : List Level}
     {params As : Array Expr} {X Y : Expr}
     (R : Replaced (NodeRep pairs lvls params As) X Y)
-    (hX : X.SuppIn (ConstOnly (isAux · = false))) :
+    (hX : X.anySub (constP isAux) = false) :
     ∀ c ls ys, ElimNestedInductive.spineNM Y = some (c, ls, ys) → isAux c → As.size ≤ ys.length := by
   induction R with
   | node h =>
@@ -2346,13 +2803,13 @@ theorem Replaced.spineNM {isAux : Name → Bool} {pairs : List (Expr × Name)} {
       (f := .const aux lvls) (acc := []) rfl
     rw [this] at hs; simp only [Option.some.injEq, Prod.mk.injEq] at hs
     obtain ⟨-, -, rfl⟩ := hs; simp
-  | refl => intro c ls ys hs hc; have := spineNM_suppIn hs hX; simp_all
+  | refl => intro c ls ys hs hc; have := spineNM_anySub hs hX; simp_all
   | app _ _ ih1 _ =>
     intro c ls ys hs hc
     simp only [ElimNestedInductive.spineNM, Option.map_eq_some_iff] at hs
     obtain ⟨⟨c', ls', ys'⟩, hs, e⟩ := hs
     simp only [Prod.mk.injEq] at e; obtain ⟨rfl, rfl, rfl⟩ := e
-    have := ih1 hX.1 _ _ _ hs hc; simp; omega
+    have := ih1 (anySub_constP_app.1 hX).1 _ _ _ hs hc; simp; omega
   | _ => intro c ls ys hs; simp [ElimNestedInductive.spineNM] at hs
 
 /-- In a processed constructor's body, closed over its parameters `xs` at depth `d`, every
@@ -2361,14 +2818,11 @@ theorem Replaced.auxPlaced {isAux : Name → Bool} {pairs : List (Expr × Name)}
     {lvls : List Level} {params : Array Expr} {xs : List FVarId} (hxs : xs.Nodup)
     (hpa : ∀ p ∈ pairs, isAux p.2) {X Y : Expr}
     (R : Replaced (NodeRep pairs lvls params (xs.map .fvar).toArray) X Y)
-    (hX : X.SuppIn (ConstOnly (isAux · = false))) :
+    (hX : X.anySub (constP isAux) = false) :
     ∀ d, AuxPlaced isAux lvls xs.length d (Y.abstractList xs d) := by
-  have hfree {e : Expr} (he : e.SuppIn (ConstOnly (isAux · = false))) (d : Nat) :
-      (e.abstractList xs d).SuppIn (ConstOnly (isAux · = false)) :=
-    Expr.SuppIn.abstractList (S := ConstOnly (isAux · = false))
-      (Expr.SuppIn.mono (S := ConstOnly (isAux · = false))
-        (S' := ⟨fun x => True ∨ x ∈ xs, fun _ => True, (isAux · = false)⟩)
-        ⟨fun _ h => Or.inl h, fun _ => id, fun _ => id⟩ he)
+  have hfree {e : Expr} (he : e.anySub (constP isAux) = false) (d : Nat) :
+      (e.abstractList xs d).anySub (constP isAux) = false := by
+    rw [anySub_constP_abstractList]; exact he
   induction R with
   | node h =>
     obtain ⟨I, Ls, args, nI, K, aux, rfl, hnI, -, hmem, -, rfl⟩ := h
@@ -2377,8 +2831,8 @@ theorem Replaced.auxPlaced {isAux : Name → Bool} {pairs : List (Expr × Name)}
     rw [Expr.mkAppRange_eq (args := args) htd (by simp [Nat.min_eq_left hnI]) (by simp),
       mkAppN_eq_mkAppList, ← Expr.mkAppList_append, abstractList_mkAppList, abstractList_const,
       List.map_append, List.toList_toArray, abstractList_fvars hxs]
-    have hargs : ∀ a ∈ args.toList, a.SuppIn (ConstOnly (isAux · = false)) := by
-      rw [mkAppN_eq_mkAppList] at hX; exact (Expr.SuppIn.appList.1 hX).2
+    have hargs : ∀ a ∈ args.toList, a.anySub (constP isAux) = false := by
+      rw [mkAppN_eq_mkAppList] at hX; exact (anySub_constP_appList.1 hX).2
     exact auxPlaced_node (hpa _ hmem) _ _ rfl fun R hR => by
       obtain ⟨a, ha, rfl⟩ := List.mem_map.1 hR
       exact hfree (hargs a (List.mem_of_mem_drop ha)) d
@@ -2390,23 +2844,27 @@ theorem Replaced.auxPlaced {isAux : Name → Bool} {pairs : List (Expr × Name)}
     split
     · rename_i c ls ys hs
       rw [if_neg]
-      · exact ⟨ih1 hX.1 d, ih2 hX.2 d⟩
+      · exact ⟨ih1 (anySub_constP_app.1 hX).1 d, ih2 (anySub_constP_app.1 hX).2 d⟩
       · rintro ⟨hc, hl⟩
         simp only [ElimNestedInductive.spineNM, Option.map_eq_some_iff, spineNM_abstractList] at hs
         obtain ⟨⟨c', ls', ys'⟩, hs, e⟩ := hs
         simp only [Prod.mk.injEq] at e; obtain ⟨rfl, rfl, rfl⟩ := e
         obtain ⟨⟨c'', ls'', ys''⟩, hs, e⟩ := hs
         simp only [Prod.mk.injEq] at e; obtain ⟨rfl, rfl, rfl⟩ := e
-        have := R1.spineNM hX.1 _ _ _ hs hc
+        have := R1.spineNM (anySub_constP_app.1 hX).1 _ _ _ hs hc
         simp at hl this; omega
-    · exact ⟨ih1 hX.1 d, ih2 hX.2 d⟩
-  | lam _ _ ih1 ih2 => intro d; simp only [abstractList_lam]; exact ⟨ih1 hX.1 d, ih2 hX.2 (d + 1)⟩
+    · exact ⟨ih1 (anySub_constP_app.1 hX).1 d, ih2 (anySub_constP_app.1 hX).2 d⟩
+  | lam _ _ ih1 ih2 =>
+    intro d; simp only [abstractList_lam]; have h := anySub_constP_lam.1 hX
+    exact ⟨ih1 h.1 d, ih2 h.2 (d + 1)⟩
   | forallE _ _ ih1 ih2 =>
-    intro d; simp only [abstractList_forallE]; exact ⟨ih1 hX.1 d, ih2 hX.2 (d + 1)⟩
+    intro d; simp only [abstractList_forallE]; have h := anySub_constP_forallE.1 hX
+    exact ⟨ih1 h.1 d, ih2 h.2 (d + 1)⟩
   | letE _ _ _ ih1 ih2 ih3 =>
-    intro d; simp only [abstractList_letE]; exact ⟨ih1 hX.1 d, ih2 hX.2.1 d, ih3 hX.2.2 (d + 1)⟩
-  | mdata _ ih => intro d; simp only [abstractList_mdata]; exact ih hX d
-  | proj _ ih => intro d; simp only [abstractList_proj]; exact ih hX d
+    intro d; simp only [abstractList_letE]; have h := anySub_constP_letE.1 hX
+    exact ⟨ih1 h.1 d, ih2 h.2.1 d, ih3 h.2.2 (d + 1)⟩
+  | mdata _ ih => intro d; simp only [abstractList_mdata]; exact ih (anySub_constP_mdata.1 hX) d
+  | proj _ ih => intro d; simp only [abstractList_proj]; exact ih (anySub_constP_proj.1 hX) d
 
 /-! ### Carrying the placement to translations -/
 
@@ -2576,6 +3034,7 @@ theorem TrExprS.auxAt {env : VEnv} {Us : List Name} {R : Name → Option VAuxHea
     {ls₀ : List VLevel} {isAux : Name → Bool} {lvls : List Level} {n : Nat}
     (hlv : lvls.mapM (VLevel.ofLevel Us) = some ls₀)
     (hR1 : ∀ c h, R c = some h → isAux c ∧ h.n = n) (hR2 : ∀ c, isAux c → ∃ h, R c = some h)
+    (hlit : ∀ l, env.ContainsLits l → l.toConstructor.anySub (constP isAux) = false)
     {Δ : VLCtx} {e : Expr} {e' : VExpr} (H : TrExprS env Us Δ e e') :
     ∀ {k k'}, ParamsAt n Δ k k' → CtxAux R ls₀ Δ k' → AuxPlaced isAux lvls n k e →
       e'.AuxAt R ls₀ k' := by
@@ -2621,9 +3080,9 @@ theorem TrExprS.auxAt {env : VEnv} {Us : List Name} {R : Name → Option VAuxHea
   | letE _ _ _ _ _ ih2 ih3 =>
     intro k k' hP hC hA
     exact ih3 hP.vlet (hC.vlet (ih2 hP hC hA.2.1)) hA.2.2
-  | lit _ _ ih =>
-    intro k k' hP hC hA
-    exact ih hP hC (auxPlaced_of_free (Expr.SuppIn.toConstructor (S := ConstOnly (isAux · = false)) hA))
+  | lit hl _ ih =>
+    intro k k' hP hC _
+    exact ih hP hC (auxPlaced_of_free (hlit _ hl))
   | mdata _ ih => intro k k' hP hC hA; exact ih hP hC hA
   | proj _ _ ih => intro k k' hP hC hA; exact ih hP hC hA
 
@@ -2661,7 +3120,7 @@ auxiliary constant sits at the parameters. -/
 theorem CtorDone.placed {isAux : Name → Bool} {pairs : List (Expr × Name)} {lvls : List Level}
     {params : Array Expr} {nparams : Nat} (hpa : ∀ p ∈ pairs, isAux p.2) {c₀ c : Constructor}
     (H : CtorDone pairs lvls params nparams c₀ c)
-    (hc₀ : c₀.type.SuppIn (ConstOnly (isAux · = false))) (hcl : c₀.type.looseBVarRange' = 0) :
+    (hc₀ : c₀.type.anySub (constP isAux) = false) (hcl : c₀.type.looseBVarRange' = 0) :
     ∃ B, c.type = setBody nparams c₀.type B ∧ (peel nparams c₀.type).isSome ∧
       AuxPlaced isAux lvls nparams 0 B := by
   obtain ⟨-, xs, lctx, body, Y, ho, hlen, hxs, hx, -, -, R, hty⟩ := H
@@ -2672,7 +3131,7 @@ theorem CtorDone.placed {isAux : Name → Bool} {pairs : List (Expr × Name)} {l
   · rw [hty, show (xs.map Expr.fvar).toArray = ⟨xs.map .fvar⟩ from rfl,
       ho.mkForall .nil (fun _ _ => LocalContext.find?_empty) hxs hx hcl Y hY, hlen]
   · rw [← hlen]
-    exact R.auxPlaced hxs hpa (ho.consts hc₀) 0
+    exact R.auxPlaced hxs hpa (ho.anySub_constP hc₀) 0
 
 /-- The auxiliary types are named as their records are, and those names are fresh for `env`. -/
 theorem auxMade_names {env : Environment} {params : Array Expr} {nparams : Nat} :
@@ -2682,7 +3141,8 @@ theorem auxMade_names {env : Environment} {params : Array Expr} {nparams : Nat} 
   | [], [], .nil => ⟨rfl, nofun⟩
   | _ :: _, T :: _, .cons h t => by
     obtain ⟨h1, h2⟩ := auxMade_names t
-    obtain ⟨hn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hfresh, _⟩ := h
+    obtain ⟨hn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+      hfresh, _⟩ := h
     simp only at hn hfresh
     refine ⟨by simp [← hn, h1], fun T' hT' => ?_⟩
     rcases List.mem_cons.1 hT' with rfl | h
@@ -2784,6 +3244,7 @@ theorem addInductive_inputChecks.WF (env : Environment) (types : List InductiveT
     exact yld h) h3 c hc
   obtain ⟨_, c1, hs'⟩ := Except.bind_ok' hs'
   obtain ⟨_, c2, -⟩ := Except.bind_ok' hs'
-  exact ⟨Expr.suppIn_of_fvarsIn (checkNoMVarNoFVar.WF _ _ _ _ c1), checkClosed.WF _ _ _ c2⟩
+  exact ⟨Expr.suppIn_of_fvarsIn (checkNoMVarNoFVar.WF _ _ _ _ c1), checkClosed.WF _ _ _ c2,
+    (checkNoMVarNoFVar.WF _ _ _ _ c1).mono fun _ _ => trivial⟩
 
 end Lean4Lean

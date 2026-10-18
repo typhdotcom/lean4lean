@@ -405,4 +405,115 @@ theorem occ_argTypes {envT : Environment} {safety : DefinitionSafety} {venvT : V
   simp only [hc] at h'
   exact hU ▸ h'
 
+/-- The head of a nested occurrence the final phase checked is a constant of `venvT`, at as many
+levels as it has parameters. -/
+theorem occ_head {envT : Environment} {safety : DefinitionSafety} {venvT : VEnv}
+    (wfT : VEnvAt envT safety venvT) {lparams : List Name} {fuel : FuelConfig}
+    {res : ElimNestedInductive.Result}
+    (hocc : TypeChecker.M.run envT safety res.lctx lparams fuel
+      ((Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp)).forM fun p =>
+        do _ ← TypeChecker.checkType p.2) = .ok ())
+    {Ity bodyI : Expr} {xsP : List FVarId}
+    (hoI : ElimNestedInductive.Opens {} Ity xsP res.lctx bodyI) (hndP : xsP.Nodup)
+    (hres : ∀ x ∈ xsP, ({} : TypeChecker.State).ngen.Reserves x)
+    {Qs : List VExpr} {B : VExpr} (hQl : Qs.length = xsP.length)
+    (hI : TrExprS venvT lparams [] Ity (.foralls Qs B))
+    (hfvK : ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
+      p.2.FVarsIn (· ∈ xsP))
+    {aux : Name} {K : Expr}
+    (hmem : (aux, K) ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp))
+    {J : Name} {Ls : List Level} {Ds : List Expr} (hK : K = mkAppN (.const J Ls) Ds.toArray) :
+    ∃ ci, venvT.constants J = some ci ∧ Ls.length = ci.uvars := by
+  have henv := wfT.tr.wf
+  obtain ⟨M, Ectx, hMw, hMl, -, -, -, hMc, hMfv, hMf, -⟩ :=
+    ElimNestedInductive.Opens.mlctx henv.ordered hoI (M₀ := .nil) trivial rfl (by simp) hndP hQl
+      (by simpa using hI)
+  simp only [MLCtx.vlctx, VLCtx.toCtx, VLCtx.fvars_nil, List.append_nil] at hMc hMfv
+  have hresM : ∀ fv ∈ M.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv := by
+    rw [hMfv]; exact fun fv h => hres fv (List.mem_reverse.1 h)
+  let c := TypeChecker.VContext.ofMLCtx wfT lparams fuel M hMw
+  have hfvc : ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
+      p.2.FVarsIn (· ∈ c.vlctx.fvars) := fun p hp =>
+    (hfvK p hp).mono fun x hx => by
+      show x ∈ M.vlctx.fvars; rw [hMfv]; exact List.mem_reverse.2 hx
+  obtain ⟨s, -, hQ⟩ := TypeChecker.M.WF.runMLCtx wfT hMw hresM
+    (checkType.forM_lit (c := c) _ (fun p : Name × Expr => p.2) hfvc) (hMl ▸ hocc)
+  obtain ⟨⟨eK, hKtr⟩, -, -⟩ := hQ _ hmem
+  simp only at hKtr
+  rw [hK, ElimNestedInductive.mkAppN_eq_mkAppList] at hKtr
+  obtain ⟨f', -, -, hf, -⟩ := TrExprS.mkAppList_inv hKtr
+  cases hf with
+  | const h1 _ h3 => exact ⟨_, h1, h3⟩
+
+/-- The constants of an environment `TrEnv` models have types without free, loose or
+metavariables: what the elimination needs of the earlier types it instantiates. -/
+theorem ElimNestedInductive.EnvClosed.of_tr {env : Environment} {venv : VEnv}
+    (H : TrEnv .unsafe env venv) : ElimNestedInductive.EnvClosed env := by
+  intro n ci h
+  obtain ⟨_, -, htr⟩ := H.find? h DefinitionSafety.unsafe_le
+  have hf := htr.2.2.fvarsIn
+  exact ⟨Expr.suppIn_of_fvarsIn (hf.mono fun _ h => by simp at h),
+    htr.2.2.closed.looseBVarRange_zero, hf.mono fun _ _ => trivial⟩
+
+theorem foldl_insert_getElem?_mem {pairs : List (Expr × Name)} :
+    ∀ (m : Std.TreeMap Name Expr Name.quickCmp) {n : Name} {e : Expr},
+      (pairs.foldl (fun m p => m.insert p.2 p.1) m)[n]? = some e →
+        m[n]? = some e ∨ (e, n) ∈ pairs := by
+  induction pairs with
+  | nil => intro m n e h; exact .inl h
+  | cons p pairs ih =>
+    intro m n e h
+    rw [List.foldl_cons] at h
+    rcases ih _ h with h | h
+    · rw [Std.TreeMap.getElem?_insert] at h
+      split at h
+      · rename_i hc
+        rw [Std.LawfulEqCmp.compare_eq_iff_eq] at hc
+        cases h; subst hc; exact .inr (.head _)
+      · exact .inl h
+    · exact .inr (.tail _ h)
+
+/-- The occurrences the elimination records mention no metavariable, and no free variable but the
+block's parameters `xsP`, as `res.params` has them: `hfvK` of `occ_argTypes`. -/
+theorem ElimNestedInductive.aux2nested_fvarsIn {env : Environment}
+    (henv : ElimNestedInductive.EnvClosed env) {fuel nparams : Nat} {types : List InductiveType}
+    {lparams : List Name} (hT : ∀ T ∈ types, ElimNestedInductive.TypeClosed T)
+    {res : ElimNestedInductive.Result}
+    (h : (ElimNestedInductive.run fuel nparams types env).run'
+      { lvls := lparams.map .param, newTypes := types.toArray } = .ok res)
+    {xsP : List FVarId} (hp : res.params = (xsP.map .fvar).toArray) :
+    ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
+      p.2.FVarsIn (· ∈ xsP) := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, auxs, pairs, hA, hmap, -⟩ :=
+    ElimNestedInductive.run_spec henv hT h
+  rintro ⟨n, e⟩ hp'
+  rw [hmap] at hp'
+  change (n, e) ∈ Std.TreeMap.toList (pairs.foldl (fun m p => m.insert p.2 p.1)
+    (∅ : Std.TreeMap Name Expr Name.quickCmp)) at hp'
+  rw [Std.TreeMap.mem_toList_iff_getElem?_eq_some] at hp'
+  rcases foldl_insert_getElem?_mem (pairs := pairs) ∅ hp' with h0 | hmem
+  · simp at h0
+  obtain ⟨T, -, -, cty, xs, lctx, body, -, -, -, -, -, -, -, hC⟩ :=
+    Lean4Lean.List.Forall₂.forall_exists_l hA _ hmem
+  obtain ⟨J, Ls, args, nI, Jv, v, hK, -, hnI, -, hargs, hargm, hLs, -⟩ := hC
+  simp only at hK ⊢
+  rw [hK, hp, ElimNestedInductive.replaceParamsVal_mkAppRange hnI,
+    ElimNestedInductive.mkAppN_eq_mkAppList, ElimNestedInductive.fvarsIn_mkAppList]
+  refine ⟨hLs, fun a ha => ?_⟩
+  simp only [List.mem_map] at ha
+  obtain ⟨a, ha, rfl⟩ := ha
+  have ha' : a ∈ args := by
+    rw [Array.toList_extract] at ha
+    exact Array.mem_toList_iff.1 (List.mem_of_mem_take (by simpa [List.extract] using ha))
+  have hf : a.FVarsIn (fun x => False ∨ x ∈ xs) :=
+    ElimNestedInductive.fvarsIn_of_suppIn (Expr.SuppIn.mono
+      (S := ElimNestedInductive.FVOnly (.fvar · ∈ (xs.map Expr.fvar).toArray))
+      (S' := ElimNestedInductive.FVOnly fun x => False ∨ x ∈ xs)
+      ⟨fun _ h => .inr (by simpa using h), fun _ => id, fun _ => id⟩ (hargs a ha')) (hargm a ha')
+  refine ElimNestedInductive.fvarsIn_instantiate' (fun b hb => ?_)
+    ((ElimNestedInductive.fvarsIn_abstract' hf).mono fun _ h => h.elim)
+  simp only [List.mem_reverse, List.mem_map] at hb
+  obtain ⟨x, hx, rfl⟩ := hb
+  exact hx
+
 end Lean4Lean

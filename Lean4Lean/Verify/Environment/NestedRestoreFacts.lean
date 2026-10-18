@@ -328,11 +328,6 @@ theorem auxRecRen_spec {env' : Environment} {T : InductiveType} {Ts : List Induc
 
 /-! ### The translated constructors' terms -/
 
-/-- Detects the constants `f` picks out. -/
-def constP (f : Name → Bool) : Expr → Bool
-  | .const c _ => f c
-  | _ => false
-
 theorem anySub_constP_of_suppIn {f : Name → Bool} : ∀ {e : Expr},
     e.SuppIn (ElimNestedInductive.ConstOnly fun c => f c = false) → e.anySub (constP f) = false
   | .bvar _, _ | .fvar _, _ | .mvar _, _ | .sort _, _ | .lit _, _ => rfl
@@ -383,21 +378,44 @@ theorem TrExprS.setBody_inv {env : VEnv} {Us : List Name} (henv : env.WF) {p : E
   | _ + 1, .lit .., _, _, _, h, _, _, _, _ | _ + 1, .mdata .., _, _, _, h, _, _, _, _
   | _ + 1, .proj .., _, _, _, h, _, _, _, _ => by simp [ElimNestedInductive.peel] at h
 
-/-- A domain's view keeps its placement: the annotations it strips are not auxiliary. -/
+/-- A domain's view keeps its placement: an auxiliary constant at an annotation's place is
+applied to the parameters, so what it strips to is a parameter. -/
 theorem VExpr.StripsTo.auxAt {R : Name → Option VAuxHead} {ls₀ : List VLevel}
-    (hAnn : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
-      R c = none) {D X : VExpr} (H : D.StripsTo X) {k : Nat} (hD : D.AuxAt R ls₀ k) :
-    X.AuxAt R ls₀ k := by
+    {D X : VExpr} (H : D.StripsTo X) {k : Nat} (hD : D.AuxAt R ls₀ k) : X.AuxAt R ls₀ k := by
+  have hbv {A X : VExpr} (H : A.StripsTo X) (h : ∃ i, A = .bvar i) : X.AuxAt R ls₀ k := by
+    obtain ⟨i, rfl⟩ := h; cases H; trivial
+  have hbvs {xs : List VExpr} {A : VExpr} {n : Nat} (h : xs = VExpr.bvars n k) (hA : A ∈ xs) :
+      ∃ i, A = .bvar i := by
+    subst h; simp only [VExpr.bvars, List.mem_map] at hA
+    obtain ⟨i, -, rfl⟩ := hA; exact ⟨_, rfl⟩
+  -- an auxiliary constant applied to `A` alone, or not auxiliary
+  have hone {c : Name} {ls : List VLevel} {A X : VExpr} (H : A.StripsTo X) (ih : A.AuxAt R ls₀ k → X.AuxAt R ls₀ k)
+      (hD : (VExpr.app (.const c ls) A).AuxAt R ls₀ k) : X.AuxAt R ls₀ k := by
+    rw [VExpr.AuxAt] at hD
+    simp only [VExpr.constSpine?, Option.map_some] at hD
+    split at hD
+    · split at hD
+      · exact hbv H (hbvs hD.1 (by simp))
+      · exact ih hD.2
+    · exact ih hD.2
   induction H with
   | refl => exact hD
-  | app2 hc _ ih =>
-    have hR := hAnn _ (hc.elim .inl fun h => .inr (.inl h))
-    simp only [VExpr.AuxAt, VExpr.constSpine?, Option.map_some, hR] at hD
-    exact ih hD.1.2
-  | app1 hc _ ih =>
-    have hR := hAnn _ (hc.elim (fun h => .inr (.inr (.inl h))) fun h => .inr (.inr (.inr h)))
-    simp only [VExpr.AuxAt, VExpr.constSpine?, Option.map_some, hR] at hD
-    exact ih hD.2
+  | @app2 A _ ls v c hc HA ih =>
+    rw [VExpr.AuxAt] at hD
+    simp only [VExpr.constSpine?, Option.map_some] at hD
+    split at hD
+    · split at hD
+      · exact hbv HA (hbvs hD.1 (by simp))
+      · exact hone HA ih hD.1
+    · exact hone HA ih hD.1
+  | app1 _ HA ih => exact hone HA ih hD
+
+theorem VExpr.StripsToBy.consts {P Q : Name → Prop} {D X : VExpr} (H : D.StripsToBy P X)
+    (hD : D.ConstsSat Q) : D.StripsToBy (fun c => P c ∧ Q c) X := by
+  induction H with
+  | refl => exact .refl
+  | app2 hc hP _ ih => exact .app2 hc ⟨hP, hD.1.1⟩ (ih hD.1.2)
+  | app1 hc hP _ ih => exact .app1 hc ⟨hP, hD.1⟩ (ih hD.2)
 
 /-- What restoring needs to know of one constructor of a translated block, from the elimination
 that processed it (`CtorDone`) and the flat check that translated it. `auxN` are the auxiliary
@@ -409,20 +427,19 @@ theorem ctor_restoreFacts {E₁ : VEnv} (hE : E₁.WF) {lparams : List Name} (hU
     (hauxN : ∀ x ∈ auxN, x ∈ d.names ∧ (R x).isSome)
     (hcls : ∀ x, (E₁.constants x).isSome → (R x ≠ none ∨ ren x ≠ none) → x ∈ auxN)
     (hlit : ∀ l, E₁.ContainsLits l → l.toConstructor.anySub (constP (· ∈ auxN)) = false)
+    (hlitR : ∀ l, E₁.ContainsLits l → l.toConstructor.anySub (constP fun x => (R x).isSome) = false)
     (hind : ∀ n b, E₁.inducts n = some b → n ∉ auxN)
-    (hAnn : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
-      R c = none)
     (hnone : ∀ T ∈ d.allTypes, T.nested = none)
     {T : VInductiveType} {c : VConstructor} (hcW : c.WF E₁ d T) (hTn : T.nested = none)
     {pairs : List (Expr × Name)} {params : Array Expr} {c₀ ct : Constructor}
     (hpa : ∀ p ∈ pairs, (R p.2).isSome)
     (hCD : ElimNestedInductive.CtorDone pairs (lparams.map .param) params d.params.length c₀ ct)
-    (hc₀ : c₀.type.SuppIn (ElimNestedInductive.ConstOnly fun x => (R x).isSome = false))
+    (hc₀ : c₀.type.anySub (constP fun x => (R x).isSome) = false)
     (hcl : c₀.type.looseBVarRange' = 0)
     (htr : TrExprS E₁ lparams [] ct.type c.type)
     (hstrips : ∀ ps Ds B, c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
       ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-      D.StripsTo f.type) :
+      D.StripsToBy (· ∉ d.names) f.type) :
     c.RestoreFacts R ren d := by
   have hO := hE.ordered
   -- the constants the constructor's type mentions are the checking environment's
@@ -444,12 +461,11 @@ theorem ctor_restoreFacts {E₁ : VEnv} (hE : E₁.WF) {lparams : List Name} (hU
   have hns : ∀ y us, constP (· ∈ auxN) (.const y us) = false → y ∉ auxN := by
     intro y us h; simpa [constP] using h
   have hc₀' : c₀.type.anySub (constP (· ∈ auxN)) = false :=
-    anySub_constP_of_suppIn (Expr.SuppIn.mono
-      (S := ElimNestedInductive.ConstOnly fun x => (R x).isSome = false)
-      (S' := ElimNestedInductive.ConstOnly fun y => decide (y ∈ auxN) = false)
-      ⟨fun _ => id, fun _ => id, fun y hy => by
-        simp only [decide_eq_false_iff_not]; intro hm
-        have := (hauxN y hm).2; simp only at hy; rw [hy] at this; cases this⟩ hc₀)
+    AddInductive.anySub_mono (fun e he => by
+      cases e with
+      | const y _ =>
+        simp only [constP, decide_eq_true_eq] at he ⊢; exact (hauxN y he).2
+      | _ => simp [constP] at he) hc₀
   obtain ⟨As, b', hty, hAl, hAm, hb⟩ := TrExprS.setBody_inv hE hns hlit hind hpeel hc₀'
     (Δ := []) trivial nofun htr
   have hlv := VLevel.mapM_ofLevel_params hUs
@@ -458,7 +474,8 @@ theorem ctor_restoreFacts {E₁ : VEnv} (hE : E₁.WF) {lparams : List Name} (hU
     rw [hU]
     refine ElimNestedInductive.TrExprS.auxAt (n := d.params.length) hlv
       (fun x h hx => ⟨by simp [hx], hRn x h hx⟩) (fun x hx => Option.isSome_iff_exists.1 hx)
-      (by simpa [List.map_reverse] using hb) (by simpa [hAl] using hPA) hCA hplaced
+      hlitR (by simpa [List.map_reverse] using hb) (by simpa [hAl] using hPA) hCA hplaced
+  have hCS0 := hCS
   rw [hty, VExpr.ConstsSat.foralls] at hCS
   obtain ⟨ps₀, Ds₀, hty₀, hTD, hFW, -⟩ := hcW.shape
   have hl₀ := hTD.length_eq
@@ -467,13 +484,14 @@ theorem ctor_restoreFacts {E₁ : VEnv} (hE : E₁.WF) {lparams : List Name} (hU
   rw [hb'] at hBA
   obtain ⟨hDA, -⟩ := VExpr.AuxAt.foralls hBA
   refine ⟨⟨As, b', hty, hAl, fun A hA => hfree (hCS.1 A hA) (VExpr.constsSat_of_mentions (hAm A hA)),
-    by rw [hb']; exact hBA⟩, fun k f hf => ?_, fun x hx => ?_, hstrips⟩
+    by rw [hb']; exact hBA⟩, fun k f hf => ?_, fun x hx => ?_,
+    fun ps Ds B hty' hps k D f hD hf => ?_⟩
   · -- a field's type and its recursive view
     have hk : k < Ds₀.length := by
       rw [hFW.length]; exact (List.getElem?_eq_some_iff.1 hf).1
     have hD : Ds₀[k]? = some Ds₀[k] := List.getElem?_eq_getElem hk
-    have hS := hstrips As Ds₀ _ (hty₀.trans (by rfl)) hAl k _ f hD hf
-    refine ⟨hS.auxAt hAnn (by simpa using hDA k _ hD), ?_⟩
+    have hS := (hstrips As Ds₀ _ (hty₀.trans (by rfl)) hAl k _ f hD hf).toStripsTo
+    refine ⟨hS.auxAt (by simpa using hDA k _ hD), ?_⟩
     have hte := (VInductDecl.FieldsWF.tele hFW).1
     rw [← List.take_append_drop k c.fields, List.map_append] at hte
     have hΓ := hte.append_inv.1.onCtx (by simpa using hP.onCtx trivial)
@@ -487,6 +505,16 @@ theorem ctor_restoreFacts {E₁ : VEnv} (hE : E₁.WF) {lparams : List Name} (hU
       VExpr.ConstsSat.appN] at hCS
     refine (hCS.2.2.2 x (List.mem_append_right _ hx)).mono fun y hy hr => ?_
     exact (hauxN y (hcls y hy hr)).1
+  · -- the annotations a field's view strips are the checking environment's, not the block's
+    have hDc : D.ConstsSat (E₁.constants · |>.isSome) := by
+      rw [hty', VExpr.ConstsSat.foralls] at hCS0
+      exact hCS0.1 D (List.mem_append_right _ (List.mem_of_getElem? hD))
+    refine ((hstrips ps Ds B hty' hps k D f hD hf).consts hDc).mono fun x ⟨h1, h2⟩ => ?_
+    by_contra h
+    refine h1 (hauxN x (hcls x h2 ?_)).1
+    by_cases hR : R x = none
+    · exact .inr fun hr => h ⟨hR, hr⟩
+    · exact .inl hR
 
 theorem _root_.List.Forall₂.getElem?_right {R : α → β → Prop} :
     ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ → ∀ {i : Nat} {b}, l₂[i]? = some b →
@@ -519,19 +547,11 @@ structure RestoreInputs (venv : VEnv) (d : VInductDecl) (R : Name → Option VAu
   renNames : ∀ c c', ren c = some c' → c ∉ d.names
   ctorNames : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.name ∉ d.names
   ctor : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.RestoreFacts R ren d
-  ann : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
-    R c = none ∧ ren c = none
-
-theorem mkRecName_ne_annotation (x : Name) :
-    ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
-      Lean.mkRecName x ≠ c := by
-  intro c hc e
-  rcases hc with rfl | rfl | rfl | rfl <;> simp [Lean.mkRecName] at e
 
 /-- The kernel's restoration tables for a nested block, checked flat as `d` from the elimination
 `run`'s types `types ++ auxs` (`run_spec`), satisfy what `RestoreSpec.wf` asks of them, but for
 the auxiliary types' `AuxWF` and the index telescopes. `ns` are the occurrences the auxiliary
-types stand for, `hR` says no annotation is one of them. -/
+types stand for. -/
 theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimitives)
     {d : VInductDecl} (hd : d.WF venv) (hflat : d.aux = [])
     (hE₁ : venv.addConstList d.typeConsts = some E₁)
@@ -552,10 +572,8 @@ theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimi
     (hinfo : env'.find? T₀.name = some (.inductInfo info)) (hall : info.all = d.types.map (·.name))
     (hcname : ∀ j T, j < (T₀ :: Ts).length → d.types[j]? = some T → ∀ c ∈ T.ctors,
       res.restoreCtorName env' c.name = c.name)
-    (hin : ∀ T ∈ T₀ :: Ts ++ auxs, ∀ c ∈ T.ctors, c.type.SuppIn (ElimNestedInductive.ConstOnly
-      fun x => (d.auxTable (T₀ :: Ts).length ns (res.restoreCtorName env') x).isSome = false))
-    (hR : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
-      d.auxTable (T₀ :: Ts).length ns (res.restoreCtorName env') c = none) :
+    (hin : ∀ T ∈ T₀ :: Ts ++ auxs, ∀ c ∈ T.ctors, c.type.anySub
+      (constP fun x => (d.auxTable (T₀ :: Ts).length ns (res.restoreCtorName env') x).isSome) = false) :
     RestoreInputs venv d (d.auxTable (T₀ :: Ts).length ns (res.restoreCtorName env'))
       (auxRecRen env' (T₀ :: Ts)) (T₀ :: Ts).length ns (res.restoreCtorName env') := by
   generalize hn : (T₀ :: Ts).length = n at *
@@ -655,6 +673,26 @@ theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimi
         simp only [constP, decide_eq_true_eq] at he
         exact ⟨c, us, rfl, (hauxN c he).1⟩
       | _ => simp [constP] at he
+  have hlitR : ∀ l, E₁.ContainsLits l → l.toConstructor.anySub (constP fun x => (R x).isSome) =
+      false := by
+    refine Literal.toConstructor_anySub_of_fresh
+      (ns := (d.typeConsts ++ d.ctorConsts ++ d.recConsts).map (·.1)) henv hprim hfr
+      (fun x hx h0 => ?_) hnp (fun e he => ?_)
+    · obtain ⟨ci, hci⟩ := Option.ne_none_iff_exists'.1 hx
+      rcases VEnv.addConstList_constants_cases hE₁ hci with h | hm
+      · rw [h0] at h; cases h
+      · simp only [List.map_append, List.mem_append]
+        exact .inl (.inl (List.mem_map_of_mem (f := (·.1)) hm))
+    · cases e with
+      | const c us =>
+        simp only [constP] at he
+        obtain ⟨h, hR'⟩ := Option.isSome_iff_exists.1 he
+        obtain ⟨k, T, o, ⟨hT, -, hc⟩, -⟩ := hRsome hR'
+        refine ⟨c, us, rfl, ?_⟩
+        rcases hc with rfl | ⟨c', hc', rfl⟩
+        · exact hmemT (List.mem_of_getElem? hT)
+        · exact hmemC hT hc'
+      | _ => simp [constP] at he
   have hind : ∀ x b, E₁.inducts x = some b → x ∉ auxN := by
     intro x b hb hx
     rw [VEnv.addConstList_inducts hE₁] at hb
@@ -664,15 +702,6 @@ theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimi
   have hnone : ∀ T ∈ d.allTypes, T.nested = none := by
     rw [VInductDecl.allTypes_of_aux hflat]; exact hnested
   have hP : E₁.IsTele d.uvars [] d.params := hd.params.mono hle
-  have hRann : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨
-      c = ``semiOutParam → auxRecRen env' (T₀ :: Ts) c = none := by
-    intro c hc
-    cases h : auxRecRen env' (T₀ :: Ts) c with
-    | none => rfl
-    | some c' =>
-      obtain ⟨j, -, hj, rfl⟩ := hren1 _ _ h
-      rw [VInductDecl.recName_of_types (List.getElem?_eq_getElem hj)] at hc
-      exact absurd rfl (mkRecName_ne_annotation _ _ hc)
   have hpa : ∀ p ∈ pairs, (R p.2).isSome := by
     intro p hp
     obtain ⟨T, hT, e⟩ := List.mem_map.1 (hpairs ▸ List.mem_map_of_mem (f := fun q : Expr × Name => q.2) hp)
@@ -685,7 +714,7 @@ theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimi
       have := (List.getElem?_eq_some_iff.1 hk).1; omega)⟩
     rw [← e, ← htn, ← hT'n, hRtype hT' ho]; rfl
   refine ⟨hspec, hn0, fun c h hc => ?_, fun c c' hc => ?_, fun c h hc => ?_, fun c c' hc => ?_,
-    fun T hT c hc hm => ?_, fun T hT c hc => ?_, fun c hc => ⟨hR c hc, hRann c hc⟩⟩
+    fun T hT c hc hm => ?_, fun T hT c hc => ?_⟩
   · obtain ⟨k, T, o, ⟨hT, -, hc'⟩, -⟩ := hRsome hc
     rcases hc' with rfl | ⟨c', hc', rfl⟩
     · exact hfr _ (hmemT (List.mem_of_getElem? hT))
@@ -704,9 +733,75 @@ theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimi
     obtain ⟨T₁, hT₁, -, -, hCDs⟩ := Lean4Lean.List.Forall₂.forall_exists_r hTD t ht
     obtain ⟨c₀, hc₀, hCD⟩ := Lean4Lean.List.Forall₂.forall_exists_r hCDs ct hct
     exact ctor_restoreFacts hE hUs hU hP (fun x h hx => (hRsome hx).choose_spec.choose_spec
-        |>.choose_spec.2) hauxN hcls hlit hind (fun c hc => hR c hc) hnone
+        |>.choose_spec.2) hauxN hcls hlit hlitR hind hnone
       ((hd.ctors E₁ hE₁ T (VInductDecl.mem_allTypes_of_types hT)).2 c hc) (hnested T hT) hpa hCD
-      (hin T₁ hT₁ c₀ hc₀) ((hcl T₁ hT₁).2.2 c₀ hc₀).2 htr
-      (AddInductive.Elaborates.stripsTo hEl rfl T hT c hc)
+      (hin T₁ hT₁ c₀ hc₀) ((hcl T₁ hT₁).2.2 c₀ hc₀).2.1 htr
+      (fun ps Ds B h1 h2 k D f h3 h4 => (AddInductive.Elaborates.stripsToBy hEl rfl T hT c hc
+        ps Ds B h1 h2 k D f h3 h4).mono fun x hx hm => hx (by
+          rwa [VInductDecl.names, ← Lean4Lean.List.Forall₂.map_eq
+            (Lean4Lean.List.Forall₂.imp (fun _ _ h => h.1.symm) hEl.types)] at hm))
+
+/-- The names a fold over types and their constructors collects, as the final phase collects the
+auxiliary ones. -/
+theorem foldl_typeNames_contains (ts : List InductiveType) : ∀ T ∈ ts,
+    (ts.foldl (init := ({} : NameSet)) fun s t =>
+      t.ctors.foldl (·.insert ·.name) (s.insert t.name)).contains T.name ∧
+    ∀ c ∈ T.ctors, (ts.foldl (init := ({} : NameSet)) fun s t =>
+      t.ctors.foldl (·.insert ·.name) (s.insert t.name)).contains c.name :=
+  fun T hT => ⟨ns_foldl_types_contains_mem (s := ({} : NS)) ts
+      ⟨T, hT, .inl rfl⟩,
+    fun c hc => ns_foldl_types_contains_mem (s := ({} : NS)) ts
+      ⟨T, hT, .inr (List.mem_map_of_mem hc)⟩⟩
+
+/-- `restoreInputs`' `hin`: no input constructor names an auxiliary constant. The block's own
+constructors because the final phase checks them against the auxiliary names `S`; the auxiliary
+types' because the elimination builds them from the environment's constants and the block's
+constructors (`run_spec`), and the auxiliary names are new. -/
+theorem restoreInputs_hin {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+    {d : VInductDecl} {n : Nat} {ns : List VNested} {cname : Name → Name}
+    (hfrE : ∀ x ∈ (d.typeConsts ++ d.ctorConsts ++ d.recConsts).map (·.1), env.find? x = none)
+    {E₁ : VEnv} {lparams : List Name} {nparams : Nat} {level : VLevel}
+    {res : ElimNestedInductive.Result}
+    (hEl : AddInductive.Elaborates E₁ lparams nparams level res.types d)
+    {types auxs : List InductiveType}
+    (hfree : ∀ f, ElimNestedInductive.EnvFree env f →
+      (∀ T ∈ types, ∀ c ∈ T.ctors, c.type.anySub (constP f) = false) →
+      ∀ T ∈ types ++ auxs, ∀ c ∈ T.ctors, c.type.anySub (constP f) = false)
+    {S : NameSet} (hS : ∀ T ∈ res.types.drop n, S.contains T.name ∧ ∀ c ∈ T.ctors, S.contains c.name)
+    (hin : ∀ T ∈ types, ∀ c ∈ T.ctors, c.type.anySub (auxP S) = false) :
+    ∀ T ∈ types ++ auxs, ∀ c ∈ T.ctors,
+      c.type.anySub (constP fun x => (d.auxTable n ns cname x).isSome) = false := by
+  -- an auxiliary name is one of the translated block's, so new, and among `S`
+  have hR : ∀ x, (d.auxTable n ns cname x).isSome →
+      S.contains x ∧ x ∈ (d.typeConsts ++ d.ctorConsts ++ d.recConsts).map (·.1) := by
+    intro x hx
+    obtain ⟨h, hR⟩ := Option.isSome_iff_exists.1 hx
+    obtain ⟨k, T, o, ⟨hT, -, hc⟩, -⟩ := VInductDecl.auxTable_some hR
+    obtain ⟨t, ht, htn, hcs⟩ := Lean4Lean.List.Forall₂.getElem?_r hEl.types hT
+    have htm : t ∈ res.types.drop n := List.mem_iff_getElem?.2 ⟨k, by rw [List.getElem?_drop]; exact ht⟩
+    rcases hc with rfl | ⟨c', hc', rfl⟩
+    · refine ⟨htn ▸ (hS t htm).1, ?_⟩
+      simp only [List.map_append, List.mem_append]
+      exact .inl (.inl (List.mem_map.2 ⟨_, List.mem_map.2 ⟨T, List.mem_of_getElem? hT, rfl⟩, rfl⟩))
+    · obtain ⟨ct, hct, hcn, -⟩ := Lean4Lean.List.Forall₂.forall_exists_r hcs c' hc'
+      refine ⟨hcn ▸ (hS t htm).2 ct hct, ?_⟩
+      simp only [List.map_append, List.mem_append]
+      exact .inl (.inr (List.mem_map.2 ⟨_, List.mem_map.2
+        ⟨(n + k, c'), VInductDecl.mem_ctors_iff.2 ⟨T, hT, hc'⟩, rfl⟩, rfl⟩))
+  refine hfree _ (fun m ci hci => ?_) fun T hT c hc => ?_
+  · -- the environment's constants mention only constants it has
+    have hTr := wf.tr (safety := .unsafe)
+    obtain ⟨_, -, htr⟩ := hTr.find? hci DefinitionSafety.unsafe_le
+    refine anySub_constP_of_suppIn (Expr.SuppIn.mono ⟨fun _ _ => trivial, fun _ _ => trivial,
+      fun y hy => ?_⟩ (TrExprS.suppIn hTr.wf wf.hasPrimitives htr.2.2))
+    cases h : (d.auxTable n ns cname y).isSome
+    · simpa using h
+    · obtain ⟨ci', hci'⟩ := hy
+      have := hTr.constants_eq_none (hfrE y (hR y h).2)
+      rw [this] at hci'; cases hci'
+  · refine AddInductive.anySub_mono (fun e he => ?_) (hin T hT c hc)
+    cases e with
+    | const y _ => simp only [constP] at he; exact (hR y he).1
+    | _ => simp [constP] at he
 
 end Lean4Lean

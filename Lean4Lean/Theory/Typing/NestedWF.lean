@@ -517,20 +517,19 @@ theorem VEnv.IsTele.teleDefEq_self {env : VEnv} {U : Nat} :
 
 /-- Restoring keeps a declared domain's relation to the type the kernel reads off it, where the
 annotations are neither auxiliary nor renamed. -/
-theorem VExpr.StripsTo.restore {R : Name → Option VAuxHead} {ren : Name → Option Name}
-    (hR : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
-      R c = none ∧ ren c = none)
-    {e e' : VExpr} (H : e.StripsTo e') : (e.restore R ren).StripsTo (e'.restore R ren) := by
+theorem VExpr.StripsToBy.restore {R : Name → Option VAuxHead} {ren : Name → Option Name}
+    {e e' : VExpr} (H : e.StripsToBy (fun c => R c = none ∧ ren c = none) e') :
+    (e.restore R ren).StripsTo (e'.restore R ren) := by
   induction H with
   | refl => exact .refl
-  | @app2 A _ ls v c hc _ ih =>
-    obtain ⟨h1, h2⟩ := hR c (by rcases hc with rfl | rfl <;> simp)
+  | @app2 A _ ls v c hc hR _ ih =>
+    obtain ⟨h1, h2⟩ := hR
     have : (VExpr.app (.app (.const c ls) A) v).restore R ren =
         .app (.app (.const c ls) (A.restore R ren)) (v.restore R ren) := by
       simp [VExpr.restore, VExpr.restoreAux, VExpr.constSpine?, h1, h2]
     rw [this]; exact .app2 hc ih
-  | @app1 A _ ls c hc _ ih =>
-    obtain ⟨h1, h2⟩ := hR c (by rcases hc with rfl | rfl <;> simp)
+  | @app1 A _ ls c hc hR _ ih =>
+    obtain ⟨h1, h2⟩ := hR
     have : (VExpr.app (.const c ls) A).restore R ren = .app (.const c ls) (A.restore R ren) := by
       simp [VExpr.restore, VExpr.restoreAux, VExpr.constSpine?, h1, h2]
     rw [this]; exact .app1 hc ih
@@ -538,8 +537,9 @@ theorem VExpr.StripsTo.restore {R : Name → Option VAuxHead} {ren : Name → Op
 /-- What the restoration needs to know of a constructor of the translated block `d`, beyond its
 check: its declared type's parameter binders mention no auxiliary or renamed constant and its body
 has its auxiliary constants at the parameters; so do its fields; its indices mention no auxiliary
-constant other than the block's types; and the view of each field mentions no parameter its
-declared domain does not, once both are restored. -/
+constant other than the block's types; and each field's view is its declared domain with
+annotations stripped that are neither auxiliary nor renamed, so it mentions no parameter the
+domain does not, once both are restored. -/
 structure VConstructor.RestoreFacts (R : Name → Option VAuxHead) (ren : Name → Option Name)
     (d : VInductDecl) (c : VConstructor) : Prop where
   shape : ∃ ps B, c.type = .foralls ps B ∧ ps.length = d.params.length ∧
@@ -549,7 +549,7 @@ structure VConstructor.RestoreFacts (R : Name → Option VAuxHead) (ren : Name �
   indices : ∀ x ∈ c.indices, x.ConstsSat fun y => R y ≠ none ∨ ren y ≠ none → y ∈ d.names
   strips : ∀ ps Ds B, c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
     ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-      D.StripsTo f.type
+      D.StripsToBy (fun c => R c = none ∧ ren c = none) f.type
 
 namespace VInductDecl
 variable {R : Name → Option VAuxHead} {ren : Name → Option Name} {d : VInductDecl} {n : Nat}
@@ -566,13 +566,11 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
     (hrenNames : ∀ c c', ren c = some c' → c ∉ d.names)
     (hctorNames : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.name ∉ d.names)
     (hE₁ : venv.addConstList d.typeConsts = some E₁)
-    (hIdx : ∀ T ∈ d.types, venv.IsTele d.uvars d.params.reverse T.indices)
+    (hIdx : ∀ T ∈ d.types, ∀ x ∈ T.indices, x.mentions d.names = false)
     (hAux : ∀ T ∈ (d.restoreNested R ren n ns cname).aux, ∃ o, T.nested = some o ∧
       ∀ env', venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some env' →
         T.AuxWF env' (d.restoreNested R ren n ns cname) o)
-    (hCtor : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.RestoreFacts R ren d)
-    (hAnn : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
-      R c = none ∧ ren c = none) :
+    (hCtor : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.RestoreFacts R ren d) :
     (d.restoreNested R ren n ns cname).WF venv := by
   have hO := henv.ordered
   have hfr {e : VExpr} (he : e.ConstsSat (venv.constants · |>.isSome)) :
@@ -653,8 +651,6 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
       (h : E₁.IsDefEq U Γ e e' A) :
       e.ConstsSat (ren · = none) ∧ e'.ConstsSat (ren · = none) ∧ A.ConstsSat (ren · = none) :=
     renFree hE₁wf hrenE₁ hΓ h
-  have hPP : OnCtx d.params.reverse (venv.IsType d.uvars) := by
-    simpa using hd.params.onCtx trivial
   have hPP₁ : OnCtx d.params.reverse (E₁.IsType d.uvars) := by
     simpa using (hd.params.mono hle₁).onCtx trivial
   refine {
@@ -699,14 +695,35 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
       · rw [hR₁] at hc; cases hc; rfl
       · rw [(hR₂ c' hc').1] at hc; cases hc; rfl
     refine ⟨?_, fun c' hc' => ?_⟩
-    · have hIC := VEnv.IsTele.constsSat hO (hIdx T hTm) hPP
+    · -- the indices, typed with the block's types only, mention none of them
+      have hIC₁ := VEnv.IsTele.constsSat hE₁wf.ordered hflat.1.indices hPP₁
+      have hIC : ∀ x ∈ T.indices, x.ConstsSat fun c => R c = none ∧ ren c = none :=
+        fun x hx => ((hIC₁ x hx).and (constsSat_of_mentions (hIdx T hTm x hx))).mono
+          fun c ⟨h1, h2⟩ => by
+            rcases hE₁names c h1 with h | h
+            · refine ⟨?_, ?_⟩
+              · cases hR : R c with
+                | none => rfl
+                | some _ => exact (h (hRfresh c _ hR)).elim
+              · cases hr : ren c with
+                | none => rfl
+                | some _ => exact (h (hrenfresh c _ hr)).elim
+            · exact (h2 h).elim
       have hidx : T.indices.map (·.restore R ren) = T.indices :=
-        (List.map_congr_left fun x hx => restore_of_constsSat (hfr (hIC x hx))).trans
+        (List.map_congr_left fun x hx => restore_of_constsSat (hIC x hx)).trans
           (List.map_id' _)
+      have hidxF : T.indices.map (·.replaceConst (nestedF R d.params)) = T.indices :=
+        (List.map_congr_left fun x hx => VExpr.replaceConst_of_constsSat (hFfree (hIC x hx))).trans
+          (List.map_id' _)
+      have hparF : d.params.reverse.map (·.replaceConst (nestedF R d.params)) = d.params.reverse :=
+        (List.map_congr_left fun x hx => VExpr.replaceConst_of_constsSat
+          (hFfree (hfr (hPC x (List.mem_reverse.1 hx))))).trans (List.map_id' _)
       refine ⟨?_, ?_⟩
       · show E₀.IsTele d.uvars (d.restoreNested R ren n ns cname).params.reverse
           (T.indices.map (·.restore R ren))
-        rw [hparams, hidx]; exact (hIdx T hTm).mono hle₀
+        rw [hparams, hidx]
+        have := hflat.1.indices.replaceConst HE.wf.ordered HE.subst
+        rwa [hparF, hidxF] at this
       · show E₀.IsDefEqU d.uvars [] (T.type.restore R ren)
           (.foralls ((d.restoreNested R ren n ns cname).params ++ T.indices.map (·.restore R ren))
             (.sort d.level))
@@ -715,10 +732,10 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
         rwa [VExpr.replaceConst_of_constsSat (hFfree (hfr (hTC hTm))),
           VExpr.replaceConst_of_constsSat (hFfree ((VExpr.ConstsSat.foralls
             (As := d.params ++ T.indices) (B := .sort d.level)).2
-            ⟨fun A hA => hfr (by
+            ⟨fun A hA => by
               rcases List.mem_append.1 hA with hA | hA
-              · exact hPC A hA
-              · exact hIC A hA), trivial⟩))] at this
+              · exact hfr (hPC A hA)
+              · exact hIC A hA, trivial⟩))] at this
     obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hc'
     have hcW := hflat.2 c hc
     have hF := hCtor T hTm c hc
@@ -784,7 +801,7 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
       obtain ⟨D, hD, rfl⟩ := Option.map_eq_some_iff.1 hD'
       rw [VConstructor.restore_fields_getElem?] at hf'
       obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.1 hf'
-      exact ((hF.strips ps Ds _ hty₀ hpsl k D f hD hf).restore hAnn).skips hSk'
+      exact (hF.strips ps Ds _ hty₀ hpsl k D f hD hf).restore.skips hSk'
     · simp [VConstructor.restore, VInductiveType.restore, hcW.indices.1]
     · simp only [VConstructor.restore, List.all_map, List.all_eq_true, Function.comp_apply]
       intro x hx
