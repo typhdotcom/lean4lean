@@ -1,15 +1,11 @@
 import Lean4Lean.Verify.LocalContext
+import Lean4Lean.Verify.Typing.Drop
 import Lean4Lean.Theory.Typing.EnvLemmas
 import Lean4Lean.Theory.Typing.InductiveRules
 
 namespace Lean4Lean
 open Lean hiding Environment Exception
 open Kernel
-
-/-- The number of binders a term's syntactic pi telescope opens. -/
-def _root_.Lean.Expr.leadingForalls : Expr → Nat
-  | .forallE _ _ body _ => body.leadingForalls + 1
-  | _ => 0
 
 theorem ConstantInfo.hasValue_eq (ci : ConstantInfo) : ci.hasValue = ci.value?.isSome := by
   cases ci <;> rfl
@@ -175,7 +171,8 @@ inductive AddInductN (nn : Nat) (safety : DefinitionSafety) (m₁ : ConstMap) (e
         ps.length = decl.params.length → env₁.TeleDefEq decl.uvars [] ps decl.params))
       types decl.types →
     List.Forall₂ (fun v (j, c) => TrCtorVal decl lparams j c v ∧
-      TrConstant safety envT (.ctorInfo v) ⟨decl.uvars, c.type⟩) ctors decl.ctors →
+      TrConstant safety envT (.ctorInfo v) ⟨decl.uvars, c.type⟩ ∧
+      CtorDoms envT lparams decl.params.length c.fields.length v.type) ctors decl.ctors →
     List.Forall₂ (fun v (T, i) => TrRecVal decl lparams envR i T v ∧
       TrConstant safety envC (.recInfo v)
         ⟨decl.recUVars, decl.recType decl.recLevels decl.motiveLevel i T⟩)

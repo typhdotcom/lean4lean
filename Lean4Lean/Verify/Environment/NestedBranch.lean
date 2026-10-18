@@ -669,14 +669,39 @@ theorem addInductive.WF_nested {env : Environment} {ves : VEnvs} (wf : ves.WF en
       ∀ env₀, venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some env₀ →
         T.AuxWF env₀ (d.restoreNested R ren n ns cname) o :=
     nested_auxWF wf hvenv henvAt hd hdaux hflat hE₁ hEl hnp hfrE hU hUs hdpar hcl hrun hoI hxl hxnd
-      hparams hnpar hA haux2 hclAll hTD hF hpairs hpnd hT' hfT hfC hnmj hdlen hcname
+      hparams hnpar hA haux2 hclAll hTD hF hpairs hpnd hT' hfT
+      (fun i T hT c hc => let ⟨c₀, a, b, c', _⟩ := hfC i T hT c hc; ⟨c₀, a, b, c'⟩) hnmj hdlen hcname
       (hvenv ▸ hocc) hnsl hin' hRI (hvenv ▸ htyTr) hS hcL hnamesR hlpk hnn
   have hdN : (d.restoreNested R ren n ns cname).WF venv :=
     VInductDecl.RestoreSpec.wf henv hRI.spec hd hRI.n_pos hRI.Rfresh hRI.renfresh hRI.Rdom
       hRI.renNames hRI.ctorNames hE₁ hIdx hAux hRI.ctor
+  -- carrying the translation's judgments over a constructor's parameters to the restored block
+  have hHE : ∀ E₁' E₀, venv.addConstList d.typeConsts = some E₁' →
+      venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some E₀ →
+      ∀ Qs, E₀.IsTele d.uvars [] Qs → E₀.TeleDefEq d.uvars [] Qs d.params →
+      ∃ F, RestoreEnv E₁' E₀ lps.length F R (VLevel.params lps.length) Qs.reverse := by
+    intro E₁' E₀ h1 h0 Qs hQ hQP
+    have := hRI.spec.restoreEnv henv hRI.Rfresh hRI.renfresh hRI.Rdom hd.params
+      (fun T hT => (hd.types T hT).1) h1 h0
+      (fun T hT => let ⟨o, h1', h2'⟩ := hAux T hT; ⟨o, h1', h2' E₀ h0⟩) hQ hQP
+    rw [hU] at this
+    exact ⟨_, this⟩
+  have hrenE : ∀ E₁', venv.addConstList d.typeConsts = some E₁' → ∀ c, ren c ≠ none →
+      E₁'.constants c = none := by
+    intro E₁' h1 c hc
+    obtain ⟨c', hc'⟩ := Option.ne_none_iff_exists'.1 hc
+    cases h : E₁'.constants c with
+    | none => rfl
+    | some ci =>
+      rcases VEnv.addConstList_constants_cases h1 h with h' | h'
+      · rw [hRI.renfresh c c' hc'] at h'; cases h'
+      · obtain ⟨T, hT, e⟩ := List.mem_map.1 h'
+        cases e
+        exact (hRI.renNames _ c' hc' (List.mem_map_of_mem hT)).elim
   obtain ⟨venvF, hstep⟩ := nestedAddInduct (d := d) (R := R) (ren := ren) (n := n) (ns := ns)
     (cname := cname) hF henvAt hflat hd hRI.spec hdN rfl hRI.n_pos hns hnn hS
     hP hcL hRI.Rfresh hRI.renfresh hout (fun _ _ _ _ _ => rfl) hnamesR hSN hM rfl hlit hlpk
+    hHE sorry sorry sorry hRI.litR hrenE hUs (by rw [hnpar, hdpar])
   have hu' : (d.restoreNested R ren n ns cname).isUnsafe = isUnsafe := hu
   have hdecl : (d.restoreNested R ren n ns cname).WF
       (ves.venv (inductSafety (d.restoreNested R ren n ns cname).isUnsafe)) := by

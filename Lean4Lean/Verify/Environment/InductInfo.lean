@@ -208,13 +208,15 @@ theorem TrEnv'.ctorInfo_type {safety C Q venv} (H : TrEnv' safety C Q venv) {n w
     (h : C.find? n = some (.ctorInfo w)) (hs : safety ≤ (ConstantInfo.ctorInfo w).safety) :
     ∃ d t c venv₀, venv.inducts w.induct = some (d, t) ∧ TrCtorVal d w.levelParams t c w ∧
       (t, c) ∈ d.ctors ∧ w.levelParams.length = d.uvars ∧ venv₀ ≤ venv ∧
-      TrExprS venv₀ w.levelParams [] w.type c.type := by
+      TrExprS venv₀ w.levelParams [] w.type c.type ∧
+      CtorDoms venv₀ w.levelParams d.params.length c.fields.length w.type := by
   refine H.inductLike (P := fun venv ci => ∀ w, ci = .ctorInfo w → ∃ d t c venv₀,
       venv.inducts w.induct = some (d, t) ∧ TrCtorVal d w.levelParams t c w ∧
       (t, c) ∈ d.ctors ∧ w.levelParams.length = d.uvars ∧ venv₀ ≤ venv ∧
-      TrExprS venv₀ w.levelParams [] w.type c.type)
-    (fun hle H w hw => let ⟨d, t, c, v₀, a, b, c', e, f, g⟩ := H w hw
-      ⟨d, t, c, v₀, hle.inducts a, b, c', e, f.trans hle, g⟩)
+      TrExprS venv₀ w.levelParams [] w.type c.type ∧
+      CtorDoms venv₀ w.levelParams d.params.length c.fields.length w.type)
+    (fun hle H w hw => let ⟨d, t, c, v₀, a, b, c', e, f, g, g'⟩ := H w hw
+      ⟨d, t, c, v₀, hle.inducts a, b, c', e, f.trans hle, g, g'⟩)
     (fun H₀ _ HA hn h w hw => ?_) h hs trivial w rfl
   subst hw
   have HA' := HA
@@ -231,7 +233,7 @@ theorem TrEnv'.ctorInfo_type {safety C Q venv} (H : TrEnv' safety C Q venv) {n w
   subst hlp'
   have hle : envT ≤ _ := (VEnv.addConstList_le hC).trans <| (VEnv.addConstList_le hR).trans <|
     VEnv.addDefEqList_le.trans (VEnv.addBlock_le hB)
-  exact ⟨_, j, c, envT, hind ▸ HA'.inducts hT, hi, hc, hlp, hle, htr.2.2⟩
+  exact ⟨_, j, c, envT, hind ▸ HA'.inducts hT, hi, hc, hlp, hle, htr.1.2.2, htr.2⟩
 
 /-- A recursor a model can see is recorded with its block, under the block's first type. -/
 theorem TrEnv'.recInfo {safety C Q venv} (H : TrEnv' safety C Q venv) {n v}

@@ -111,9 +111,11 @@ theorem primCtor_checked {venv : VEnv} {I : Name}
     rw [hdu]; exact ⟨_, primConst_isType hI⟩
   rcases hct with he | ⟨nm, bi, he⟩ <;> rw [he] <;> rw [he] at htr
   · refine ⟨[], [], [], by simp [primCtorTr, htn, hdp, VExpr.bvars, VLevel.params],
-      rfl, by rw [hdp]; exact .nil, rfl, rfl, .nil, fun _ _ h => by simp at h⟩
+      rfl, by rw [hdp]; exact .nil, rfl, rfl, .nil, fun _ _ h => by simp at h, fun m hm => ?_⟩
+    obtain rfl : m = 0 := by simpa using hm
+    exact .nil nofun nofun nofun
   · refine ⟨[], [.const I []], [], by simp [primCtorTr, htn, hdp, VExpr.bvars, VLevel.params],
-      rfl, by rw [hdp]; exact .nil, rfl, rfl, ?_, fun k D h => ?_⟩
+      rfl, by rw [hdp]; exact .nil, rfl, rfl, ?_, fun k D h => ?_, fun m hm => ?_⟩
     rotate_left
     · obtain ⟨rfl, rfl⟩ : k = 0 ∧ D = .const I [] := by cases k <;> simp_all
       intro P _
@@ -123,6 +125,11 @@ theorem primCtor_checked {venv : VEnv} {I : Name}
         List.nil_append, List.getElem?_cons_zero, Option.getD_some, VConstructor.strippedTypeBy,
         VExpr.subst]
       exact ⟨⟨_, primConst_isType hI⟩, fun _ => ⟨_, primConst_isType hI⟩⟩
+    · have hc : TrExprS venv [] [] (.const I []) (.const I []) := .const hI rfl rfl
+      rcases (show m = 0 ∨ m = 1 by simp at hm; omega) with rfl | rfl
+      · exact .cons hc ⟨_, primConst_isType hI⟩ (.nil nofun nofun nofun)
+      · simp [Expr.dropU_forallE, Expr.hasLooseBVar', Expr.lowerLooseBVars']
+        exact .nil nofun nofun nofun
     refine .cons ⟨.succ .zero, by rw [hdu]; exact primConst_isType hI,
       .inr fun ls => by rw [show d.level.eval ls = (VLevel.succ .zero).eval ls from
         congrFun hlev ls]; exact Nat.le_refl _⟩ (fun _ => ?_) .nil

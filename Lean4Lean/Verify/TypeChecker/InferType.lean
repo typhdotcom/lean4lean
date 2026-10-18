@@ -600,7 +600,14 @@ theorem inferType'.WF_lit
   · refine (inferType'.WF_lit (by exact h1) ?_).bind
       fun _ _ _ ⟨⟨_, _, hb, h1, h2, h3⟩, _⟩ => ?_
     · exact fun h => let ⟨_, .proj h ..⟩ := hinf h; ⟨_, h⟩
-    exact (inferProj.WF' h1 h2 h3 hb).bind fun ty _ _ ⟨ty', h⟩ => hF h (hN nofun nofun)
+    have hCD : ∀ n w, c.env.constants.find? n = some (.ctorInfo w) →
+        c.safety ≤ (ConstantInfo.ctorInfo w).safety →
+        CtorDoms c.venv w.levelParams w.numParams w.numFields w.type := by
+      intro n w hw hs
+      obtain ⟨d, t, cv, venv₀, -, ⟨-, -, -, -, -, -, hnp, hnf, -⟩, -, -, hle, -, hdoms⟩ :=
+        c.trenv.ctorInfo_type hw hs
+      rw [hnp, hnf]; exact hdoms.mono hle
+    exact (inferProj.WF'_doms h1 h2 h3 hb hCD).bind fun ty _ _ ⟨ty', h⟩ => hF h (hN nofun nofun)
   · exact .readThe <| (M.WF.liftExcept inferFVar.WF).lift.bind fun _ _ _ ⟨_, _, h⟩ =>
       hF h (hN nofun nofun)
   · exact .throw

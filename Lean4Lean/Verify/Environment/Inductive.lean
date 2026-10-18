@@ -112,7 +112,8 @@ theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ d
     VEnv.addBlock_mono (VEnv.addDefEqList_mono leR) hB hB'⟩
   · exact Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1, (h.2.1.sf_mono hsf).mono hle,
       fun h1 ps B h2 h3 => (h.2.2 h1 ps B h2 h3).mono hle⟩) hty
-  · exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => ⟨h.1, (h.2.sf_mono hsf).mono leT⟩) hct
+  · exact Lean4Lean.List.Forall₂.imp
+      (fun _ ⟨_, _⟩ h => ⟨h.1, (h.2.1.sf_mono hsf).mono leT, h.2.2.mono leT⟩) hct
   · exact Lean4Lean.List.Forall₂.imp
       (fun _ ⟨_, _⟩ h => ⟨h.1.mono leR, (h.2.sf_mono hsf).mono leC⟩) hrc
 

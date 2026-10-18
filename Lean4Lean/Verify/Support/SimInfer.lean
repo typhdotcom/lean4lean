@@ -165,7 +165,7 @@ theorem isDefEq.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c�
     RecM.SS c₁ c₂ s (isDefEq e₁ e₂) (isDefEq e₁ e₂) fun _ _ => True := by
   refine (isDefEqCore.SS hA hS h₁ h₂ hs₁ hs₂).bind fun b _ _ _ => ?_
   simp; split
-  · refine fun m hm => ⟨?_, fun _ _ _ eq => eq⟩
+  · refine fun m hm => ⟨?_, fun _ _ _ eq _ => eq⟩
     rintro wf _ _ ⟨⟩
     exact ⟨{ wf with }, .rfl, trivial⟩
   · exact .pure trivial
@@ -202,28 +202,34 @@ theorem TeleAgree.nil {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂) 
 
 theorem TeleAgree.push {S : Supp} {c c₁ c₂ : Context} {xs : List FVarId} {s : State}
     (H : TeleAgree S c c₁ c₂ xs) (wf : SuppState c₁ s) {name ty bi}
-    (hty : ty.SuppIn (S.addFVars xs)) :
+    (hty : ty.SuppIn (S.addFVars xs)) (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) :
     TeleAgree S c { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
       { c₂ with lctx := c₂.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi } (xs ++ [⟨s.ngen.curr⟩]) := by
   have E := wf.ctxExt (name := name) (ty := ty) (bi := bi)
   refine ⟨H.tele.push E, H.supp.push H.tele E fun d hd => ?_,
-    (H.agree.mkLocalDecl wf).mono Supp.addFVars_append.1⟩
+    (H.agree.mkLocalDecl wf f₂).mono Supp.addFVars_append.1⟩
   simp only [LocalContext.find?_mkLocalDecl wf.lctxWF E.fresh, beq_self_eq_true, if_true,
     Option.some.injEq] at hd; subst hd
   exact hty
 
 theorem TeleAgree.pushLet {S : Supp} {c c₁ c₂ : Context} {xs : List FVarId} {s : State}
     (H : TeleAgree S c c₁ c₂ xs) (wf : SuppState c₁ s) {name ty val}
-    (hty : ty.SuppIn (S.addFVars xs)) (hval : val.SuppIn (S.addFVars xs)) :
+    (hty : ty.SuppIn (S.addFVars xs)) (hval : val.SuppIn (S.addFVars xs))
+    (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) :
     TeleAgree S c { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       { c₂ with lctx := c₂.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       (xs ++ [⟨s.ngen.curr⟩]) := by
   have E := wf.ctxExtLet (name := name) (ty := ty) (val := val)
   refine ⟨H.tele.push E, H.supp.push H.tele E fun d hd => ?_,
-    (H.agree.mkLetDecl wf).mono Supp.addFVars_append.1⟩
+    (H.agree.mkLetDecl wf f₂).mono Supp.addFVars_append.1⟩
   simp only [LocalContext.find?_mkLetDecl wf.lctxWF E.fresh, beq_self_eq_true, if_true,
     Option.some.injEq] at hd; subst hd
   exact ⟨hty, hval⟩
+
+/-- The agreement of `c₁` with itself, for the run the proof of a simulation checks. -/
+theorem TeleAgree.self {S : Supp} {c c₁ c₂ : Context} {xs : List FVarId}
+    (H : TeleAgree S c c₁ c₂ xs) (wf : c₁.lctx.WF) : TeleAgree S c c₁ c₁ xs :=
+  ⟨H.tele, H.supp, Agree.refl wf⟩
 
 theorem TeleAgree.mkForall {S : Supp} {c c₁ c₂ : Context} {xs : List FVarId}
     (H : TeleAgree S c c₁ c₂ xs) {b : Expr} :
@@ -246,11 +252,15 @@ theorem inferLambda.loop.SS {S : Supp} {c c₁ c₂ : Context} {s : State} {e : 
           inferLambda.loop inferOnly (arr.push fv) body)
         (withLocalDecl name bi (dom.instantiateRev arr) fun fv =>
           inferLambda.loop inferOnly (arr.push fv) body) fun _ _ => True := by
-      refine .stateWF fun wf => .withLocalDecl hd ?_
+      refine .stateWF fun wf => ?_
       have E := wf.ctxExt (name := name) (ty := dom.instantiateRev arr) (bi := bi)
-      exact inferLambda.loop.SS (T.push wf hds) hS (by simp [harr])
-        (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-        (hse.2.mono (Supp.addFVars_mono (by simp)))
+      exact .withLocalDecl hd
+        (inferLambda.loop.SS ((T.self wf.lctxWF).push wf hds E.fresh) hS (by simp [harr])
+          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
+          (hse.2.mono (Supp.addFVars_mono (by simp))))
+        (fun f₂ => inferLambda.loop.SS (T.push wf hds f₂) hS (by simp [harr])
+          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
+          (hse.2.mono (Supp.addFVars_mono (by simp)))) T.agree.wf
     split
     · refine .stateWF fun wf => ?_
       have hS' := T.tele.closed T.supp wf.lctxWF hS
@@ -290,11 +300,15 @@ theorem inferForall.loop.SS {S : Supp} {c c₁ c₂ : Context} {s : State} {e : 
     have hS' := T.tele.closed T.supp wf.lctxWF hS
     refine (inferType.SS T.agree hS' hd hds).bind fun ty _ _ hty => .stateWF fun wf' => ?_
     refine (ensureSortCore.SS T.agree hS' (hty.dom wf' hd) (hty _ hS' hds)).bind
-      fun _ s₁ _ _ => .stateWF fun wf => .withLocalDecl hd ?_
+      fun _ s₁ _ _ => .stateWF fun wf => ?_
     have E := wf.ctxExt (name := name) (ty := dom.instantiateRev arr) (bi := bi) (s := s₁)
-    exact inferForall.loop.SS (T.push wf hds) hS (by simp [harr])
-      (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-      (hse.2.mono (Supp.addFVars_mono (by simp)))
+    exact .withLocalDecl hd
+      (inferForall.loop.SS ((T.self wf.lctxWF).push wf hds E.fresh) hS (by simp [harr])
+        (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
+        (hse.2.mono (Supp.addFVars_mono (by simp))))
+      (fun f₂ => inferForall.loop.SS (T.push wf hds f₂) hS (by simp [harr])
+        (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
+        (hse.2.mono (Supp.addFVars_mono (by simp)))) T.agree.wf
   · refine .stateWF fun wf => ?_
     have hS' := T.tele.closed T.supp wf.lctxWF hS
     have hd := Dom.instantiateRev harr T.tele.dom hdom
@@ -328,12 +342,16 @@ theorem inferLet.loop.SS {S : Supp} {c c₁ c₂ : Context} {s : State} {e : Exp
           inferLet.loop inferOnly (arr.push fv) body)
         (withLetDecl name (type.instantiateRev arr) (val.instantiateRev arr) fun fv =>
           inferLet.loop inferOnly (arr.push fv) body) fun _ _ => True := by
-      refine .stateWF fun wf => .withLetDecl ht hv ?_
+      refine .stateWF fun wf => ?_
       have E := wf.ctxExtLet (name := name) (ty := type.instantiateRev arr)
         (val := val.instantiateRev arr)
-      exact inferLet.loop.SS (T.pushLet wf hts hvs) hS (by simp [harr])
-        (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-        (hse.2.2.mono (Supp.addFVars_mono (by simp)))
+      exact .withLetDecl ht hv
+        (inferLet.loop.SS ((T.self wf.lctxWF).pushLet wf hts hvs E.fresh) hS (by simp [harr])
+          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
+          (hse.2.2.mono (Supp.addFVars_mono (by simp))))
+        (fun f₂ => inferLet.loop.SS (T.pushLet wf hts hvs f₂) hS (by simp [harr])
+          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
+          (hse.2.2.mono (Supp.addFVars_mono (by simp)))) T.agree.wf
     split
     · refine .stateWF fun wf => ?_
       have hS' := T.tele.closed T.supp wf.lctxWF hS
@@ -517,7 +535,7 @@ theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
   · exact .pure (Q := fun _ _ => True) trivial
   generalize hP : (fun _ (_ : State) => _) = P
   have hF {ty s} (H : SuppBelow c₁ e ty) : RecM.SS c₁ c₂ s (F ty) (F ty) P := by
-    refine fun m hm => ⟨?_, fun _ _ _ eq => eq⟩
+    refine fun m hm => ⟨?_, fun _ _ _ eq _ => eq⟩
     rintro wf a s' ⟨⟩
     have hc := CondSupp.of wf he H
     subst P; cases inferOnly

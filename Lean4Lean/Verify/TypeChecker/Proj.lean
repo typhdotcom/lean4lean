@@ -1,4 +1,4 @@
-import Lean4Lean.Verify.Typing.Strengthen
+import Lean4Lean.Verify.Typing.Lemmas
 import Lean4Lean.Verify.TypeChecker.IsDefEq
 import Lean4Lean.Theory.Typing.ProjKernel
 import Lean4Lean.Theory.Typing.Iota
@@ -29,22 +29,6 @@ theorem Closed.of_looseBVarRange_le : ∀ {e : Expr} {k j},
   intro e
   induction e <;> intro k j hc hb <;>
     simp_all [Closed, Expr.looseBVarRange', Nat.max_le] <;> grind
-
-/-- A body without loose bound variables, translated under a binder, is the lift of its
-translation outside it. -/
-theorem TrExprS.lower_of_closed {env : VEnv} {Us : List Name} {Δ : VLCtx} {A : VExpr}
-    {b : Expr} {B : VExpr} (henv : env.WF) (hΔ : VLCtx.WF env Us.length ((none, .vlam A) :: Δ))
-    {a : FVarId} (ha : a ∉ Δ.fvars) (H : TrExprS env Us ((none, .vlam A) :: Δ) b B)
-    (hb : b.looseBVarRange' = 0) : ∃ B₀, TrExprS env Us Δ b B₀ ∧ B = B₀.liftN 1 := by
-  have hΔ' : VLCtx.WF env Us.length ((some (a, []), .vlam A) :: Δ) :=
-    ⟨hΔ.1, by rintro _ _ ⟨⟩; exact ⟨ha, nofun⟩, hΔ.2.2⟩
-  have hc : Closed b 0 := .of_looseBVarRange_le H.closed (by omega)
-  have h1 := H.inst_fvar henv.ordered hΔ'
-  rw [Expr.instantiate1'_eq_self (by simpa using hc.looseBVarRange_le)] at h1
-  obtain ⟨B₀, h0⟩ := h1.weakFV'_inv henv (.skip_fvar _ _ .refl) (.refl henv hΔ') hc
-    (by simpa using H.fvarsIn)
-  have h2 := h0.weakFV henv.ordered (.skip_fvar (a, []) (.vlam A) .refl) hΔ'
-  exact ⟨B₀, h0, h2.unique (TrExprS.IsUnique.all _) h1 ▸ rfl⟩
 
 namespace TypeChecker.Inner
 
@@ -97,29 +81,164 @@ theorem ProjWalk.inst {c : VContext} {L : List VExpr} {R : VExpr} {vals : List V
   · rw [Expr.instantiate1_eq]
     exact Nat.le_trans har (Expr.leadingForalls_instantiate1' _ _ _)
 
-/-- A body that does not mention its binder continues the walk as it is. -/
-theorem ProjWalk.skip {c : VContext} {s : VState} (wf : s.WF c) {L : List VExpr} {R : VExpr}
-    {vals : List VExpr} {i : Nat} {A B : VExpr} {b : Expr}
-    (hA : c.IsType A) (hb : TrExprS c.venv c.lparams ((none, .vlam A) :: c.vlctx) b B)
+/-- The kernel's walk down a telescope `L` over `R`, which it instantiates with `vals`, read
+without its typing: after `i` binders, the term it holds plainly translates, up to universe levels,
+to the telescope's rest. Its domains' typing comes from the dropped telescopes `fam`: the term with
+the next `p` binders kept and those of the `M` after them that the rest does not mention dropped,
+which is how the kernel goes on from it. -/
+structure ProjWalkD (c : VContext) (L : List VExpr) (R : VExpr) (vals : List VExpr) (i p M : Nat)
+    (r : Expr) : Prop where
+  tr : ∃ X, PTr c.lparams c.venv.ContainsLits c.vlctx r X ∧ VEnv.EqUpToLevels c.lparams.length
+    ((VExpr.foralls (L.drop i) R).subst (VExpr.Subst.dflt.consList (vals.take i))) X
+  arity : L.length - i ≤ r.leadingForalls
+  closed : r.looseBVarRange' = 0
+  fam : ∀ m ≤ M, TeleDoms c.venv c.lparams c.vlctx (Expr.dropAfter p m r)
+  famLen : p + M ≤ r.leadingForalls
+
+/-- One binder of the walk: the term is a pi, whose domain translates to a type, the telescope's
+next entry at the values so far. -/
+theorem ProjWalkD.step {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+    {i p M : Nat} {r : Expr} (H : ProjWalkD c L R vals i p M r) (hi : i < L.length) :
+    ∃ nm dom b bi A B, r = .forallE nm dom b bi ∧ c.TrExprS dom A ∧ c.IsType A ∧
+      PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B ∧
+      VEnv.EqUpToLevels c.lparams.length
+        (L[i].subst (VExpr.Subst.dflt.consList (vals.take i))) A ∧
+      VEnv.EqUpToLevels c.lparams.length ((VExpr.foralls (L.drop (i + 1)) R).subst
+        (VExpr.Subst.dflt.consList (vals.take i)).lift) B ∧
+      L.length - (i + 1) ≤ b.leadingForalls ∧ b.looseBVarRange' ≤ 1 := by
+  obtain ⟨⟨X, hX, hXe⟩, har, hcl, hfam, -⟩ := H
+  rw [List.drop_eq_getElem_cons hi] at hXe
+  cases r with
+  | forallE nm dom b bi =>
+    cases hX with | forallE hdom hb =>
+    cases hXe with | forallE e1 e2 =>
+    have h0 := hfam 0 (Nat.zero_le _)
+    rw [Expr.dropAfter_zero_right] at h0
+    cases h0 with
+    | nil h => exact (h _ _ _ _ rfl).elim
+    | cons hA hAT _ =>
+      obtain rfl := hA.toPTr.unique hdom
+      refine ⟨nm, dom, b, bi, _, _, rfl, hA, hAT, hb, e1, e2, ?_, ?_⟩
+      · simp [Expr.leadingForalls] at har; omega
+      · simp only [Expr.looseBVarRange', Nat.max_eq_zero_iff] at hcl; omega
+  | _ => simp [Expr.leadingForalls] at har; omega
+
+/-- Instantiating a walk's binder with a closed value: the plain translation and the telescope
+instantiate, and so does each dropped telescope that keeps the binder. -/
+theorem ProjWalkD.inst_tr {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+    {i : Nat} {b : Expr} {A B : VExpr}
+    (hb : PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B)
+    (hB : VEnv.EqUpToLevels c.lparams.length ((VExpr.foralls (L.drop (i + 1)) R).subst
+        (VExpr.Subst.dflt.consList (vals.take i)).lift) B)
+    {v : Expr} {v' : VExpr} (hv : c.TrExprS v v') (hvT : c.HasType v' A)
+    (hval : vals[i]? = some v') :
+    ∃ X, PTr c.lparams c.venv.ContainsLits c.vlctx (b.instantiate1 v) X ∧
+      VEnv.EqUpToLevels c.lparams.length
+        ((VExpr.foralls (L.drop (i + 1)) R).subst (VExpr.Subst.dflt.consList (vals.take (i + 1))))
+        X := by
+  have hΓ := c.Δwf.toCtx
+  have hlv := (hvT.levelWF (VEnv.CtxStrong.strong c.Ewf.ordered hΓ).levelWF).1
+  refine ⟨B.inst v', ?_, ?_⟩
+  · rw [Expr.instantiate1_eq]; exact hv.toPTr.inst hb
+  · have := VEnv.EqUpToLevels.instN (k := 0) (VEnv.EqUpToLevels.of_levelWF hlv) hB
+    rw [List.take_add_one, hval, Option.toList_some, VExpr.Subst.consList_concat,
+      ← VExpr.inst_lift_cons]
+    exact this
+
+theorem ProjWalkD.inst_fam {c : VContext} {p m : Nat} {nm : Name} {dom b : Expr}
+    {bi : BinderInfo} {A : VExpr} (hA : c.TrExprS dom A)
+    (H : TeleDoms c.venv c.lparams c.vlctx (.forallE nm dom (Expr.dropAfter p m b) bi))
+    (hlen : p + m ≤ b.leadingForalls)
+    {v : Expr} {v' : VExpr} (hv : c.TrExprS v v') (hvT : c.HasType v' A) :
+    TeleDoms c.venv c.lparams c.vlctx (Expr.dropAfter p m (b.instantiate1 v)) := by
+  have hvc : v.looseBVarRange' = 0 := (MLCtx.noBV _ ▸ hv.closed).looseBVarRange_zero
+  cases H with
+  | nil h => exact (h _ _ _ _ rfl).elim
+  | cons hA' _ ht =>
+    obtain rfl := hA'.unique (TrExprS.IsUnique.all _) hA
+    have := ht.inst c.Ewf.ordered hv hvT
+    rwa [Expr.dropAfter_instantiate1' hvc _ _ _ _ hlen, ← Expr.instantiate1_eq] at this
+
+theorem ProjWalkD.inst_closed {b v : Expr} (hb : b.looseBVarRange' ≤ 1)
+    (hv : v.looseBVarRange' = 0) : (b.instantiate1 v).looseBVarRange' = 0 := by
+  rw [Expr.instantiate1_eq]
+  exact Nat.le_zero.1 (Expr.instantiate1'_looseBVarRange (n := 0) (k := 0) (by simpa using hb)
+    (by simp [hv]))
+
+/-- Instantiating a parameter's binder continues the walk. -/
+theorem ProjWalkD.inst_param {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+    {i p M : Nat} {nm : Name} {dom b : Expr} {bi : BinderInfo} {A B : VExpr}
+    (H : ProjWalkD c L R vals i (p + 1) M (.forallE nm dom b bi)) (hA : c.TrExprS dom A)
+    (hb : PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B)
+    (hB : VEnv.EqUpToLevels c.lparams.length ((VExpr.foralls (L.drop (i + 1)) R).subst
+        (VExpr.Subst.dflt.consList (vals.take i)).lift) B)
+    (har : L.length - (i + 1) ≤ b.leadingForalls) (hbcl : b.looseBVarRange' ≤ 1)
+    {v : Expr} {v' : VExpr} (hv : c.TrExprS v v') (hvT : c.HasType v' A)
+    (hval : vals[i]? = some v') : ProjWalkD c L R vals (i + 1) p M (b.instantiate1 v) := by
+  have hvc : v.looseBVarRange' = 0 := (MLCtx.noBV _ ▸ hv.closed).looseBVarRange_zero
+  have hlen := H.famLen
+  simp only [Expr.leadingForalls] at hlen
+  have hmono : b.leadingForalls ≤ (b.instantiate1 v).leadingForalls := by
+    rw [Expr.instantiate1_eq]; exact Expr.leadingForalls_instantiate1' _ _ _
+  refine ⟨ProjWalkD.inst_tr hb hB hv hvT hval, Nat.le_trans har hmono, inst_closed hbcl hvc,
+    fun m hm => ?_, by omega⟩
+  have := H.fam m hm
+  rw [Expr.dropAfter_forallE] at this
+  exact ProjWalkD.inst_fam hA this (by omega) hv hvT
+
+/-- Instantiating a field's binder, which the rest mentions, continues the walk. -/
+theorem ProjWalkD.inst_field {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+    {i M : Nat} {nm : Name} {dom b : Expr} {bi : BinderInfo} {A B : VExpr}
+    (H : ProjWalkD c L R vals i 0 (M + 1) (.forallE nm dom b bi)) (hA : c.TrExprS dom A)
+    (hb : PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B)
+    (hB : VEnv.EqUpToLevels c.lparams.length ((VExpr.foralls (L.drop (i + 1)) R).subst
+        (VExpr.Subst.dflt.consList (vals.take i)).lift) B)
+    (har : L.length - (i + 1) ≤ b.leadingForalls) (hbcl : b.looseBVarRange' ≤ 1)
+    (hk : b.hasLooseBVar' 0 = true)
+    {v : Expr} {v' : VExpr} (hv : c.TrExprS v v') (hvT : c.HasType v' A)
+    (hval : vals[i]? = some v') : ProjWalkD c L R vals (i + 1) 0 M (b.instantiate1 v) := by
+  have hvc : v.looseBVarRange' = 0 := (MLCtx.noBV _ ▸ hv.closed).looseBVarRange_zero
+  have hlen := H.famLen
+  simp only [Expr.leadingForalls] at hlen
+  have hmono : b.leadingForalls ≤ (b.instantiate1 v).leadingForalls := by
+    rw [Expr.instantiate1_eq]; exact Expr.leadingForalls_instantiate1' _ _ _
+  refine ⟨ProjWalkD.inst_tr hb hB hv hvT hval, Nat.le_trans har hmono, inst_closed hbcl hvc,
+    fun m hm => ?_, by omega⟩
+  have := H.fam (m + 1) (by omega)
+  simp only [Expr.dropAfter_zero, Expr.dropU_forallE, hk, if_true] at this
+  simpa using ProjWalkD.inst_fam (p := 0) hA (by simpa using this) (by omega) hv hvT
+
+/-- Dropping a field's binder that the rest does not mention continues the walk. -/
+theorem ProjWalkD.skip_field {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+    {i M : Nat} {nm : Name} {dom b : Expr} {bi : BinderInfo} {A B : VExpr}
+    (H : ProjWalkD c L R vals i 0 (M + 1) (.forallE nm dom b bi))
+    (hb : PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B)
     (hB : VEnv.EqUpToLevels c.lparams.length ((VExpr.foralls (L.drop (i + 1)) R).subst
         (VExpr.Subst.dflt.consList (vals.take i)).lift) B)
     (har : L.length - (i + 1) ≤ b.leadingForalls) (hcl : b.looseBVarRange' = 0)
     {v' : VExpr} (hlv : v'.LevelWF c.lparams.length) (hval : vals[i]? = some v') :
-    ProjWalk c L R vals (i + 1) b := by
-  have hΔ : VLCtx.WF c.venv c.lparams.length ((none, .vlam A) :: c.vlctx) :=
-    ⟨c.Δwf, nofun, let ⟨_, h⟩ := hA; ⟨_, h⟩⟩
-  obtain ⟨B₀, hB₀, rfl⟩ := TrExprS.lower_of_closed c.Ewf hΔ
-    (fun h => s.ngen.not_reserves_self (wf.ngen_wf _ h)) hb hcl
-  refine ⟨⟨B₀, hB₀, ?_⟩, har⟩
-  have := VEnv.EqUpToLevels.instN (k := 0) (VEnv.EqUpToLevels.of_levelWF hlv) hB
-  rw [show (B₀.liftN 1).inst v' = B₀ from VExpr.inst_liftN _ _] at this
-  rw [List.take_add_one, hval, Option.toList_some, VExpr.Subst.consList_concat,
-    ← VExpr.inst_lift_cons]
-  exact this
+    ProjWalkD c L R vals (i + 1) 0 M b := by
+  have hlen := H.famLen
+  simp only [Expr.leadingForalls] at hlen
+  obtain ⟨B₀, hB₀, rfl⟩ := hb.skips_of_closed hcl
+  have hk : b.hasLooseBVar' 0 = false := Expr.hasLooseBVar_of_ge_looseBVarRange (by omega)
+  refine ⟨⟨B₀, hB₀, ?_⟩, har, hcl, fun m hm => ?_, by omega⟩
+  · have := VEnv.EqUpToLevels.instN (k := 0) (VEnv.EqUpToLevels.of_levelWF hlv) hB
+    rw [show (B₀.liftN 1).inst v' = B₀ from VExpr.inst_liftN _ _] at this
+    rw [List.take_add_one, hval, Option.toList_some, VExpr.Subst.consList_concat,
+      ← VExpr.inst_lift_cons]
+    exact this
+  · have := H.fam (m + 1) (by omega)
+    simp only [Expr.dropAfter_zero, Expr.dropU_forallE, hk, Bool.false_eq_true, if_false,
+      Expr.lowerLooseBVars'_eq_self (show b.looseBVarRange' ≤ 1 by omega)] at this
+    simpa using this
 
-theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExpr}
+theorem inferProj.WF'_doms {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExpr}
     (he : c.TrExprS e e') (hty : c.TrExprS ety ety') (hasty : c.HasType e' ety')
-    (hb : c.FVarsBelow e ety) :
+    (hb : c.FVarsBelow e ety)
+    (hCD : ∀ n w, c.env.constants.find? n = some (.ctorInfo w) →
+      c.safety ≤ (ConstantInfo.ctorInfo w).safety →
+      CtorDoms c.venv w.levelParams w.numParams w.numFields w.type) :
     (inferProj st i e ety).WF c s fun ty _ =>
       ∃ ty', c.TrTyping (.proj st i e) ty (.proj st i e') ty' := by
   have hΓ := c.Δwf.toCtx
@@ -183,7 +302,7 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
   rw [Kernel.Environment.find?, c.trenv.map_wf.find?'_eq_find?, hw] at hcinfo'
   obtain rfl : w = c_val := by simpa using hcinfo'
   obtain ⟨-, -, -, -, -, -, hwnp, hwnf, -, hwar⟩ := hwc
-  obtain ⟨-, -, hwlen, hwty⟩ := c.trenv.find?_uniq hcinfo (c.Ewf.ctor_constant hs hjc)
+  obtain ⟨-, hwsafe, hwlen, hwty⟩ := c.trenv.find?_uniq hcinfo (c.Ewf.ctor_constant hs hjc)
   obtain ⟨-, hTconst⟩ := c.Ewf.type_constant hs ht
   cases hcT.symm.trans hTconst
   have hlsW : ∀ l ∈ lsT', l.WF c.lparams.length := .of_mapM_ofLevel hlsT
@@ -219,13 +338,23 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
   have hCe : c'.type.instL lsT' = VExpr.foralls L R := by
     rw [hcty, ← hL, ← hR, VExpr.instL_foralls]
   have hcT := VEnv.HasType.const (Γ := []) (c.Ewf.ctor_constant hs hjc) hlsW (by rw [hlenT'])
-  have hW0 : ProjWalk c L R vals 0 ((ConstantInfo.ctorInfo w).instantiateTypeLevelParams I_levels) := by
-    refine ⟨⟨X₀, hX₀c, ?_⟩, ?_⟩
+  have hlf0 : ((ConstantInfo.ctorInfo w).instantiateTypeLevelParams I_levels).leadingForalls =
+      d.params.length + c'.fields.length := by
+    simp only [ConstantInfo.instantiateTypeLevelParams, ConstantVal.instantiateTypeLevelParams,
+      Expr.leadingForalls_instantiateLevelParams]
+    show w.type.leadingForalls = _; omega
+  have hW0 : ProjWalkD c L R vals 0 d.params.length c'.fields.length
+      ((ConstantInfo.ctorInfo w).instantiateTypeLevelParams I_levels) := by
+    refine ⟨⟨X₀, hX₀c.toPTr, ?_⟩, by rw [hlf0, hLl]; omega,
+      (MLCtx.noBV _ ▸ hX₀c.closed).looseBVarRange_zero, fun m hm => ?_, by rw [hlf0]; exact Nat.le_refl _⟩
     · simp only [List.drop_zero, List.take_zero, VExpr.Subst.consList_nil]
       rw [← hCe, VExpr.closed_subst c.Ewf.ordered hcT]; exact hX₀e
-    · simp only [ConstantInfo.instantiateTypeLevelParams, ConstantVal.instantiateTypeLevelParams,
-        Expr.leadingForalls_instantiateLevelParams, hLl, Nat.sub_zero]
-      show _ ≤ w.type.leadingForalls; omega
+    · have hD := hCD _ _ hw hwsafe m (by rw [hwnf]; exact hm)
+      rw [hwnp] at hD
+      have := hD.instL c.Ewf hlsT hlvl (Δ := []) trivial .nil
+      simp only [ConstantInfo.instantiateTypeLevelParams, ConstantVal.instantiateTypeLevelParams]
+      rw [Expr.dropAfter_instantiateLevelParams]
+      exact this.weakFV c.Ewf.ordered (.from_nil c.mlctx.noBV) c.Δwf
   -- a value typed at the telescope's entry is typed at the kernel's domain
   have htrans {v' Tref A : VExpr} (hT : c.HasType v' Tref)
       (hE : VEnv.EqUpToLevels c.lparams.length Tref A) : c.HasType v' A :=
@@ -246,11 +375,16 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
     fun P _ _ => hX₀.fvarsIn.mono fun _ h => by simp [VLCtx.instL] at h
   -- the parameters
   rw [hnp]
-  refine (RecM.WF.forIn_range (Inv := fun a r _ => ProjWalk c L R vals a r ∧
+  refine (RecM.WF.forIn_range (Inv := fun a r _ =>
+      ProjWalkD c L R vals a (d.params.length - a) c'.fields.length r ∧
       ∀ P, IsFVarUpSet P c.vlctx → FVarsIn P e → FVarsIn P r) ?_ ⟨hW0, hfv0⟩).bind
     fun r₁ _ _ ⟨hW1, hfv1⟩ => ?_
   · intro a r s' ha ⟨hWa, hfva⟩
-    obtain ⟨nm, dom, b, bi, A, B, rfl, hdom, hbB, hAT, hAe, hBe, har⟩ := hWa.step (by omega)
+    obtain ⟨nm, dom, b, bi, A, B, rfl, hdom, hAT, hbB, hAe, hBe, har, hbcl⟩ :=
+      hWa.step (by omega)
+    have hWa' : ProjWalkD c L R vals a (d.params.length - (a + 1) + 1) c'.fields.length
+        (.forallE nm dom b bi) := by
+      rw [show d.params.length - (a + 1) + 1 = d.params.length - a by omega]; exact hWa
     refine (whnf.forallE_eq rfl).bind fun x _ _ hx => ?_
     subst hx
     refine .pure ⟨fun b' hb' => ?_, nofun⟩
@@ -270,7 +404,8 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
       rw [← hvals, List.getElem?_append_left haA, List.getElem?_eq_getElem haA]
     have hP : ps[a]? = some ps[a] := List.getElem?_eq_getElem (by omega)
     have hvT := VEnv.Ctx.SubstEq.getElem_teleDefEq c.Ewf hle hΓ htele hlsW WP hA a haA _ hP
-    refine ⟨ProjWalk.inst hbB hBe har hv (htrans hvT ?_) hval, fun P hP h => ?_⟩
+    refine ⟨ProjWalkD.inst_param hWa' hdom hbB hBe har hbcl hv (htrans hvT ?_) hval,
+      fun P hP h => ?_⟩
     · have hLa : L[a]'(by omega) = ps[a].instL lsT' := by
         subst hL
         rw [List.getElem_map, List.getElem_append_left (show a < ps.length by omega)]
@@ -338,13 +473,18 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
           exact hk' Dj hDj hm
     exact hproj.defeqU_r c.Ewf hΓ ⟨_, hdf.symm⟩
   -- the fields before the projected one
-  refine (RecM.WF.forIn_range (Inv := fun a r _ => ProjWalk c L R vals (d.params.length + a) r ∧
+  refine (RecM.WF.forIn_range (Inv := fun a r _ =>
+      ProjWalkD c L R vals (d.params.length + a) 0 (c'.fields.length - a) r ∧
       (∀ P, IsFVarUpSet P c.vlctx → FVarsIn P e → FVarsIn P r) ∧
       ∀ j < a, Qs j ∨ kprop j) ?_ ⟨by simpa using hW1, hfv1, nofun⟩).bind
     fun r₂ _ _ ⟨hW2, hfv2, hall⟩ => ?_
   · intro a r s' ha ⟨hWa, hfva, halla⟩
     have hai : a < c'.fields.length := by omega
-    obtain ⟨nm, dom, b, bi, A, B, rfl, hdom, hbB, hAT, hAe, hBe, har⟩ := hWa.step (by omega)
+    obtain ⟨nm, dom, b, bi, A, B, rfl, hdom, hAT, hbB, hAe, hBe, har, hbcl⟩ :=
+      hWa.step (by omega)
+    have hWa' : ProjWalkD c L R vals (d.params.length + a) 0 (c'.fields.length - (a + 1) + 1)
+        (.forallE nm dom b bi) := by
+      rw [show c'.fields.length - (a + 1) + 1 = c'.fields.length - a by omega]; exact hWa
     rw [hLn a hai, hvtake a (by omega)] at hAe
     refine (whnf.forallE_eq rfl).bind fun x s₂ _ hx => ?_
     subst hx
@@ -359,13 +499,19 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
     · rw [if_pos hlb]
       have hcont (hprop : kprop a) {s''} : RecM.WF c s''
           (pure (ForInStep.yield (b.instantiate1 (.proj T.name a e)))) fun r s' =>
-            (∀ b', r = .yield b' → ProjWalk c L R vals (d.params.length + (a + 1)) b' ∧
+            (∀ b', r = .yield b' → ProjWalkD c L R vals (d.params.length + (a + 1)) 0
+                (c'.fields.length - (a + 1)) b' ∧
               (∀ P, IsFVarUpSet P c.vlctx → FVarsIn P e → FVarsIn P b') ∧
               ∀ j < a + 1, Qs j ∨ kprop j) ∧ ∀ b', r ≠ .done b' := by
         have hT := hkernel a hai halla hprop
         refine .pure ⟨fun b' h => ?_, nofun⟩
         cases h
-        refine ⟨ProjWalk.inst hbB hBe har (.proj he ⟨_, hT⟩) (htrans hT hAe) hval,
+        have hpos : b.looseBVarRange' = 0 + 1 := by
+          have : 0 < b.looseBVarRange' := by
+            simpa [Expr.hasLooseBVars, Nat.pos_iff_ne_zero] using hlb
+          omega
+        refine ⟨ProjWalkD.inst_field hWa' hdom hbB hBe har hbcl
+          (Expr.hasLooseBVar'_of_looseBVarRange' hpos) (.proj he ⟨_, hT⟩) (htrans hT hAe) hval,
           fun P hP h => ?_, fun j hj => ?_⟩
         · rw [Expr.instantiate1_eq]; exact FVarsIn.instantiate1 (hfvb P hP h) h
         · rcases Nat.lt_or_ge j a with hja | hja
@@ -386,16 +532,16 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
         exact hcont fun _ _ h => absurd h hm
     · rw [if_neg hlb]
       have hcl : b.looseBVarRange' = 0 := by simpa [Expr.hasLooseBVars] using hlb
-      refine .stateWF fun wf => .pure ⟨fun b' h => ?_, nofun⟩
+      refine .pure ⟨fun b' h => ?_, nofun⟩
       cases h
       have hlv : (VExpr.proj T.name a e').LevelWF c.lparams.length :=
         (hasty.levelWF (VEnv.CtxStrong.strong c.Ewf.ordered hΓ).levelWF).1
-      refine ⟨ProjWalk.skip wf hAT hbB hBe har hcl hlv hval, hfvb, fun j hj => ?_⟩
+      refine ⟨ProjWalkD.skip_field hWa' hbB hBe har hcl hlv hval, hfvb, fun j hj => ?_⟩
       rcases Nat.lt_or_ge j a with hja | hja
       · exact halla j hja
       obtain rfl : j = a := by omega
       refine .inl fun i' D hji hD => ?_
-      obtain ⟨B₀, rfl⟩ := hbB.skips_of_closed hcl
+      obtain ⟨B₀, -, rfl⟩ := hbB.skips_of_closed hcl
       have h1 := (hBe.skips (n := 1) (k := 0)).2 .liftN
       have h2 := VExpr.skips_foralls _ (VExpr.skips_of_subst_lift h1) (i' - j - 1) (D.instL lsT') (by
         have hi' : i' < c'.fields.length := by rw [← hDsl]; exact (List.getElem?_eq_some_iff.1 hD).1
@@ -405,7 +551,7 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
       rw [VExpr.skips_instL] at h2
       simpa [show i' - 1 - j = i' - j - 1 by omega] using h2
   -- the projected field
-  obtain ⟨nm, dom, b, bi, A, B, rfl, hdom, -, -, hAe, -, -⟩ := hW2.step (by omega)
+  obtain ⟨nm, dom, b, bi, A, B, rfl, hdom, -, -, hAe, -, -, -⟩ := hW2.step (by omega)
   rw [hLn i him, hvtake i (Nat.le_of_lt him)] at hAe
   refine (whnf.forallE_eq rfl).bind fun x _ _ hx => ?_
   subst hx
@@ -427,6 +573,7 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
       hAe.symm).hasType.2
   · rw [if_neg hm]
     exact hres fun _ _ h => absurd h hm
+
 
 end TypeChecker.Inner
 

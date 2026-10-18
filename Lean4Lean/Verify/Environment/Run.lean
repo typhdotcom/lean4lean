@@ -1313,8 +1313,9 @@ def CtorChecked (venv : VEnv) (U : List Name) (d : VInductDecl) (t : InductiveTy
     declareConstructors.arity 0 ct.type = ps.length + Ds.length ∧
     venv.TeleDefEq U.length [] ps d.params ∧ idx.length = nidx ∧
     idx.all (!·.mentions d.names) ∧ FieldsChecked venv d ps.reverse 0 Ds ∧
-    ∀ k D, Ds[k]? = some D → FieldKept venv U.length d.params D
-      ((Ds.zip (ct.type.domStrips.drop ps.length)).map fun p => p.1.stripN p.2) k
+    (∀ k D, Ds[k]? = some D → FieldKept venv U.length d.params D
+      ((Ds.zip (ct.type.domStrips.drop ps.length)).map fun p => p.1.stripN p.2) k) ∧
+    CtorDoms venv U ps.length Ds.length ct.type
 
 /-- A declaration that agrees with what the checks so far have seen of the block. -/
 structure Compat (U : List Name) (params : List VExpr) (level : VLevel) (isUnsafe : Bool)
@@ -1534,9 +1535,10 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
         FieldsElab venv d d.params.reverse 0 Ds c.fields ∧ X ps Ds ∧ Y ps Ds ∧
         ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
           f.type = D.stripN ((ct.type.domStrips.drop nparams)[k]?.getD 0)) :
-    c.WF venv d T ∧ declareConstructors.arity 0 ct.type = nparams + c.fields.length := by
+    c.WF venv d T ∧ declareConstructors.arity 0 ct.type = nparams + c.fields.length ∧
+      CtorDoms venv U nparams c.fields.length ct.type := by
   obtain ⟨-, htr, ps, Ds, hps, hDs, hty, hfe, -, -, hviews⟩ := hE
-  obtain ⟨hT, ps', Ds', idx, hty', har, htele, hidx, hmen, hfc, hKC⟩ := hC _ htr
+  obtain ⟨hT, ps', Ds', idx, hty', har, htele, hidx, hmen, hfc, hKC, hCD⟩ := hC _ htr
   rw [hty] at hty'
   have ⟨h1, h2⟩ := VExpr.foralls_inj_notPi (VExpr.appN_notPi (e := .const ..) _ trivial)
     (VExpr.appN_notPi (e := .const ..) _ trivial) hty'
@@ -1569,7 +1571,7 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within,
       VInductDecl.FieldsKeptWF.of_fieldKept henv hparams hFW fun k D h => by
         rw [hU, ← hVs]; exact hKC k D h⟩,
-    ⟨hidx.trans hnidx, hmen⟩⟩, by rw [har, hps, hDs]⟩
+    ⟨hidx.trans hnidx, hmen⟩⟩, by rw [har, hps, hDs], by rw [← hps, ← hDs]; exact hCD⟩
   rw [hty, VInductiveType.typeApp_of_none hno, hname, hU, hnp, hDs]
 
 /-- The type `run` gives the `i`th recursor, from the local variables `mkRecInfos` opened. -/
@@ -1861,7 +1863,8 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
     (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c₃ d)
     (hEl : Elaborates venvAx c.lparams nparams level types d) :
     List.Forall₂ (fun v (j, c') => TrCtorVal d c.lparams j c' v ∧
-      TrConstant c.safety venvAx (.ctorInfo v) ⟨d.uvars, c'.type⟩)
+      TrConstant c.safety venvAx (.ctorInfo v) ⟨d.uvars, c'.type⟩ ∧
+      CtorDoms venvAx c.lparams d.params.length c'.fields.length v.type)
       (ctorVals c.lparams stats.params.size types isUnsafe) d.ctors := by
   have hU : d.uvars = c.lparams.length := hR.uvars.trans (by rw [hc₂U])
   have hlen : d.params.length = nparams := hR.params ▸ hT.nparams
@@ -1872,7 +1875,8 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
   rw [params_size hT]
   refine forall₂_flatMap_ctors (g := ctorVal c.lparams nparams isUnsafe)
     (Q := fun j c' v => TrCtorVal d c.lparams j c' v ∧
-      TrConstant c.safety venvAx (.ctorInfo v) ⟨d.uvars, c'.type⟩) _ _ 0
+      TrConstant c.safety venvAx (.ctorInfo v) ⟨d.uvars, c'.type⟩ ∧
+      CtorDoms venvAx c.lparams d.params.length c'.fields.length v.type) _ _ 0
     (Lean4Lean.List.Forall₂.length_eq hEl.types) fun j t T ht hTj => ?_
   rw [Nat.zero_add]
   obtain ⟨t', ht', hname, hcs⟩ := List.Forall₂.getElem?_r hEl.types hTj
@@ -1883,10 +1887,10 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
   have hv' : v = ctorVal c.lparams nparams isUnsafe t ct q := by
     simp [List.getElem?_zipIdx, hct] at hv; exact hv.symm
   subst hv'
-  obtain ⟨-, har⟩ := ctor_WF henvAx hU hlen hps hname (hR.nested T (List.mem_of_getElem? hTj)) rfl
+  obtain ⟨-, har, hCD⟩ := ctor_WF henvAx hU hlen hps hname (hR.nested T (List.mem_of_getElem? hTj)) rfl
     (hC hcompat j t ht ct (List.mem_of_getElem? hct) _ (hR.nindices j T hTj)) hrel
   refine ⟨⟨T, hTj, hc', hrel.1.symm, rfl, hname.symm, hlen.symm, ?_, hR.isUnsafe.symm, ?_⟩,
-    ?_, ?_, ?_⟩
+    ⟨?_, ?_, ?_⟩, ?_⟩
   · show declareConstructors.arity 0 ct.type - nparams = c'.fields.length
     omega
   · show ct.type.leadingForalls = _
@@ -1896,6 +1900,7 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
     cases isUnsafe <;> exact DefinitionSafety.le_rfl
   · exact hU.symm
   · exact hrel.2.1
+  · rw [hlen]; exact hCD
 
 end AddInductive
 

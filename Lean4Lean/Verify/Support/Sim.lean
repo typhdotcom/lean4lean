@@ -24,14 +24,12 @@ def _root_.Lean.LocalDecl.erase : LocalDecl → LocalDecl
 namespace TypeChecker
 
 /-- `c₂` agrees with `c₁` on what `S` allows: the same declarations of its constants and free
-variables, up to their position in the local context, and the same settings. `c₂` declares no
-free variable `c₁` does not, so a variable fresh for `c₁` is fresh for `c₂`. -/
+variables, up to their position in the local context, and the same settings. -/
 structure Agree (S : Supp) (c₁ c₂ : Context) : Prop where
   env : ∀ n, S.const n → c₂.env.find? n = c₁.env.find? n
   lctx : ∀ fv, S.fv fv →
     (c₂.lctx.find? fv).map LocalDecl.erase = (c₁.lctx.find? fv).map LocalDecl.erase
   wf : c₂.lctx.WF
-  dom : ∀ fv, c₂.lctx.Dom fv → c₁.lctx.Dom fv
   quotInit : c₂.env.quotInit = c₁.env.quotInit
   safety : c₂.safety = c₁.safety
   eagerReduce : c₂.eagerReduce = c₁.eagerReduce
@@ -39,7 +37,18 @@ structure Agree (S : Supp) (c₁ c₂ : Context) : Prop where
   fuel : c₂.fuel = c₁.fuel
 
 theorem Agree.refl {S : Supp} {c : Context} (wf : c.lctx.WF) : Agree S c c :=
-  ⟨fun _ _ => rfl, fun _ _ => rfl, wf, fun _ => id, rfl, rfl, rfl, fun _ _ => id, rfl⟩
+  ⟨fun _ _ => rfl, fun _ _ => rfl, wf, rfl, rfl, rfl, fun _ _ => id, rfl⟩
+
+/-- Every free variable `c₂` declares that `c₁` does not is one the name generator `g` has not
+made yet, so the variables a run that ends at `g` makes are fresh for `c₂` as for `c₁`. -/
+def FreshFor (c₁ c₂ : Context) (g : NameGenerator) : Prop :=
+  ∀ fv, c₂.lctx.Dom fv → c₁.lctx.Dom fv ∨ ¬g.Reserves fv
+
+theorem FreshFor.of_dom {c₁ c₂ : Context} (H : ∀ fv, c₂.lctx.Dom fv → c₁.lctx.Dom fv) :
+    FreshFor c₁ c₂ g := fun fv h => .inl (H fv h)
+
+theorem FreshFor.mono {c₁ c₂ : Context} (H : FreshFor c₁ c₂ g') (h : g ≤ g') :
+    FreshFor c₁ c₂ g := fun fv hfv => (H fv hfv).imp_right fun h' h'' => h' (h''.mono h)
 
 theorem Agree.mono {S S' : Supp} {c₁ c₂ : Context} (H : Agree S' c₁ c₂) (h : S ≤ S') :
     Agree S c₁ c₂ :=
@@ -48,9 +57,11 @@ theorem Agree.mono {S S' : Supp} {c₁ c₂ : Context} (H : Agree S' c₁ c₂) 
     lctx := fun fv hfv => H.lctx fv (h.fv fv hfv)
     lparams := fun n hn => H.lparams n (h.lvl n hn) }
 
-/-- A successful run of `x₁` in `c₁` is a successful run of `x₂` in `c₂`, from the same state. -/
+/-- A successful run of `x₁` in `c₁` is a successful run of `x₂` in `c₂`, from the same state,
+when the variables it makes are fresh for `c₂`. -/
 def M.Sim (c₁ c₂ : Context) (s : State) (x₁ x₂ : M α) : Prop :=
-  SuppState c₁ s → ∀ a s', x₁ c₁ s = .ok (a, s') → x₂ c₂ s = .ok (a, s')
+  SuppState c₁ s → ∀ a s', x₁ c₁ s = .ok (a, s') → FreshFor c₁ c₂ s'.ngen →
+    x₂ c₂ s = .ok (a, s')
 
 /-- `x₁` is `M.SWF` in `c₁`, and `x₂` runs in `c₂` as `x₁` does in `c₁`. -/
 def M.SS (c₁ c₂ : Context) (s : State) (x₁ x₂ : M α) (Q : α → State → Prop) : Prop :=
@@ -58,26 +69,29 @@ def M.SS (c₁ c₂ : Context) (s : State) (x₁ x₂ : M α) (Q : α → State 
 
 theorem M.Sim.bind {c₁ c₂ : Context} {s : State} {x₁ x₂ : M α} {f₁ f₂ : α → M β} {Q}
     (h1 : M.Sim c₁ c₂ s x₁ x₂) (hw : x₁.SWF c₁ s Q)
-    (h2 : ∀ a s', s.ngen ≤ s'.ngen → Q a s' → M.Sim c₁ c₂ s' (f₁ a) (f₂ a)) :
+    (h2 : ∀ a s', s.ngen ≤ s'.ngen → Q a s' → M.Sim c₁ c₂ s' (f₁ a) (f₂ a))
+    (hw2 : ∀ a s', s.ngen ≤ s'.ngen → Q a s' → (f₁ a).SWF c₁ s' fun _ _ => True) :
     M.Sim c₁ c₂ s (x₁ >>= f₁) (x₂ >>= f₂) := by
   intro wf b s₂
   simp only [(· >>= ·), ReaderT.bind, StateT.bind, Except.bind]
   split; · simp
-  intro h; rename_i v eq
+  intro h hF; rename_i v eq
   obtain ⟨wf', le, hq⟩ := hw wf _ _ eq
-  rw [h1 wf _ _ eq]
-  exact h2 _ _ le hq wf' _ _ h
+  obtain ⟨-, le₂, -⟩ := hw2 _ _ le hq wf' _ _ h
+  rw [h1 wf _ _ eq (hF.mono le₂)]
+  exact h2 _ _ le hq wf' _ _ h hF
 
 theorem M.SS.bind {c₁ c₂ : Context} {s : State} {x₁ x₂ : M α} {f₁ f₂ : α → M β} {Q R}
     (h1 : M.SS c₁ c₂ s x₁ x₂ Q)
     (h2 : ∀ a s', s.ngen ≤ s'.ngen → Q a s' → M.SS c₁ c₂ s' (f₁ a) (f₂ a) R) :
     M.SS c₁ c₂ s (x₁ >>= f₁) (x₂ >>= f₂) R :=
   ⟨h1.1.bind fun a s' le h => (h2 a s' le h).1,
-    h1.2.bind h1.1 fun a s' le h => (h2 a s' le h).2⟩
+    h1.2.bind h1.1 (fun a s' le h => (h2 a s' le h).2)
+      fun a s' le h => (h2 a s' le h).1.mono fun _ _ _ _ => trivial⟩
 
 theorem M.SS.pure {c₁ c₂ : Context} {s : State} {Q} (H : Q a s) :
     M.SS c₁ c₂ s (pure a : M α) (pure a) Q :=
-  ⟨.pure H, fun _ _ _ h => h⟩
+  ⟨.pure H, fun _ _ _ h _ => h⟩
 
 theorem M.SS.mono {c₁ c₂ : Context} {s : State} {x₁ x₂ : M α} {Q R}
     (h1 : M.SS c₁ c₂ s x₁ x₂ Q) (h2 : ∀ a s', s.ngen ≤ s'.ngen → Q a s' → R a s') :
@@ -86,7 +100,7 @@ theorem M.SS.mono {c₁ c₂ : Context} {s : State} {x₁ x₂ : M α} {Q R}
 /-- A computation that never succeeds in `c₁` simulates anything. -/
 theorem M.Sim.fail {c₁ c₂ : Context} {s : State} {x₁ x₂ : M α}
     (h : x₁.SWF c₁ s fun _ _ => False) : M.Sim c₁ c₂ s x₁ x₂ :=
-  fun wf a s' eq => (h wf a s' eq).2.2.elim
+  fun wf a s' eq _ => (h wf a s' eq).2.2.elim
 
 /-- The type checker's methods, as `M.SS` sees them: on an input in `c₁` that mentions only what
 `S` allows, they run in `c₂` as in `c₁`. -/
@@ -158,7 +172,7 @@ theorem RecM.SS.readThe {c₁ c₂ : Context} {s : State} {f₁ f₂ : Context �
 theorem RecM.SS.liftExcept {c₁ c₂ : Context} {s : State} {x₁ x₂ : Except Exception α} {Q}
     (hw : x₁.WF Q) (h : ∀ a, x₁ = .ok a → x₂ = .ok a) :
     RecM.SS c₁ c₂ s (liftM x₁ : M α) (liftM x₂ : M α) fun a _ => Q a := by
-  refine fun _ _ => ⟨.liftExcept hw, fun _ a s' eq => ?_⟩
+  refine fun _ _ => ⟨.liftExcept hw, fun _ a s' eq _ => ?_⟩
   cases e : x₁ <;> rw [e] at eq <;> cases eq
   rw [h _ e]; rfl
 
@@ -172,61 +186,81 @@ theorem RecM.SS.panic {c₁ c₂ : Context} {s : State} [Inhabited α] {Q} (H : 
 theorem RecM.SS.modify {c₁ c₂ : Context} {s : State} {f : State → State} {Q}
     (H : (modify f : RecM Unit).SWF c₁ s Q) :
     RecM.SS c₁ c₂ s (modify f : RecM Unit) (modify f) Q :=
-  fun m hm => ⟨H m hm.swf, fun _ _ _ eq => eq⟩
+  fun m hm => ⟨H m hm.swf, fun _ _ _ eq _ => eq⟩
 
 theorem LocalDecl.erase_cdecl : (LocalDecl.cdecl i fv n t bi k).erase = .cdecl 0 fv n t bi k := rfl
 
-theorem Agree.fresh {S : Supp} {c₁ c₂ : Context} {s : State} (H : Agree S c₁ c₂)
-    (wf : SuppState c₁ s) : c₂.lctx.find? ⟨s.ngen.curr⟩ = none := by
+theorem FreshFor.fresh {c₁ c₂ : Context} {s : State} {g : NameGenerator} (H : FreshFor c₁ c₂ g)
+    (hg : s.ngen.next ≤ g) (wf : SuppState c₁ s) : c₂.lctx.find? ⟨s.ngen.curr⟩ = none := by
   cases h : c₂.lctx.find? ⟨s.ngen.curr⟩; · rfl
-  exact absurd (wf.reserves _ (H.dom _ (by simp [LocalContext.Dom, h])))
-    NameGenerator.not_reserves_self
+  rcases H ⟨s.ngen.curr⟩ (by simp [LocalContext.Dom, h]) with h' | h'
+  · exact absurd (wf.reserves _ h') NameGenerator.not_reserves_self
+  · exact absurd (NameGenerator.next_reserves_self.mono hg) h'
 
 theorem Agree.mkLocalDecl {S : Supp} {c₁ c₂ : Context} {s : State} (H : Agree S c₁ c₂)
-    (wf : SuppState c₁ s) {name ty bi} :
+    (wf : SuppState c₁ s) (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) {name ty bi} :
     Agree (S.addFVars [⟨s.ngen.curr⟩])
       { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
       { c₂ with lctx := c₂.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi } := by
   have E := wf.ctxExt (name := name) (ty := ty) (bi := bi)
-  have f₂ := H.fresh wf
-  refine { H with lctx := fun y hy => ?_, wf := H.wf.mkLocalDecl f₂, dom := fun y hy => ?_ }
+  refine { H with lctx := fun y hy => ?_, wf := H.wf.mkLocalDecl f₂ }
   · dsimp only
     rw [LocalContext.find?_mkLocalDecl H.wf f₂, LocalContext.find?_mkLocalDecl wf.lctxWF E.fresh]
     split
     · rfl
     · rename_i h
       exact H.lctx y (hy.resolve_right fun h' => h (by simp at h'; simp [h']))
-  · unfold LocalContext.Dom at hy; dsimp only at hy
-    rw [LocalContext.find?_mkLocalDecl H.wf f₂] at hy
-    split at hy
-    · rename_i h; simp at h; subst h; exact E.dom
-    · exact E.dom_of (H.dom y hy)
+
+theorem FreshFor.mkLocalDecl {c₁ c₂ : Context} {s : State} {g : NameGenerator}
+    (H : FreshFor c₁ c₂ g) (wf : SuppState c₁ s) (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none)
+    (hc₂ : c₂.lctx.WF) {name ty bi} :
+    FreshFor { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
+      { c₂ with lctx := c₂.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi } g := by
+  have E := wf.ctxExt (name := name) (ty := ty) (bi := bi)
+  intro y hy
+  unfold LocalContext.Dom at hy; dsimp only at hy
+  rw [LocalContext.find?_mkLocalDecl hc₂ f₂] at hy
+  split at hy
+  · rename_i h; simp at h; subst h; exact .inl E.dom
+  · exact (H y hy).imp_left E.dom_of
 
 theorem Agree.mkLetDecl {S : Supp} {c₁ c₂ : Context} {s : State} (H : Agree S c₁ c₂)
-    (wf : SuppState c₁ s) {name ty val} :
+    (wf : SuppState c₁ s) (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) {name ty val} :
     Agree (S.addFVars [⟨s.ngen.curr⟩])
       { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       { c₂ with lctx := c₂.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val } := by
   have E := wf.ctxExtLet (name := name) (ty := ty) (val := val)
-  have f₂ := H.fresh wf
-  refine { H with lctx := fun y hy => ?_, wf := H.wf.mkLetDecl f₂, dom := fun y hy => ?_ }
+  refine { H with lctx := fun y hy => ?_, wf := H.wf.mkLetDecl f₂ }
   · dsimp only
     rw [LocalContext.find?_mkLetDecl H.wf f₂, LocalContext.find?_mkLetDecl wf.lctxWF E.fresh]
     split
     · rfl
     · rename_i h
       exact H.lctx y (hy.resolve_right fun h' => h (by simp at h'; simp [h']))
-  · unfold LocalContext.Dom at hy; dsimp only at hy
-    rw [LocalContext.find?_mkLetDecl H.wf f₂] at hy
-    split at hy
-    · rename_i h; simp at h; subst h; exact E.dom
-    · exact E.dom_of (H.dom y hy)
+
+theorem FreshFor.mkLetDecl {c₁ c₂ : Context} {s : State} {g : NameGenerator}
+    (H : FreshFor c₁ c₂ g) (wf : SuppState c₁ s) (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none)
+    (hc₂ : c₂.lctx.WF) {name ty val} :
+    FreshFor { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
+      { c₂ with lctx := c₂.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val } g := by
+  have E := wf.ctxExtLet (name := name) (ty := ty) (val := val)
+  intro y hy
+  unfold LocalContext.Dom at hy; dsimp only at hy
+  rw [LocalContext.find?_mkLetDecl hc₂ f₂] at hy
+  split at hy
+  · rename_i h; simp at h; subst h; exact .inl E.dom
+  · exact (H y hy).imp_left E.dom_of
 
 theorem RecM.SS.withLocalDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Expr → RecM α}
     {Q name ty bi} (hty : Dom c₁ ty)
-    (H : RecM.SS { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
+    (H₁ : RecM.SS { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
+      { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
+      { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₁ (.fvar ⟨s.ngen.curr⟩)) Q)
+    (H : c₂.lctx.find? ⟨s.ngen.curr⟩ = none →
+      RecM.SS { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
       { c₂ with lctx := c₂.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
       { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₂ (.fvar ⟨s.ngen.curr⟩)) Q)
+    (hc₂ : c₂.lctx.WF)
     (hQ : ∀ a (s₁ s₂ : State), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
       intro _ _ _ _ h; exact h) :
     RecM.SS c₁ c₂ s (withLocalDecl name bi ty f₁) (withLocalDecl name bi ty f₂) Q := by
@@ -236,20 +270,27 @@ theorem RecM.SS.withLocalDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Exp
     exact And.intro hE <| wf.enter rfl hE (wf.lctxWF.mkLocalDecl hE.fresh) fun d hd => by
       simp [LocalContext.find?_mkLocalDecl wf.lctxWF hE.fresh] at hd; subst hd
       exact ⟨hty, by simp [LocalDecl.value', Expr.fvarsList, hE.dom]⟩
-  refine ⟨fun wf a s' e => ?_, fun wf a s' e => ?_⟩
+  refine ⟨fun wf a s' e => ?_, fun wf a s' e hF => ?_⟩
   · have ⟨hE, wf₁⟩ := enter wf
     obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
-    obtain ⟨wf₂, hle, hQ'⟩ := (H m hm).1 wf₁ a _ e₁
+    obtain ⟨wf₂, hle, hQ'⟩ := (H₁ m hm).1 wf₁ a _ e₁
     exact ⟨wf.restore hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle,
       hQ _ s₁ _ rfl hQ'⟩
   · obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
-    exact withFreshId_ok ((H m hm).2 (enter wf).2 a _ e₁)
+    obtain ⟨-, hle, -⟩ := (H₁ m hm).1 (enter wf).2 a _ e₁
+    have f₂ := hF.fresh hle wf
+    exact withFreshId_ok ((H f₂ m hm).2 (enter wf).2 a _ e₁ (hF.mkLocalDecl wf f₂ hc₂))
 
 theorem RecM.SS.withLetDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Expr → RecM α}
     {Q name ty val} (hty : Dom c₁ ty) (hval : Dom c₁ val)
-    (H : RecM.SS { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
+    (H₁ : RecM.SS { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
+      { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
+      { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₁ (.fvar ⟨s.ngen.curr⟩)) Q)
+    (H : c₂.lctx.find? ⟨s.ngen.curr⟩ = none →
+      RecM.SS { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       { c₂ with lctx := c₂.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₂ (.fvar ⟨s.ngen.curr⟩)) Q)
+    (hc₂ : c₂.lctx.WF)
     (hQ : ∀ a (s₁ s₂ : State), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
       intro _ _ _ _ h; exact h) :
     RecM.SS c₁ c₂ s (withLetDecl name ty val f₁) (withLetDecl name ty val f₂) Q := by
@@ -259,14 +300,16 @@ theorem RecM.SS.withLetDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Expr 
     exact And.intro hE <| wf.enter rfl hE (wf.lctxWF.mkLetDecl hE.fresh) fun d hd => by
       simp [LocalContext.find?_mkLetDecl wf.lctxWF hE.fresh] at hd; subst hd
       exact ⟨hty, fun y hy => hE.dom_of (hval y hy)⟩
-  refine ⟨fun wf a s' e => ?_, fun wf a s' e => ?_⟩
+  refine ⟨fun wf a s' e => ?_, fun wf a s' e hF => ?_⟩
   · have ⟨hE, wf₁⟩ := enter wf
     obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
-    obtain ⟨wf₂, hle, hQ'⟩ := (H m hm).1 wf₁ a _ e₁
+    obtain ⟨wf₂, hle, hQ'⟩ := (H₁ m hm).1 wf₁ a _ e₁
     exact ⟨wf.restore hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle,
       hQ _ s₁ _ rfl hQ'⟩
   · obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
-    exact withFreshId_ok ((H m hm).2 (enter wf).2 a _ e₁)
+    obtain ⟨-, hle, -⟩ := (H₁ m hm).1 (enter wf).2 a _ e₁
+    have f₂ := hF.fresh hle wf
+    exact withFreshId_ok ((H f₂ m hm).2 (enter wf).2 a _ e₁ (hF.mkLetDecl wf f₂ hc₂))
 
 theorem RecM.SS.withEagerReduce {c₁ c₂ : Context} {s : State} {x₁ x₂ : RecM α} {Q}
     (H : RecM.SS { c₁ with eagerReduce := true } { c₂ with eagerReduce := true } s x₁ x₂ Q) :
@@ -275,7 +318,7 @@ theorem RecM.SS.withEagerReduce {c₁ c₂ : Context} {s : State} {x₁ x₂ : R
   fun m hm => ⟨fun wf a s' e =>
       let ⟨h1, h2, h3⟩ := (H m hm).1 { wf with } a s' e
       ⟨{ h1 with }, h2, h3⟩,
-    fun wf a s' e => (H m hm).2 { wf with } a s' e⟩
+    fun wf a s' e hF => (H m hm).2 { wf with } a s' e hF⟩
 
 theorem Agree.eagerReduce' {S : Supp} {c₁ c₂ : Context} (H : Agree S c₁ c₂) :
     Agree S { c₁ with eagerReduce := true } { c₂ with eagerReduce := true } :=

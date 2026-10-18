@@ -525,6 +525,7 @@ theorem WF.liftTC_sim {c : VContext} {c₂ : TypeChecker.VContext} {x : TypeChec
     (hnk : ∀ fv ∈ c₂.mlctx.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv)
     (hss : SuppState c.tc.toContext {})
     (hsim : TypeChecker.M.SS c.tc.toContext c₂.toContext {} x x fun a _ => P a)
+    (hF : ∀ g, TypeChecker.FreshFor c.tc.toContext c₂.toContext g)
     (H : TypeChecker.M.WF c₂ {} x fun a _ => Q a) :
     WF c (monadLift x : M α) fun a => P a ∧ Q a := by
   intro a eq
@@ -532,7 +533,7 @@ theorem WF.liftTC_sim {c : VContext} {c₂ : TypeChecker.VContext} {x : TypeChec
   simp only [TypeChecker.M.run, StateT.run', Functor.map, Except.map] at eq
   split at eq <;> cases eq; rename_i eq
   obtain ⟨_, _, h1⟩ := hsim.1 hss _ _ eq
-  obtain ⟨_, _, _, _, h2⟩ := H (TypeChecker.VState.WF.emptyAt c₂ hnk) _ _ (hsim.2 hss _ _ eq)
+  obtain ⟨_, _, _, _, h2⟩ := H (TypeChecker.VState.WF.emptyAt c₂ hnk) _ _ (hsim.2 hss _ _ eq (hF _))
   exact ⟨h1, h2⟩
 
 /-- `whnf`, run over the kernel's local context and verified in a context that agrees with it on
@@ -540,14 +541,15 @@ what its input mentions. -/
 theorem whnf.WF_sim {c : VContext} {c₂ : TypeChecker.VContext} {S : Supp} {e : Expr} {e' : VExpr}
     (hcl : ConstMap.Closed c.env.constants)
     (hnk : ∀ fv ∈ c₂.mlctx.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv)
-    (hA : TypeChecker.Agree S c.tc.toContext c₂.toContext) (hS : S.Closed c.tc.toContext)
+    (hA : TypeChecker.Agree S c.tc.toContext c₂.toContext)
+    (hF : ∀ g, TypeChecker.FreshFor c.tc.toContext c₂.toContext g) (hS : S.Closed c.tc.toContext)
     (hd : TypeChecker.Dom c.tc.toContext e) (hs : e.SuppIn S) (he : c₂.TrExprS e e') :
     WF c (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
       e₁.SuppIn S ∧ c₂.FVarsBelow e e₁ ∧ c₂.TrExpr e₁ e' := by
   have hsim : TypeChecker.M.SS c.tc.toContext c₂.toContext {} (TypeChecker.whnf e)
       (TypeChecker.whnf e) fun e₁ _ => TypeChecker.SuppBelow c.tc.toContext e e₁ :=
     TypeChecker.RecM.SS.run (fun m hm => hm.whnf hA hS hd hs) hA.fuel
-  exact (WF.liftTC_sim hnk (VContext.suppState hcl) hsim (TypeChecker.whnf.WF he)).mono
+  exact (WF.liftTC_sim hnk (VContext.suppState hcl) hsim hF (TypeChecker.whnf.WF he)).mono
     fun _ ⟨h1, h2⟩ => ⟨h1 S hS hs, h2⟩
 
 /-- `cs` is the part of the kernel's context `cb` a computation reads: some of its variables,
@@ -610,17 +612,20 @@ theorem Sub.agree {X pre ρ cs cb} (H : Sub X pre ρ cs cb) :
   env n hn := (H.env n hn).symm
   lctx fv hfv := (H.lctx fv hfv).symm
   wf := cs.lctx_eq ▸ cs.mlctx_wf.tr.1
-  dom fv h := by
-    have h' : fv ∈ cs.mlctx.vlctx.fvars := by
-      have := cs.mlctx_wf.tr.find?_eq_some (fv := fv)
-      rw [cs.lctx_eq] at this
-      exact this.1 (Option.isSome_iff_exists.1 h)
-    exact H.dom h'
   quotInit := H.quotInit.symm
   safety := H.safety.symm
   eagerReduce := H.eagerReduce
   lparams _ h _ := h
   fuel := H.fuel.symm
+
+theorem Sub.freshFor {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {g} :
+    TypeChecker.FreshFor cb.tc.toContext cs.toContext g :=
+  .of_dom fun fv h => by
+    have h' : fv ∈ cs.mlctx.vlctx.fvars := by
+      have := cs.mlctx_wf.tr.find?_eq_some (fv := fv)
+      rw [cs.lctx_eq] at this
+      exact this.1 (Option.isSome_iff_exists.1 h)
+    exact H.dom h'
 
 theorem _root_.Lean.LocalDecl.erase_type {d d' : LocalDecl} (h : d.erase = d'.erase) :
     d.type = d'.type ∧ d.value' = d'.value' := by
@@ -661,7 +666,7 @@ theorem Sub.whnf {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr
     (he : cs.TrExprS e E) :
     WF cb (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
       e₁.SuppIn (Sub.supp X cs) ∧ cs.FVarsBelow e e₁ ∧ cs.TrExpr e₁ E :=
-  whnf.WF_sim H.closedB H.notKernel H.agree H.suppClosed
+  whnf.WF_sim H.closedB H.notKernel H.agree (fun _ => H.freshFor) H.suppClosed
     (fun fv hfv => H.dom ((fvarsIn_iff.1 he.fvarsIn).1 fv hfv)) (H.suppIn he) he
 
 /-- The translation of an expression of `cs`, in `cb`. -/
@@ -973,12 +978,15 @@ theorem Ext.agree {m cb ρ} (H : Ext m cb ρ) :
   env _ _ := rfl
   lctx fv hfv := (H.lctx fv hfv).symm
   wf := H.wf.tr.1
-  dom fv h := H.dom (H.wf.tr.find?_eq_some.1 (Option.isSome_iff_exists.1 h))
   quotInit := rfl
   safety := rfl
   eagerReduce := rfl
   lparams _ _ h := h
   fuel := rfl
+
+theorem Ext.freshFor {m cb ρ} (H : Ext m cb ρ) {g} :
+    TypeChecker.FreshFor cb.tc.toContext (cb.small m H.wf).toContext g :=
+  .of_dom fun _ h => H.dom (H.wf.tr.find?_eq_some.1 (Option.isSome_iff_exists.1 h))
 
 theorem Ext.suppClosed {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants) :
     (Ext.supp m).Closed cb.tc.toContext := by
@@ -1010,7 +1018,8 @@ theorem Ext.liftTC {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.con
     (hsim : TypeChecker.M.SS cb.tc.toContext (cb.small m H.wf).toContext {} x x fun a _ => P a)
     (W : TypeChecker.M.WF (cb.small m H.wf) {} x fun a _ => Q a) :
     WF cb (monadLift x : M α) fun a => Q a :=
-  (WF.liftTC_sim H.notKernel (VContext.suppState hcl) hsim W).mono fun _ h => h.2
+  (WF.liftTC_sim H.notKernel (VContext.suppState hcl) hsim (fun _ => H.freshFor) W).mono
+    fun _ h => h.2
 
 /-- `whnf` in the kernel's context, verified in `m`. -/
 theorem Ext.whnf {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)

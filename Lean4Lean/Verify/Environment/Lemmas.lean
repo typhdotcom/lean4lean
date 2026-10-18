@@ -219,7 +219,7 @@ theorem Aligned.addInduct (H : AddInduct safety C₁ venv₁ decl C₂ venv₂)
       (List.mem_map_of_mem hci) rfl]
     exact hfrA ci (List.mem_append_right _ hci)) (by
     simp only [VInductDecl.ctorConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-    exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => ⟨h.1.choose_spec.2.2.1, h.2⟩) hct) hC
+    exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => ⟨h.1.choose_spec.2.2.1, h.2.1⟩) hct) hC
   have w3 := w2.insertConsts hnd3 (fun ci hci => by
     rw [← insertConsts_append, insertConsts_find?_of_not_mem hC₁ hfrA hndA fun h => hd3 _ (by simpa only [List.map_append] using h) _
       (List.mem_map_of_mem hci) rfl]

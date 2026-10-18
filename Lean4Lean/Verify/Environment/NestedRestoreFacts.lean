@@ -547,6 +547,8 @@ structure RestoreInputs (venv : VEnv) (d : VInductDecl) (R : Name → Option VAu
   renNames : ∀ c c', ren c = some c' → c ∉ d.names
   ctorNames : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.name ∉ d.names
   ctor : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.RestoreFacts R ren d
+  litR : ∀ E₁, venv.addConstList d.typeConsts = some E₁ → ∀ l, E₁.ContainsLits l →
+    l.toConstructor.anySub (constP fun x => (R x).isSome) = false
 
 /-- The kernel's restoration tables for a nested block, checked flat as `d` from the elimination
 `run`'s types `types ++ auxs` (`run_spec`), satisfy what `RestoreSpec.wf` asks of them, but for
@@ -714,7 +716,7 @@ theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimi
       have := (List.getElem?_eq_some_iff.1 hk).1; omega)⟩
     rw [← e, ← htn, ← hT'n, hRtype hT' ho]; rfl
   refine ⟨hspec, hn0, fun c h hc => ?_, fun c c' hc => ?_, fun c h hc => ?_, fun c c' hc => ?_,
-    fun T hT c hc hm => ?_, fun T hT c hc => ?_⟩
+    fun T hT c hc hm => ?_, fun T hT c hc => ?_, fun E₁' h => by cases hE₁.symm.trans h; exact hlitR⟩
   · obtain ⟨k, T, o, ⟨hT, -, hc'⟩, -⟩ := hRsome hc
     rcases hc' with rfl | ⟨c', hc', rfl⟩
     · exact hfr _ (hmemT (List.mem_of_getElem? hT))

@@ -321,7 +321,7 @@ theorem whnfCore'.save.SS {c₁ c₂ : Context} {s : State} (he : Dom c₁ e)
     RecM.SS c₁ c₂ s (whnfCore'.save e cheapProj e₁) (whnfCore'.save e cheapProj e₁)
       fun r _ => SuppBelow c₁ e r := by
   refine fun _ hm => ⟨save.SWF he h1 _ hm.swf, fun _ _ _ => ?_⟩
-  simp only [save]; split <;> exact id
+  simp only [save]; split <;> exact fun h _ => h
 
 theorem whnfCore'.loop.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e f : Expr}
     {rargs : Array Expr} (hA : Agree S c₁ c₂) (hS : S.Closed c₁) (he : Dom c₁ e)
@@ -417,7 +417,7 @@ theorem unfoldDefinitionCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA
   refine .get ?_
   split
   · exact .pure trivial
-  · refine fun _ hm => ⟨?_, fun _ _ _ eq => by revert eq; exact id⟩
+  · refine fun _ hm => ⟨?_, fun _ _ _ eq _ => by revert eq; exact id⟩
     intro wf a s' eq
     cases eq
     refine ⟨{ wf with unfold := fun e' r' h' S hS he' => ?_ }, .rfl, trivial⟩
@@ -571,7 +571,7 @@ theorem whnf'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁
   refine .readThe ?_
   rw [hA.eagerReduce, hA.fuel]
   refine (loop he hs).bind fun e₁ s _ h1 => ?_
-  refine fun _ hm => ⟨?_, fun _ _ _ eq => by revert eq; exact id⟩
+  refine fun _ hm => ⟨?_, fun _ _ _ eq _ => by revert eq; exact id⟩
   rintro wf a s' ⟨⟩
   exact ⟨{ wf with whnf := CondSupp.insert wf.whnf (CondSupp.of wf he h1) }, .rfl, trivial⟩
 

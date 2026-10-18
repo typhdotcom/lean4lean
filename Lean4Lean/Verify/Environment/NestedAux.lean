@@ -452,7 +452,7 @@ theorem VInductiveType.AuxWF.of_created {safety : DefinitionSafety} {C : ConstMa
     have : (ConstantInfo.ctorInfo w).safety = (ConstantInfo.inductInfo Jv).safety := by
       simp [ConstantInfo.safety, ConstantInfo.isUnsafe, ConstantInfo.isPartial, h1, h2]
     exact this ▸ hJs
-  obtain ⟨d', t', c', venv₁, hind', hcv', -, hlp', hle₁, htrc⟩ := hTr.ctorInfo_type hw hws
+  obtain ⟨d', t', c', venv₁, hind', hcv', -, hlp', hle₁, htrc, -⟩ := hTr.ctorInfo_type hw hws
   cases hT₁.symm.trans hTI
   have hTIn : TI.name = J := hiv.1.symm.trans hJn
   rw [hwi, hTIn, hind] at hind'
