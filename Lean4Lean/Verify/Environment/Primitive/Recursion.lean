@@ -1,3 +1,4 @@
+import Lean4Lean.Verify.Typing.Strengthen
 import Lean4Lean.Verify.Environment.Primitive.Condition
 
 /-!
@@ -960,11 +961,19 @@ theorem unfoldNatWellFounded.WF' {c : VContext} {m₀ : MLCtx} [c.MLCWF m₀] {s
         simp only [VContext.vlctx, VContext.withMLC_mlctx, MLCtx.vlctx, VLCtx.fvars,
           List.filterMap_cons, Option.map, List.mem_cons] at h ⊢
         exact h.1.resolve_left h.2
-      obtain ⟨nrv₀, hnr₀⟩ := TrExprS.weakFV_inv c.Ewf (.skip_fvar _ (.vlam tyv2) .refl)
-        (.refl c.Ewf (c.withMLC _ (wf := cwf2b)).Δwf) hnr (m2'.noBV ▸ hnr.closed) hnrfv
-      exact ⟨nrv₀, ((hnr₀.weakFV c.Ewf.ordered (.skip_fvar _ _ .refl)
-        (c.withMLC _ (wf := cwf2b)).Δwf).uniq c.Ewf
-        (.refl c.Ewf (c.withMLC _ (wf := cwf2b)).Δwf) hnr).symm⟩
+      -- read under the fuel variable as a bound one, which it never reads
+      have hcl0 : natRec.looseBVarRange' = 0 := by
+        have := (m2'.noBV ▸ hnr.closed : Closed natRec (MLCtx.vlam x nm2 ty2 tyv2 bi2 m2').vlctx.bvars)
+        simpa [MLCtx.vlctx, VLCtx.bvars, m2'.noBV] using this.looseBVarRange_le
+      have hnrB : TrExprS c.venv c.lparams ((none, .vlam tyv2) :: m2'.vlctx) natRec nrv := by
+        have h0 : TrExprS c.venv c.lparams ((some (x, ty2.fvarsList), .vlam tyv2) :: m2'.vlctx)
+            (natRec.instantiate1' (.fvar x)) nrv := by
+          rw [Expr.instantiate1'_eq_self (by simp [hcl0])]; exact hnr
+        exact h0.uninstantiate
+          ((FVarsIn.of_containsFVar' hnr.fvarsIn hnc').mono fun _ h => h.2)
+      obtain ⟨nrv₀, rfl⟩ := hnrB.skips_of_closed hcl0
+      exact ⟨nrv₀, VEnv.IsDefEqU.refl ⟨_, (hnr.wf c.Ewf.ordered
+        (c.withMLC _ (wf := cwf2b)).Δwf).choose_spec⟩⟩
     refine .pure ⟨ida, cwfa, ?_, ?_⟩
     · exact ⟨_, _, hfS, ha₀w, _, hbodyw, (hfa₀ ‹_›).symm⟩
     have hihApp : (c.withMLC m4).TrExprS (.app (.app (.app natRec tg) yg) iharg) ih4' :=

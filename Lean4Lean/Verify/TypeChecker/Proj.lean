@@ -1,3 +1,4 @@
+import Lean4Lean.Verify.Typing.Strengthen
 import Lean4Lean.Verify.TypeChecker.IsDefEq
 import Lean4Lean.Theory.Typing.ProjKernel
 import Lean4Lean.Theory.Typing.Iota
@@ -28,22 +29,6 @@ theorem Closed.of_looseBVarRange_le : ∀ {e : Expr} {k j},
   intro e
   induction e <;> intro k j hc hb <;>
     simp_all [Closed, Expr.looseBVarRange', Nat.max_le] <;> grind
-
-/-- A body without loose bound variables, translated under a binder, does not mention it. -/
-theorem TrExprS.skips_of_closed {env : VEnv} {Us : List Name} {Δ : VLCtx} {A : VExpr}
-    {b : Expr} {B : VExpr} (henv : env.WF) (hΔ : VLCtx.WF env Us.length ((none, .vlam A) :: Δ))
-    {a : FVarId} (ha : a ∉ Δ.fvars) (H : TrExprS env Us ((none, .vlam A) :: Δ) b B)
-    (hb : b.looseBVarRange' = 0) : B.Skips 1 0 := by
-  have hΔ' : VLCtx.WF env Us.length ((some (a, []), .vlam A) :: Δ) :=
-    ⟨hΔ.1, by rintro _ _ ⟨⟩; exact ⟨ha, nofun⟩, hΔ.2.2⟩
-  have hc : Closed b 0 := .of_looseBVarRange_le H.closed (by omega)
-  have h1 := H.inst_fvar henv.ordered hΔ'
-  rw [Expr.instantiate1'_eq_self (by simpa using hc.looseBVarRange_le)] at h1
-  obtain ⟨B₀, h0⟩ := h1.weakFV'_inv henv (.skip_fvar _ _ .refl) (.refl henv hΔ') hc
-    (by simpa using H.fvarsIn)
-  have h2 := h0.weakFV henv.ordered (.skip_fvar (a, []) (.vlam A) .refl) hΔ'
-  cases h2.unique (TrExprS.IsUnique.all _) h1
-  exact .liftN
 
 /-- A body without loose bound variables, translated under a binder, is the lift of its
 translation outside it. -/
@@ -333,7 +318,19 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
     intro k hk hall hk'
     have hf : c'.fields[k]? = some c'.fields[k] := List.getElem?_eq_getElem hk
     obtain ⟨-, hdf, hproj⟩ := c.Ewf.projKernel hΓ hs ht hc' hTwf hle hP0 hFW hwithin hlsW hlenT'
-      hA hI hx hmp (P := Qs) (fun j i' hq hji Di hDi => hq i' Di hji hDi) k _ _
+      hA hI hx hmp (P := Qs) (fun j i' hq hji Di hDi => hq i' Di hji hDi)
+      (fun k f hf => (VInductDecl.FieldsWF.kept_assumed hTwf hP0 hFW k
+        (List.getElem?_eq_some_iff.1 hf).1 fun i _ fi hfi j hj hq => by
+          have hiD : i < Ds.length := by rw [hDsl]; exact (List.getElem?_eq_some_iff.1 hfi).1
+          exact hwithin i _ fi (List.getElem?_eq_getElem hiD) hfi _
+            (hq i _ hj (List.getElem?_eq_getElem hiD))).1 f hf)
+      (fun k D f hD hf => (VInductDecl.FieldsWF.kept_assumed hTwf hP0 hFW k
+        (List.getElem?_eq_some_iff.1 hf).1 fun i _ fi hfi j hj hq => by
+          have hiD : i < Ds.length := by rw [hDsl]; exact (List.getElem?_eq_some_iff.1 hfi).1
+          exact hwithin i _ fi (List.getElem?_eq_getElem hiD) hfi _
+            (hq i _ hj (List.getElem?_eq_getElem hiD))).2 D f hD hf
+        fun j hj hq => hq k D hj hD)
+      k _ _
       (List.getElem?_eq_getElem (by rw [hDsl]; exact hk)) hf fun j hj Dj hDj h hm => by
         rcases Nat.lt_or_ge j k with hjk | hjk
         · exact ((hall j hjk).resolve_left (h.resolve_left (by omega))) Dj hDj hm
@@ -398,10 +395,7 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
       · exact halla j hja
       obtain rfl : j = a := by omega
       refine .inl fun i' D hji hD => ?_
-      have hΔ : VLCtx.WF c.venv c.lparams.length ((none, .vlam A) :: c.vlctx) :=
-        ⟨c.Δwf, nofun, let ⟨_, h⟩ := hAT; ⟨_, h⟩⟩
-      obtain ⟨B₀, -, rfl⟩ := TrExprS.lower_of_closed c.Ewf hΔ
-        (fun h => s₂.ngen.not_reserves_self (wf.ngen_wf _ h)) hbB hcl
+      obtain ⟨B₀, rfl⟩ := hbB.skips_of_closed hcl
       have h1 := (hBe.skips (n := 1) (k := 0)).2 .liftN
       have h2 := VExpr.skips_foralls _ (VExpr.skips_of_subst_lift h1) (i' - j - 1) (D.instL lsT') (by
         have hi' : i' < c'.fields.length := by rw [← hDsl]; exact (List.getElem?_eq_some_iff.1 hD).1

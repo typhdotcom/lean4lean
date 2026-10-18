@@ -156,7 +156,12 @@ theorem VEnv.WF.declDomain_defeq {env : VEnv} {U : Nat} {Γ : List VExpr} (henv 
     {Q : Nat → Prop} {k : Nat} {D : VExpr} {f : VField} (hD : Ds[k]? = some D)
     (hf : c.fields[k]? = some f)
     (hQ : ∀ j < k, Q j → ∀ i, j < i → i ≤ k → ∀ Di, Ds[i]? = some Di → Di.Skips 1 (i - 1 - j))
-    (hkept : ∀ j < k, ¬Q j → d.ProjAllowed c ls j) :
+    (hkept : ∀ j < k, ¬Q j → d.ProjAllowed c ls j)
+    (hlow : VInductDecl.FieldsKept envT d c Q k)
+    (hlowF : envT.HasType d.uvars ((c.keptFieldsBy Q k).reverse ++ d.params.reverse)
+      (VConstructor.strippedTypeBy Q k f.type) (.sort f.level))
+    (hlowD : envT.IsDefEqU d.uvars ((c.keptFieldsBy Q k).reverse ++ d.params.reverse)
+      (VConstructor.strippedTypeBy Q k D) (VConstructor.strippedTypeBy Q k f.type)) :
     env.IsDefEq U Γ ((D.instL ls).subst (Subst.dflt.consList (As ++ VExpr.projs s k x)))
       (c.projType ls s k As x) (.sort (f.level.inst ls)) := by
   have hk : k < c.fields.length := (List.getElem?_eq_some_iff.1 hf).1
@@ -168,23 +173,12 @@ theorem VEnv.WF.declDomain_defeq {env : VEnv} {U : Nat} {Γ : List VExpr} (henv 
     exact hwithin i _ fi (List.getElem?_eq_getElem hiD) hfi _
       (hQ j (by omega) hq i hj hi _ (List.getElem?_eq_getElem hiD))
   have hPc : OnCtx d.params.reverse (envT.IsType d.uvars) := by simpa using hP0.onCtx trivial
-  have hctx : OnCtx (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse)
-      (envT.IsType d.uvars) := by
-    have := hFW.tele.1
-    rw [← List.take_append_drop k c.fields, List.map_append] at this
-    exact (VEnv.IsTele.append_inv this).1.onCtx hPc
-  obtain ⟨W, htele⟩ := hFW.keptTele hTwf hP0 (P := Q) (Nat.le_of_lt hk)
-    fun i hi _ fi hfi j hj hq => hskipF i (Nat.le_of_lt hi) fi hfi j hj hq
+  obtain ⟨-, htele⟩ := hFW.keptTele (P := Q) (Nat.le_of_lt hk)
+    (fun i hi _ fi hfi j hj hq => hskipF i (Nat.le_of_lt hi) fi hfi j hj hq)
+    hlow
   -- the declared domain and the field's view, without the removed fields
-  have hDs := VConstructor.strippedTypeBy_lift' (P := Q) (i := k) (A := D)
-    fun j hj hq => hQ j hj hq k hj (Nat.le_refl _) D hD
-  have hFs := VConstructor.strippedTypeBy_lift' (P := Q) (i := k) (A := f.type)
-    fun j hj hq => hskipF k (Nat.le_refl _) f hf j hj hq
-  have hDF := hFW.defeq k D f hD hf
-  have hty := hFW.level k f hf
-  rw [hDs, hFs] at hDF; rw [hFs] at hty
-  have hDF' := (VEnv.IsDefEqU.weak'_iff hTwf hctx W).1 hDF
-  have hty' := (VEnv.HasType.weak'_iff hTwf hctx W (A := .sort _)).1 hty
+  have hDF' := hlowD
+  have hty' := hlowF
   have H := (hDF'.of_r hTwf (htele.onCtx hPc) hty').instL hls |>.mono hle
   simp only [List.map_append, List.map_reverse] at H
   -- the parameters and the kept projections
@@ -241,7 +235,13 @@ theorem VEnv.WF.projKernel {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.
     (hlen : ls.length = d.uvars) (hA : As.length = d.params.length)
     (hI : I.length = T.indices.length) (hx : env.HasType U Γ x (.appN (.const s ls) (As ++ I)))
     {mp : Bool} (hmp : mp = false → (d.level.inst ls).IsNeverZero) {P : Nat → Prop}
-    (hP : ∀ j i, P j → j < i → ∀ Di, Ds[i]? = some Di → Di.Skips 1 (i - 1 - j)) :
+    (hP : ∀ j i, P j → j < i → ∀ Di, Ds[i]? = some Di → Di.Skips 1 (i - 1 - j))
+    (hlowF : ∀ k (f : VField), c.fields[k]? = some f →
+      envT.HasType d.uvars ((c.keptFieldsBy P k).reverse ++ d.params.reverse)
+        (VConstructor.strippedTypeBy P k f.type) (.sort f.level))
+    (hlowD : ∀ k (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      envT.IsDefEqU d.uvars ((c.keptFieldsBy P k).reverse ++ d.params.reverse)
+        (VConstructor.strippedTypeBy P k D) (VConstructor.strippedTypeBy P k f.type)) :
     ∀ k (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
       (∀ j ≤ k, ∀ Dj, Ds[j]? = some Dj → (j = k ∨ ¬P j) → mp = true →
         env.HasType U Γ ((Dj.instL ls).subst (Subst.dflt.consList (As ++ VExpr.projs s j x)))
@@ -265,6 +265,7 @@ theorem VEnv.WF.projKernel {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.
     let ⟨_, _, hDj, hfj⟩ := hfield j hj; (IH' j hj _ _ hDj hfj hPj).1
   have hdf := henv.declDomain_defeq hΓ hs ht hc hTwf hle hP0 hFW hwithin hls hlen hA hI hx
     (Q := P) hD hf (fun j _ hq i hji _ Di hDi => hP j i hq hji Di hDi) hkept
+    (fun i _ _ fi hfi => hlowF i fi hfi) (hlowF k f hf) (hlowD k D f hD hf)
   -- a field whose declared domain is a proposition is a proof
   have hzero : ∀ {j Dj} {fj : VField}, Ds[j]? = some Dj → c.fields[j]? = some fj →
       env.IsDefEq U Γ ((Dj.instL ls).subst (Subst.dflt.consList (As ++ VExpr.projs s j x)))

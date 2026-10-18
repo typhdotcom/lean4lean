@@ -1,3 +1,4 @@
+import Lean4Lean.Verify.Typing.Strengthen
 import Lean4Lean.Verify.Environment.Primitive.Basic
 
 /-!

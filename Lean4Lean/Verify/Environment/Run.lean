@@ -1,4 +1,5 @@
 import Lean4Lean.Verify.Environment.Inductive
+import Lean4Lean.Verify.Typing.Strengthen
 import Lean4Lean.Verify.Support.Bridge
 
 /-!
@@ -1437,7 +1438,10 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   have hFW := FieldsWF.of_checked henv (by simpa using hparams.onCtx trivial)
     (hfc.defeqDFC henv.ordered hctx) hfe
   refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within⟩, ⟨hidx.trans hnidx, hmen⟩,
-    VInductDecl.FieldsWF.projFields henv hparams hFW⟩, by rw [har, hps, hDs]⟩
+    VInductDecl.FieldsWF.projFields hFW fun k i hi _ f hf =>
+      (VInductDecl.FieldsWF.kept_assumed henv hparams hFW i
+        (List.getElem?_eq_some_iff.1 hf).1
+        fun i' hi' _ hf' => c.field_skips hf' (by omega)).1 f hf⟩, by rw [har, hps, hDs]⟩
   rw [hty, VInductiveType.typeApp_of_none hno, hname, hU, hnp, hDs]
 
 /-- The type `run` gives the `i`th recursor, from the local variables `mkRecInfos` opened. -/

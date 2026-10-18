@@ -1,5 +1,4 @@
 import Lean4Lean.Theory.Typing.InductiveEnv
-import Lean4Lean.Theory.Typing.Strengthen
 
 /-!
 # The recursor's type is well typed
@@ -145,24 +144,28 @@ theorem FieldsWF.level {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs)
       have := ih i f (by simpa using hf)
       simpa [List.take_succ_cons] using this
 
+/-- Each field before the `k`th that is not `P`, with the earlier fields that are `P` removed,
+is still a type of its sort over the parameters and the earlier fields that are not `P`. This
+does not follow from the fields' typing: strengthening is false in general. -/
+def FieldsKept (env : VEnv) (d : VInductDecl) (c : VConstructor) (P : Nat → Prop) (k : Nat) :
+    Prop :=
+  ∀ i < k, ¬P i → ∀ f : VField, c.fields[i]? = some f →
+    env.HasType d.uvars ((c.keptFieldsBy P i).reverse ++ d.params.reverse)
+      (VConstructor.strippedTypeBy P i f.type) (.sort f.level)
+
 /-- The fields before the `k`th that are not `P`, each with those that are removed, form a
 telescope over the parameters, into whose context the context of all the fields before the `k`th
-lifts, provided none of them mentions an earlier field that is `P`. -/
-theorem FieldsWF.keptTele {env : VEnv} (henv : env.WF) {c : VConstructor} {Ds}
-    (hP : env.IsTele d.uvars [] d.params) (H : d.FieldsWF env d.params.reverse 0 Ds c.fields)
+lifts, provided none of them mentions an earlier field that is `P` and each is still typed
+without them. -/
+theorem FieldsWF.keptTele {env : VEnv} {c : VConstructor} {Ds}
+    (H : d.FieldsWF env d.params.reverse 0 Ds c.fields)
     {P : Nat → Prop} {k : Nat} (hk : k ≤ c.fields.length)
     (hskip : ∀ i < k, ¬P i → ∀ f : VField, c.fields[i]? = some f →
-      ∀ j < i, P j → f.type.Skips 1 (i - 1 - j)) :
+      ∀ j < i, P j → f.type.Skips 1 (i - 1 - j))
+    (hlow : FieldsKept env d c P k) :
     Ctx.Lift' (VConstructor.keptLiftBy P k) ((c.keptFieldsBy P k).reverse ++ d.params.reverse)
       (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse) ∧
     env.IsTele d.uvars d.params.reverse (c.keptFieldsBy P k) := by
-  have hPc : OnCtx d.params.reverse (env.IsType d.uvars) := by simpa using hP.onCtx trivial
-  have htele := H.tele.1
-  have hctx (i) (hi : i ≤ c.fields.length) :
-      OnCtx (((c.fields.take i).map (·.type)).reverse ++ d.params.reverse) (env.IsType d.uvars) := by
-    have := htele
-    rw [← List.take_append_drop i c.fields, List.map_append] at this
-    exact (VEnv.IsTele.append_inv this).1.onCtx hPc
   let KF (i : Nat) := (VConstructor.keptIdxBy P i).map fun j =>
     VConstructor.strippedTypeBy P j ((c.fields[j]?.map VField.type).getD default)
   have main : ∀ i ≤ k, Ctx.Lift' (VConstructor.keptLiftBy P i) ((KF i).reverse ++ d.params.reverse)
@@ -185,9 +188,9 @@ theorem FieldsWF.keptTele {env : VEnv} (henv : env.WF) {c : VConstructor} {Ds}
       · simp only [List.append_nil]; exact ⟨.skip W, ht⟩
       · rename_i hPi
         have hlift := VConstructor.strippedTypeBy_lift' (hskip i (by omega) hPi fi hfi)
-        have hty := H.level i fi hfi
-        rw [hlift] at hty
-        have hty' := (VEnv.HasType.weak'_iff henv (hctx i (by omega)) W (A := .sort _)).1 hty
+        have hty' : env.HasType d.uvars ((KF i).reverse ++ d.params.reverse)
+            (VConstructor.strippedTypeBy P i fi.type) (.sort fi.level) := by
+          simpa [KF, VConstructor.keptFieldsBy_eq] using hlow i (by omega) hPi fi hfi
         simp only [List.map_append, List.map_cons, List.map_nil, List.reverse_append,
           List.reverse_cons, List.reverse_nil, List.nil_append, List.singleton_append, hfi,
           Option.map_some, Option.getD_some]
@@ -198,28 +201,20 @@ theorem FieldsWF.keptTele {env : VEnv} (henv : env.WF) {c : VConstructor} {Ds}
   exact ⟨by simpa [KF, VConstructor.keptFieldsBy_eq] using W,
     by simpa [KF, VConstructor.keptFieldsBy_eq] using ht⟩
 
-/-- The kernel's checks give the constructor's `projFields` clause: each field's type, typed in
-the context of the fields before it, strengthens to the context without the fields the
-projection skips, since it does not mention them. -/
-theorem FieldsWF.projFields {env : VEnv} (henv : env.WF) {c : VConstructor} {Ds}
-    (hP : env.IsTele d.uvars [] d.params) (H : d.FieldsWF env d.params.reverse 0 Ds c.fields) :
+/-- The constructor's `projFields` clause, from its fields kept by each projection. -/
+theorem FieldsWF.projFields {env : VEnv} {c : VConstructor} {Ds}
+    (H : d.FieldsWF env d.params.reverse 0 Ds c.fields)
+    (hlow : ∀ k, FieldsKept env d c (c.Skipped k) (k + 1)) :
     ∀ k (f : VField), c.fields[k]? = some f →
       env.IsTele d.uvars d.params.reverse (c.keptFields k) ∧
       env.HasType d.uvars ((c.keptFields k).reverse ++ d.params.reverse)
         (c.strippedType k k f.type) (.sort f.level) := by
   intro k f hf
   have hk : k < c.fields.length := (List.getElem?_eq_some_iff.1 hf).1
-  have hPc : OnCtx d.params.reverse (env.IsType d.uvars) := by simpa using hP.onCtx trivial
-  have hctx : OnCtx (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse)
-      (env.IsType d.uvars) := by
-    have := H.tele.1
-    rw [← List.take_append_drop k c.fields, List.map_append] at this
-    exact (VEnv.IsTele.append_inv this).1.onCtx hPc
-  obtain ⟨W, ht⟩ := H.keptTele henv hP (P := c.Skipped k) (Nat.le_of_lt hk)
-    fun i hi _ fi hfi => c.field_skips hfi (Nat.le_of_lt hi)
-  have hty := H.level k f hf
-  rw [c.strippedType_lift' (c.field_skips (k := k) hf (Nat.le_refl _))] at hty
-  exact ⟨ht, (VEnv.HasType.weak'_iff henv hctx W (A := .sort _)).1 hty⟩
+  obtain ⟨-, ht⟩ := H.keptTele (P := c.Skipped k) (Nat.le_of_lt hk)
+    (fun i hi _ fi hfi => c.field_skips hfi (Nat.le_of_lt hi))
+    fun i hi => hlow k i (by omega)
+  exact ⟨ht, hlow k k (by omega) (fun h => Nat.lt_irrefl _ h.1) f hf⟩
 
 end VInductDecl
 end Lean4Lean
