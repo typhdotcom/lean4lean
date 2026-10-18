@@ -148,7 +148,7 @@ theorem RestoreSpec.noRen {r : ElimNestedInductive.Result} {env' : Kernel.Enviro
   repl := S.repl
 
 /-- The types of a mutual block are all safe or all unsafe. -/
-theorem inductInfo_all_isUnsafe {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem inductInfo_all_isUnsafe [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     {I J : Name} {Iv Jv : InductiveVal} (hI : env.find? I = some (.inductInfo Iv))
     (hJ : env.find? J = some (.inductInfo Jv)) (hJI : J ∈ Iv.all) :
     Iv.isUnsafe = Jv.isUnsafe := by
@@ -171,7 +171,7 @@ occurrence `o`, with that type's constructors instantiated there. The hypotheses
 branch of `addInductive` has once the translation is checked flat (`hflat`, `hfT`, `hfC`, `hEl`),
 the elimination's facts (`run_spec`), the final phase's checks (`hF`), the occurrences' translations
 (`hocc`) and the restoration's inputs (`hRI`). -/
-theorem nested_auxWF {env : Environment} {ves : VEnvs} (wf : ves.WF env) {nparams : Nat}
+theorem nested_auxWF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) {nparams : Nat}
     {isUnsafe : Bool} {fuel : FuelConfig} {res : ElimNestedInductive.Result}
     {env' envF : Environment} {d : VInductDecl} {venv' : VEnv} {venv : VEnv}
     (hvenv : ves.venv (inductSafety isUnsafe) = venv) (henvAt : VEnvAt env (inductSafety isUnsafe) venv)

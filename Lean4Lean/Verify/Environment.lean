@@ -8,7 +8,7 @@ open Kernel
 
 open private Lean.Kernel.Environment.add from Lean.Environment
 
-theorem addAxiom.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : AxiomVal) :
+theorem addAxiom.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : AxiomVal) :
     (addAxiom env v).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∃ ci' : VConstVal, ∀ safety,
         (ves.venv safety).AddConst safety (.axiomInfo v) ci'.toVConstant (ves'.venv safety) := by
@@ -25,7 +25,7 @@ theorem addAxiom.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : Axi
     cases v.isUnsafe <;> cases safety <;> trivial
   · exact .axiom htr (by rwa [← old.map_wf.find?'_eq_find?]) hci hadd old
 
-theorem addDefinition.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem addDefinition.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (v : DefinitionVal) :
     (addDefinition env v).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ (∀ safety, ves.venv safety ≤ ves'.venv safety) ∧
@@ -72,7 +72,7 @@ theorem addDefinition.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     · exact (hp eq).preserves (wf.mono DefinitionSafety.le_safe) wf.tr.wf wf.hasPrimitives
         (hsf.mono (wf.mono hs)) (hci.mono (hmono.trans (wf.mono hs))) hadd
 
-theorem addTheorem.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : TheoremVal) :
+theorem addTheorem.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : TheoremVal) :
     (addTheorem env v).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∃ ci' : VConstVal, ∀ safety,
         (ves.venv safety).AddConst safety (.thmInfo v) ci'.toVConstant (ves'.venv safety) := by
@@ -88,7 +88,7 @@ theorem addTheorem.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : T
   exact .thm htr' (by rwa [← old.map_wf.find?'_eq_find?]) (hbody.mono hle)
     (hprop.mono hle) hadd old
 
-theorem addOpaque.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : OpaqueVal) :
+theorem addOpaque.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : OpaqueVal) :
     (addOpaque env v).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∃ ci' : VConstVal, ∀ safety,
         (ves.venv safety).AddConst safety (.opaqueInfo v) ci'.toVConstant (ves'.venv safety) := by
@@ -111,7 +111,7 @@ theorem addOpaque.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : Op
     exact .opaque (ci' := ci') ⟨⟨htr, hname⟩, hvalue.mono hto⟩
       (by rwa [← old.map_wf.find?'_eq_find?]) (hci.mono hto) hadd old
 
-theorem addQuot.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) :
+theorem addQuot.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) :
     (Environment.addQuot env).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
   cases h : env.quotInit
@@ -125,7 +125,7 @@ private theorem Except.WF.throw' {e : ε} {Q : α → Prop} : (throw e : Except 
 private theorem Except.WF.throwBind {e : ε} {f : α → Except ε β} {Q : β → Prop} :
     ((throw e : Except ε α) >>= f).WF Q := fun _ h => nomatch h
 
-theorem addMutual.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem addMutual.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (vs : List DefinitionVal) :
     (addMutual env vs).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
@@ -202,7 +202,7 @@ theorem addMutual.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
 /-- Successful checked addition preserves well-formedness and extends every safety-indexed
 abstract environment. Inductives rest on `addInductive.WF_flat`, and nested ones are not covered
 (see `addInductive.WF`). -/
-theorem addDecl.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (decl : Declaration) :
+theorem addDecl.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) (decl : Declaration) :
     (addDecl env decl (check := true) (fuel := {})).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
   cases decl with

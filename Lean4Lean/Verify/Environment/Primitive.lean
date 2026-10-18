@@ -30,7 +30,7 @@ The recognizer's `isDefEq` calls are about `v.value` and `v.type`, so lifting th
 model requires their translations. `addDefinition` establishes those before calling the
 recognizer -- that is what the reordering there is for -- and they arrive here as `hvalue` and
 `htype`, describing the very `ci'` that the caller goes on to add. -/
-theorem checkDef.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem checkDef.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (v : DefinitionVal) (ci' : VDefVal)
     (hu : v.levelParams.length = ci'.uvars)
     (htype : TrExprS (ves.venv .safe) v.levelParams [] v.type ci'.type)

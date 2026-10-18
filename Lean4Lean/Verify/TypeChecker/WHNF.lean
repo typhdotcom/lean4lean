@@ -4,7 +4,7 @@ import Lean4Lean.Verify.TypeChecker.Recursor
 namespace Lean4Lean.TypeChecker.Inner
 open Lean hiding Environment Exception
 
-theorem reduceRecursor.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem reduceRecursor.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (reduceRecursor e) fun oe _ =>
       ∀ e₁, oe = some e₁ → c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
   unfold reduceRecursor
@@ -25,7 +25,7 @@ theorem reduceRecursor.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     · exact tail
   · exact tail
 
-theorem whnfFVar.WF {c : VContext} {s : VState} (he : c.TrExprS (.fvar fv) e') :
+theorem whnfFVar.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS (.fvar fv) e') :
     RecM.WF c s (whnfFVar (.fvar fv) cheapProj) fun e₁ _ =>
       c.FVarsBelow (.fvar fv) e₁ ∧ c.TrExpr e₁ e' := by
   refine .getLCtx ?_
@@ -41,7 +41,7 @@ theorem whnfFVar.WF {c : VContext} {s : VState} (he : c.TrExprS (.fvar fv) e') :
   exact .refl c.Ewf c.Δwf
 
 /-- `whnfCore'` on a term not in the cache. -/
-theorem whnfCoreCore.WF {c : VContext} {s : VState}
+theorem whnfCoreCore.WF [VEnv.Injective] {c : VContext} {s : VState}
     (hfull : (e matches .fvar _ | .app .. | .letE .. | .proj ..) = true) (he : c.TrExprS e e') :
     RecM.WF c s (whnfCoreCore e cheapProj) fun p _ =>
       c.FVarsBelow e p.1 ∧ c.TrExpr p.1 e' := by
@@ -127,7 +127,7 @@ theorem whnfCoreCore.WF {c : VContext} {s : VState}
     · exact hsave _ .rfl (he.trExpr c.Ewf c.Δwf)
 
 
-theorem whnfCore'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem whnfCore'.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (whnfCore' e cheapProj) fun e₁ _ =>
       c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
   unfold whnfCore'; extract_lets F
@@ -180,7 +180,7 @@ theorem whnfCore'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     exact ⟨b1.eqv hk' BEq.rfl, b2⟩
   · exact hP ▸ .pure ⟨h1, h2⟩
 
-theorem whnfLoop.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem whnfLoop.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     (whnfLoop e n).WF c s fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
   induction n generalizing s e e' with
   | zero => unfold whnfLoop; exact .throw
@@ -197,7 +197,7 @@ theorem whnfLoop.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
   refine (ih a2).mono fun _ _ _ ⟨b1, b2⟩ => ?_
   exact ⟨h1.trans <| a1.trans b1, b2.defeq c.Ewf c.Δwf <| eq'.trans c.Ewf c.Δwf eq⟩
 
-theorem whnf'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem whnf'.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (whnf' e) fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
   unfold whnf'; extract_lets F
   generalize hP : (fun e₁ (_ : VState) => _) = P

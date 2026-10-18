@@ -78,7 +78,7 @@ theorem IsDefEqE.relevant (H : RelevantEq e₁ e₂) : IsDefEqE env us Δ e₁ e
   | proj _ ih => exact .proj ih
 
 variable! (henv : VEnv.WF env) (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
-theorem RelevantEq.uniq (eq : RelevantEq e₁ e₂)
+theorem RelevantEq.uniq [VEnv.Injective] (eq : RelevantEq e₁ e₂)
     (H1 : TrExprS env Us Δ₁ e₁ e₁') (H2 : TrExprS env Us Δ₂ e₂ e₂') :
     env.IsDefEqU Us.length Δ₁.toCtx e₁' e₂' := by
   induction H1 generalizing e₂ Δ₂ e₂' with
@@ -116,7 +116,7 @@ theorem RelevantEq.uniq (eq : RelevantEq e₁ e₂)
     let .proj eq := eq; let .proj r1 _ := H2
     exact l2.proj_congr henv hΔ.wf.toCtx (ih1 hΔ eq r1)
 
-theorem IsDefEqE.trExpr
+theorem IsDefEqE.trExpr [VEnv.Injective]
     (henv : env.WF) (noBV : Δ.NoBV) (H1 : IsDefEqE env Us Δ r₁ r₂) (hΔ : Δ'.WF env Us.length)
     (W : Δ.BVLift Δ' dn 0 n 0) (hr : RelevantEq r₁ e₁) (he : TrExprS env Us Δ' e₁ e') :
     ∃ e₂, RelevantEq r₂ e₂ ∧ TrExpr env Us Δ' e₂ e' := by
@@ -160,7 +160,7 @@ theorem IsDefEqE.trExpr
     have ⟨_, b1, b2⟩ := ih hΔ W hr a1
     exact ⟨_, .proj b1, .proj henv hΔ b2 a2⟩
 
-theorem IsDefEqE.uniq (henv : env.WF) (noBV : Δ.NoBV) (hΔ : Δ.WF env Us.length)
+theorem IsDefEqE.uniq [VEnv.Injective] (henv : env.WF) (noBV : Δ.NoBV) (hΔ : Δ.WF env Us.length)
     (he₁ : TrExprS env Us Δ e₁ e₁') (he₂ : TrExprS env Us Δ e₂ e₂')
     (eq : IsDefEqE env Us Δ e₁ e₂) : env.IsDefEqU Us.length Δ.toCtx e₁' e₂' := by
   have ⟨_, a1, _, a2, a3⟩ := eq.trExpr henv noBV hΔ .refl .rfl he₁
@@ -266,7 +266,7 @@ theorem _root_.Lean4Lean.TypeChecker.State.recordEquiv_eq (st : State) (t u : Le
   simp only [h1, h2]
   exact ⟨_, _, Nat.le_max_left _ _, rfl⟩
 
-theorem recordEquiv.WF {c : VContext} {s : VState} (he₁ : c.TrExprS e₁ e') (he₂ : c.TrExpr e₂ e')
+theorem recordEquiv.WF [VEnv.Injective] {c : VContext} {s : VState} (he₁ : c.TrExprS e₁ e') (he₂ : c.TrExpr e₂ e')
     (hL : ∀ lab, l ≤ lab → lab ≤ s.scopeIds.size → c.ceiling.all (lab ≤ ·) →
       Learned c.venv c.lparams (levelCtx c.mlctx s.scopeFV c.ceiling c.top lab) c.lctx s.ngen
         (PairFact c.venv c.lparams e₁ e₂)) :
@@ -296,7 +296,7 @@ theorem recordEquiv.WF {c : VContext} {s : VState} (he₁ : c.TrExprS e₁ e') (
     simp only [BEq.beq, Bool.and_eq_true] at hk
     exact fun m wfm hb ha => (H m wfm hb ha).eqv hk.1 hk.2
 
-theorem isDefEq.WF {c : VContext} {s : VState}
+theorem isDefEq.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (isDefEq e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
   have hd₁ := c.mlctx_wf.dom_of_tr he₁; have hd₂ := c.mlctx_wf.dom_of_tr he₂

@@ -40,7 +40,7 @@ structure VEnvAt (env : Environment) (safety : DefinitionSafety) (venv : VEnv) :
   parameters. -/
   envClosed : ∀ n ci, env.find? n = some ci → ci.SuppIn fun _ => True
 
-theorem VEnvs.WF.toVEnvAt {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem VEnvs.WF.toVEnvAt [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (safety : DefinitionSafety) : VEnvAt env safety (ves.venv safety) where
   tr := wf.tr
   hasPrimitives := wf.hasPrimitives
@@ -58,7 +58,7 @@ theorem whnf'_forallE {m : Methods} {c : VContext} {s : VState} :
   | .bvar _, h | .fvar _, h | .mvar _, h | .sort _, h | .const .., h | .app .., h | .lam .., h
   | .letE .., h | .lit _, h | .proj .., h => by cases h
 
-theorem Methods.withFuel.WF : ∀ {n}, (withFuel n).WF
+theorem Methods.withFuel.WF [VEnv.Injective] : ∀ {n}, (withFuel n).WF
   | 0 =>
     { ss := withFuel.SS 0
       isDefEqCore _ _ := .throw
@@ -75,7 +75,7 @@ theorem Methods.withFuel.WF : ∀ {n}, (withFuel n).WF
       whnf_forallE h := whnf'_forallE h
       inferType h1 h2 := inferType'.WF h1 h2 _ this }
 
-theorem RecM.WF.run {x : RecM α} (H : x.WF c s Q) : (RecM.run x).WF c s Q :=
+theorem RecM.WF.run [VEnv.Injective] {x : RecM α} (H : x.WF c s Q) : (RecM.run x).WF c s Q :=
   H _ Methods.withFuel.WF
 
 def VContext.mk1 {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
@@ -89,13 +89,13 @@ def VContext.mk1 {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
   mlctx_wf := trivial
   lctx_eq := rfl
 
-def VContext.mk' {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+def VContext.mk' [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (safety : DefinitionSafety := .safe) (lparams : List Name := [])
     (fuel : FuelConfig := {}) : VContext := .mk1 (wf.toVEnvAt safety) lparams fuel
 
 /-- The empty state is well formed in any context whose environment's declarations mention no
 free variables and which sets nothing aside. -/
-theorem VState.WF.emptyOf (c : VContext)
+theorem VState.WF.emptyOf [VEnv.Injective] (c : VContext)
     (hcl : ∀ n ci, c.env.find? n = some ci → ci.SuppIn fun _ => True)
     (hc : c.ceiling = none) : VState.WF c {} where
   trctx := c.mlctx_wf.tr
@@ -119,17 +119,17 @@ theorem VState.WF.emptyOf (c : VContext)
   shape := hc ▸ .nil
   ceil_lt _ h := by rw [hc] at h; cases h
 
-theorem VState.WF.empty1 {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
+theorem VState.WF.empty1 [VEnv.Injective] {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
     {wf : VEnvAt env safety venv} {lparams : List Name} {fuel : FuelConfig} :
     VState.WF (.mk1 wf lparams fuel) {} :=
   .emptyOf _ wf.envClosed rfl
 
-theorem VState.WF.empty {env : Environment} {ves : VEnvs} {wf : ves.WF env}
+theorem VState.WF.empty [VEnv.Injective] {env : Environment} {ves : VEnvs} {wf : ves.WF env}
     {safety : DefinitionSafety} {lparams : List Name} {fuel : FuelConfig} :
     VState.WF (.mk' wf safety lparams fuel) {} := by
   unfold VContext.mk'; exact .empty1
 
-theorem M.WF.run1 {env : Environment} {venv : VEnv} (wf : VEnvAt env safety venv)
+theorem M.WF.run1 [VEnv.Injective] {env : Environment} {venv : VEnv} (wf : VEnvAt env safety venv)
     {x : M α} {Q} (H : x.WF (.mk1 wf lparams fuel) {} fun a _ => Q a) :
     (M.run env safety {} lparams fuel x).WF Q := by
   intro a eq
@@ -138,7 +138,7 @@ theorem M.WF.run1 {env : Environment} {venv : VEnv} (wf : VEnvAt env safety venv
   let ⟨_, _, _, _, H⟩ := H .empty1 _ _ eq
   exact H
 
-theorem M.WF.run {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem M.WF.run [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     {x : M α} {Q} (H : x.WF (.mk' wf safety lparams fuel) {} fun a _ => Q a) :
     (M.run env safety {} lparams fuel x).WF Q := by
   unfold VContext.mk' at H; exact M.WF.run1 _ H
@@ -219,16 +219,16 @@ theorem M.WF.forInForall₂ {c : VContext} {f : α → Unit → M (ForInStep Uni
 
 /-- The `FVarsBelow` is kept, not dropped: a caller that reduced a term living in some sub-context
 needs to know the result still does, and reduction is the only step where that could fail. -/
-nonrec theorem whnf.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+nonrec theorem whnf.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     M.WF c s (whnf e) fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := (whnf.WF he).run
 
-nonrec theorem whnfCore.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+nonrec theorem whnfCore.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     M.WF c s (whnfCore e) fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' :=
   (whnfCore.WF he).run
 
 /-- The `M`-level wrapper falls back to `e` itself when there is nothing to unfold, so unlike the
 `RecM` form it always returns something definitionally equal to its input. -/
-nonrec theorem unfoldDefinition.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+nonrec theorem unfoldDefinition.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     M.WF c s (unfoldDefinition e) fun e₁ _ => c.TrExpr e₁ e' := by
   refine (unfoldDefinition.WF he).run.bind fun oe _ _ H => ?_
   cases oe with
@@ -237,23 +237,23 @@ nonrec theorem unfoldDefinition.WF {c : VContext} {s : VState} (he : c.TrExprS e
 
 /-- In `inferOnly` mode the caller has to supply the translation, since that mode assumes the
 term is already known to be well typed. -/
-nonrec theorem inferType.WF' {c : VContext} {s : VState}
+nonrec theorem inferType.WF' [VEnv.Injective] {c : VContext} {s : VState}
     (h1 : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     M.WF c s (inferType e inferOnly) fun ty _ => ∃ e' ty', c.TrTyping e ty e' ty' :=
   (inferType.WF' h1 hinf).run
 
-nonrec theorem inferType.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+nonrec theorem inferType.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     M.WF c s (inferType e inferOnly) fun ty _ => ∃ ty', c.TrTyping e ty e' ty' :=
   (inferType.WF he).run
 
 /-- `checkType` is `inferType` at `inferOnly := false`, where the obligation is vacuous. -/
-theorem checkType.WF {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx.fvars)) :
+theorem checkType.WF [VEnv.Injective] {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx.fvars)) :
     M.WF c s (checkType e) fun ty _ => ∃ e' ty', c.TrTyping e ty e' ty' := inferType.WF' h1 nofun
 
 /-- `checkType` on a constant applied within its declared type's literal binders: each argument
 has the type of its binder, instantiated by the earlier arguments (`LitApp`). -/
-theorem checkType.WF_lit {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx.fvars)) :
+theorem checkType.WF_lit [VEnv.Injective] {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx.fvars)) :
     M.WF c s (checkType e) fun ty s' => (∃ e' ty', c.TrTyping e ty e' ty') ∧
       LitApp c.env (ArgTyped c.venv c.lparams c.vlctx) e ty := by
   show M.WF c s (readThe Context >>= fun ctx =>
@@ -269,7 +269,7 @@ theorem checkType.WF_lit {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.v
 /-- What `LitApp` says in the type theory: a constant whose declared type translates to the
 telescope `L` over `R`, applied to arguments `Ds` for the binders of `L`, has each argument typed
 at its binder, at the levels and the earlier arguments. -/
-theorem LitApp.argTypes {c : VContext} {s : VState} (wf : s.WF c) {J : Name} {ls : List Level}
+theorem LitApp.argTypes [VEnv.Injective] {c : VContext} {s : VState} (wf : s.WF c) {J : Name} {ls : List Level}
     {Ds : Array Expr} {ty : Expr} {ci : ConstantInfo} {ls' : List VLevel} {L : List VExpr}
     {R : VExpr} {Ds' : List VExpr}
     (H : LitApp c.env (ArgTyped c.venv c.lparams c.vlctx)
@@ -357,7 +357,7 @@ theorem LitApp.mono {c : VContext} {s s' : VState} (le : s ≤ s')
 
 /-- Checking each of a list of terms, as `addInductive` checks its nested occurrences: each
 translates, and is a `LitApp` at the end. -/
-theorem checkType.forM_lit {c : VContext} {s : VState} (xs : List α) (f : α → Expr)
+theorem checkType.forM_lit [VEnv.Injective] {c : VContext} {s : VState} (xs : List α) (f : α → Expr)
     (hfv : ∀ x ∈ xs, (f x).FVarsIn (· ∈ c.vlctx.fvars)) :
     M.WF c s (xs.forM fun x => do _ ← checkType (f x)) fun _ s' => ∀ x ∈ xs,
       (∃ e', c.TrExprS (f x) e') ∧ ∃ ty,
@@ -373,20 +373,20 @@ theorem checkType.forM_lit {c : VContext} {s : VState} (xs : List α) (f : α �
     · exact ⟨⟨_, he⟩, ty, H.mono le⟩
     · exact h y hy
 
-nonrec theorem isDefEq.WF {c : VContext} {s : VState}
+nonrec theorem isDefEq.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     M.WF c s (isDefEq e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' :=
   (isDefEq.WF he₁ he₂).run
 
-nonrec theorem isProp.WF {c : VContext} {s : VState}
+nonrec theorem isProp.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he : c.TrExprS e e') : (isProp e).WF c s fun b _ => b → c.HasType e' (.sort .zero) :=
   (isProp.WF he).run
 
-theorem ensureSort.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem ensureSort.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     M.WF c s (ensureSort e e₀) fun e1 _ => c.TrExpr e1 e' ∧ ∃ u, e1 = .sort u :=
   (ensureSortCore.WF he).run.mono fun _ _ _ h => ⟨h.2.1, h.1⟩
 
-theorem ensureForall.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem ensureForall.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     M.WF c s (ensureForall e) fun e1 _ =>
       c.TrExpr e1 e' ∧ ∃ name ty body bi, e1 = .forallE name ty body bi :=
   (ensureForallCore.WF he).run.mono fun _ _ _ h => h.2
@@ -394,7 +394,7 @@ theorem ensureForall.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
 /-- At `inferOnly := false` the translation is an *output* rather than an input, so this is how a
 caller learns that a term it has not otherwise translated is a type -- which is what the primitive
 checker's `ensureType` calls are for. -/
-theorem ensureType.WF' {c : VContext} {s : VState}
+theorem ensureType.WF' [VEnv.Injective] {c : VContext} {s : VState}
     (h1 : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     M.WF c s (ensureType e inferOnly) fun e1 _ => ∃ e', c.TrExprS e e' ∧ ∃ u u', e1 = .sort u ∧
@@ -404,7 +404,7 @@ theorem ensureType.WF' {c : VContext} {s : VState}
   obtain ⟨_, rfl⟩ := b3; let .sort b1 := b1
   exact ⟨_, a1, _, _, rfl, b1, a3.defeqU_r c.Ewf c.Δwf b2.symm⟩
 
-theorem ensureType.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem ensureType.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     M.WF c s (ensureType e inferOnly) fun e1 _ => ∃ e', c.TrExprS e e' ∧ ∃ u u', e1 = .sort u ∧
       VLevel.ofLevel c.lparams u = some u' ∧ c.HasType e' (.sort u') :=
   ensureType.WF' he.fvarsIn fun _ => ⟨_, he⟩

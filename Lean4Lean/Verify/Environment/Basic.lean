@@ -270,7 +270,7 @@ inductive TrEnv' : ConstMap → Bool → VEnv → Prop where
 def TrEnv (safety : DefinitionSafety) (env : Environment) (venv : VEnv) : Prop :=
   TrEnv' safety env.constants env.quotInit venv
 
-theorem TrEnv'.wf (H : TrEnv' safety C Q venv) : venv.WF := by
+theorem TrEnv'.wf [VEnv.Injective] (H : TrEnv' safety C Q venv) : venv.WF := by
   induction H with
   | empty => exact ⟨_, .empty⟩
   | ignore _ _ _ ih => exact ih

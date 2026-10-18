@@ -391,7 +391,7 @@ theorem TrExprS.restored {E₁ E₀ : VEnv} (henv : E₀.Ordered)
 /-- A restored term the final phase checked translates to the restored translation: the final
 phase found no auxiliary name in it (`NestedFinalOK.clean`), and checked it, against an
 environment modelled by `E₀`, if it has a `let` (`NestedFinalOK.lets`). -/
-theorem TrExprS.restored_of_final {E₁ E₀ : VEnv} (henv : E₀.Ordered)
+theorem TrExprS.restored_of_final [VEnv.Injective] {E₁ E₀ : VEnv} (henv : E₀.Ordered)
     (S : RestoreSpec r env' lparams auxRec Us E₁.ContainsLits R ren)
     {e : Expr} {e' : VExpr} (H : TrExprS E₁ Us [] e e')
     (hR : ∀ c ci, E₁.constants c = some ci → (R c).isSome → ci.uvars = lparams.length)
@@ -687,7 +687,7 @@ variable {r : ElimNestedInductive.Result} {env' : Kernel.Environment} {lparams :
 
 /-- A constructor of one of the block's own types, as the final phase restores it, is the
 restored block's. -/
-theorem restoredCtor {safety : DefinitionSafety} {venv envT envT' : VEnv} (henv : venv.WF)
+theorem restoredCtor [VEnv.Injective] {safety : DefinitionSafety} {venv envT envT' : VEnv} (henv : venv.WF)
     (H : d.RestoreSpec R ren n ns cname) (hdN : (d.restoreNested R ren n ns cname).WF venv)
     (hTN : venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some envT)
     (S : RestoreSpec r env' lparams auxRec lparams envT'.ContainsLits R ren)
@@ -892,7 +892,7 @@ theorem restoredType {safety : DefinitionSafety} {venv : VEnv} {types : List Ind
     exact hagree hle ps B (hT ▸ hpB) hps
 
 /-- A recursor's type, as the final phase restores it, is the restored block's. -/
-theorem restoredRecType {safety : DefinitionSafety} {venv envT envC envC' : VEnv}
+theorem restoredRecType [VEnv.Injective] {safety : DefinitionSafety} {venv envT envC envC' : VEnv}
     {types : List InductiveType} (henv : venv.WF)
     (H : d.RestoreSpec R ren n ns cname) (hdN : (d.restoreNested R ren n ns cname).WF venv)
     (hTN : venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some envT)
@@ -946,7 +946,7 @@ theorem restoredRecType {safety : DefinitionSafety} {venv envT envC envC' : VEnv
   exact ⟨_, h⟩
 
 /-- A recursor of the translated block, as the final phase restores it, is the restored block's. -/
-theorem restoredRec {safety : DefinitionSafety} {venv envT envC envR envC' envR' : VEnv}
+theorem restoredRec [VEnv.Injective] {safety : DefinitionSafety} {venv envT envC envR envC' envR' : VEnv}
     {types : List InductiveType} (henv : venv.WF)
     (H : d.RestoreSpec R ren n ns cname) (hdN : (d.restoreNested R ren n ns cname).WF venv)
     (hn : 0 < n) (hns : ns ≠ [])
@@ -1284,7 +1284,7 @@ theorem restoreNested_params_eq {venv : VEnv} (henv : venv.WF) (hd : d.WF venv)
 
 /-- The final phase's environment with the block's types as axioms is modelled by the
 environment with the restored block's types. -/
-theorem typeAx_venvAt {env envTk envF : Kernel.Environment} {types : List InductiveType}
+theorem typeAx_venvAt [VEnv.Injective] {env envTk envF : Kernel.Environment} {types : List InductiveType}
     {isUnsafe ap : Bool} {fuel : FuelConfig} {inds : List (InductiveVal × List ConstructorVal)}
     {recs : List RecursorVal}
     (hF : NestedFinalOK env env' lparams types r isUnsafe ap fuel inds recs envTk envF)
@@ -1394,7 +1394,7 @@ theorem typeAx_venvAt {env envTk envF : Kernel.Environment} {types : List Induct
 /-- **The restored block's step.** What the final phase of a nested block adds is the restored
 block's `AddInduct` step, given what the check of the translated block established
 (`AddInductN`) and how the restoration relates to the translation. -/
-theorem nestedAddInduct {env envTk envF : Kernel.Environment} {types : List InductiveType}
+theorem nestedAddInduct [VEnv.Injective] {env envTk envF : Kernel.Environment} {types : List InductiveType}
     {isUnsafe ap : Bool} {fuel : FuelConfig} {inds : List (InductiveVal × List ConstructorVal)}
     {recs : List RecursorVal}
     (hF : NestedFinalOK env env' lparams types r isUnsafe ap fuel inds recs envTk envF)

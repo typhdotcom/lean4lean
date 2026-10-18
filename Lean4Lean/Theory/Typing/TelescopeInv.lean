@@ -10,7 +10,7 @@ namespace VEnv
 variable {env : VEnv} {U : Nat}
 
 /-- The arguments of a well-typed application instantiate the function's pi telescope. -/
-theorem HasType.appN_inv (henv : env.WF) {Γ f} (hΓ : OnCtx Γ (env.IsType U)) :
+theorem HasType.appN_inv [VEnv.Injective] (henv : env.WF) {Γ f} (hΓ : OnCtx Γ (env.IsType U)) :
     ∀ (n : Nat) {As B as}, as.length = n → env.HasType U Γ f (.foralls As B) →
     (f.appN as).WF env U Γ → as.length = As.length →
     Ctx.SubstEq env U Γ (Subst.consList .id as) (Subst.consList .id as) (As.reverse ++ Γ)
@@ -35,7 +35,7 @@ theorem HasType.appN_inv (henv : env.WF) {Γ f} (hΓ : OnCtx Γ (env.IsType U)) 
     rw [Subst.consList_concat, List.reverse_append]
     exact .cons W hA' (h2.defeqU_r henv hΓ ⟨_, hA⟩)
 
-theorem HasType.appN_invT (henv : env.WF) {Γ : List VExpr} (hΓ : OnCtx Γ (env.IsType U)) :
+theorem HasType.appN_invT [VEnv.Injective] (henv : env.WF) {Γ : List VExpr} (hΓ : OnCtx Γ (env.IsType U)) :
     ∀ {Δ As B τ f as},
     env.HasType U Γ f ((VExpr.foralls As B).subst τ) → Ctx.SubstEq env U Γ τ τ Δ →
     env.IsTele U Δ As → (f.appN as).WF env U Γ → as.length = As.length →
@@ -52,7 +52,7 @@ theorem HasType.appN_invT (henv : env.WF) {Γ : List VExpr} (hΓ : OnCtx Γ (env
     have := HasType.appN_invT henv hΓ (Δ := A :: Δ) hfa hτ' hAs hwf (Nat.succ.inj hlen)
     rw [List.reverse_cons, List.append_assoc]; exact this
 
-theorem TeleDefEq.foralls (henv : env.WF) : ∀ {Γ As Bs R}, OnCtx Γ (env.IsType U) →
+theorem TeleDefEq.foralls [VEnv.Injective] (henv : env.WF) : ∀ {Γ As Bs R}, OnCtx Γ (env.IsType U) →
     env.TeleDefEq U Γ As Bs → env.IsTele U Γ Bs → env.IsType U (Bs.reverse ++ Γ) R →
     env.IsDefEqU U Γ (.foralls As R) (.foralls Bs R)
   | _, [], [], _, _, .nil, _, ⟨_, hR⟩ => ⟨_, hR⟩
@@ -65,7 +65,7 @@ theorem TeleDefEq.foralls (henv : env.WF) : ∀ {Γ As Bs R}, OnCtx Γ (env.IsTy
     exact ⟨_, .forallEDF h1 h4⟩
 
 /-- Telescopes that agree entry by entry give contexts that do. -/
-theorem TeleDefEq.defeqCtx (henv : env.WF) :
+theorem TeleDefEq.defeqCtx [VEnv.Injective] (henv : env.WF) :
     ∀ {Γ' Γ As Bs}, env.TeleDefEq U Γ As Bs → env.IsDefEqCtx U [] Γ' Γ →
       OnCtx Γ (env.IsType U) → env.IsTele U Γ Bs →
       env.IsDefEqCtx U [] (As.reverse ++ Γ') (Bs.reverse ++ Γ)

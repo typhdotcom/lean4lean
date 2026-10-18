@@ -82,7 +82,7 @@ theorem insertConsts_isSome : ∀ {cis : List ConstantInfo} {C : ConstMap} {name
 
 /-- What an inductive block's declarations name besides their expressions is declared with
 them. -/
-theorem TrEnv'.namesDeclared {C Q venv} (H : TrEnv' .unsafe C Q venv) :
+theorem TrEnv'.namesDeclared [VEnv.Injective] {C Q venv} (H : TrEnv' .unsafe C Q venv) :
     (∀ n v, C.find? n = some (.inductInfo v) → ∀ c ∈ v.ctors, (C.find? c).isSome) ∧
     (∀ n v, C.find? n = some (.ctorInfo v) → (C.find? v.induct).isSome) ∧
     (∀ n v, C.find? n = some (.recInfo v) → (C.find? v.getMajorInduct).isSome) := by
@@ -185,7 +185,7 @@ theorem TrEnv'.namesDeclared {C Q venv} (H : TrEnv' .unsafe C Q venv) :
 def ConstMap.Closed (C : ConstMap) : Prop :=
   ∀ n ci, C.find? n = some ci → ci.SuppIn fun m => (C.find? m).isSome
 
-theorem TrEnv'.closed {C Q venv} (H : TrEnv' .unsafe C Q venv) (hp : venv.HasPrimitives) :
+theorem TrEnv'.closed [VEnv.Injective] {C Q venv} (H : TrEnv' .unsafe C Q venv) (hp : venv.HasPrimitives) :
     ConstMap.Closed C := by
   have henv := H.wf
   have hdecl {m} (h : venv.contains m) : (C.find? m).isSome := by
@@ -334,7 +334,7 @@ theorem _root_.Lean.ConstantInfo.SuppIn.mono {C C' : Name → Prop} (H : ∀ x, 
   | recInfo => exact ⟨H _ h2.1, fun r hr => hS (h2.2 r hr)⟩
   | _ => trivial
 
-theorem _root_.Lean4Lean.TypeChecker.VState.WF.emptyAt (c : TypeChecker.VContext)
+theorem _root_.Lean4Lean.TypeChecker.VState.WF.emptyAt [VEnv.Injective] (c : TypeChecker.VContext)
     (hcl : ConstMap.Closed c.env.constants) (hc : c.ceiling = none) :
     TypeChecker.VState.WF c {} :=
   .emptyOf c (fun n ci h => by
@@ -342,7 +342,7 @@ theorem _root_.Lean4Lean.TypeChecker.VState.WF.emptyAt (c : TypeChecker.VContext
     exact (hcl n ci h).mono fun _ _ => trivial) hc
 
 /-- A closed expression with a translation mentions only names its environment declares. -/
-theorem TrExprS.suppIn_env {env : Environment} {venv : VEnv} {safety}
+theorem TrExprS.suppIn_env [VEnv.Injective] {env : Environment} {venv : VEnv} {safety}
     (H : TrEnv safety env venv) (hp : venv.HasPrimitives) {Us : List Name} {e : Expr} {e' : VExpr}
     (h : TrExprS venv Us [] e e') :
     e.SuppIn ⟨fun _ => False, (· ∈ Us), fun m => (env.constants.find? m).isSome⟩ := by
@@ -403,7 +403,7 @@ theorem ConstMap.Closed.addAxioms : ∀ (axs : List AxiomVal) {env : Environment
 
 /-- The state a lifted type checker call starts in, when the environment declares every name it
 mentions. -/
-theorem VContext.suppState {c : VContext} (hcl : ConstMap.Closed c.env.constants) :
+theorem VContext.suppState [VEnv.Injective] {c : VContext} (hcl : ConstMap.Closed c.env.constants) :
     SuppState c.tc.toContext {} where
   lctxWF := show c.lctx.WF from c.lctx_eq ▸ c.mlctx_wf.tr.1
   wellScoped fv d h := by
@@ -429,7 +429,7 @@ theorem VContext.suppState {c : VContext} (hcl : ConstMap.Closed c.env.constants
 
 /-- A type checker call, run over the kernel's local context, verified by running it in a context
 that agrees with it on what the call mentions. -/
-theorem WF.liftTC_sim {c : VContext} {c₂ : TypeChecker.VContext} {x : TypeChecker.M α}
+theorem WF.liftTC_sim [VEnv.Injective] {c : VContext} {c₂ : TypeChecker.VContext} {x : TypeChecker.M α}
     {Q P : α → Prop} (hcl₂ : ConstMap.Closed c₂.env.constants)
     (hss : SuppState c.tc.toContext {})
     (hsim : TypeChecker.M.SS c.tc.toContext c₂.toContext {} x x fun a _ => P a)
@@ -447,7 +447,7 @@ theorem WF.liftTC_sim {c : VContext} {c₂ : TypeChecker.VContext} {x : TypeChec
 
 /-- `whnf`, run over the kernel's local context and verified in a context that agrees with it on
 what its input mentions. -/
-theorem whnf.WF_sim {c : VContext} {c₂ : TypeChecker.VContext} {S : Supp} {e : Expr} {e' : VExpr}
+theorem whnf.WF_sim [VEnv.Injective] {c : VContext} {c₂ : TypeChecker.VContext} {S : Supp} {e : Expr} {e' : VExpr}
     (hcl : ConstMap.Closed c.env.constants) (hcl₂ : ConstMap.Closed c₂.env.constants)
     (hA : TypeChecker.Agree S c.tc.toContext c₂.toContext)
     (hF : ∀ g, TypeChecker.FreshFor c.tc.toContext c₂.toContext g) (hc : c₂.ceiling = none)
@@ -495,7 +495,7 @@ theorem Sub.declared {cs : TypeChecker.VContext} {n : Name} (h : cs.venv.contain
     (cs.env.find? n).isSome := by
   obtain ⟨ci, h1, -⟩ := cs.trenv.find?_iff.2 h; simp [h1]
 
-theorem Sub.suppIn {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
+theorem Sub.suppIn [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
     (he : cs.TrExprS e E) : e.SuppIn (Sub.supp X cs) := by
   have h := TrExprS.suppIn cs.Ewf cs.hasPrimitives he
   refine @Expr.SuppIn.mono ⟨(· ∈ cs.vlctx.fvars), (· ∈ cs.lparams), cs.venv.contains⟩
@@ -537,7 +537,7 @@ theorem Sub.freshFor {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {g} :
       exact this.1 (Option.isSome_iff_exists.1 h)
     exact H.dom h'
 
-theorem Sub.suppClosed {X pre ρ cs cb} (H : Sub X pre ρ cs cb) :
+theorem Sub.suppClosed [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) :
     (Sub.supp X cs).Closed cb.tc.toContext := by
   refine ⟨fun fv d hfv hd => ?_, ⟨fun n ci h hn => ?_, fun op hop hn => ?_, fun op hop hn => ?_,
     fun h => (H.fresh _ h).2.1 rfl⟩⟩
@@ -568,7 +568,7 @@ theorem Sub.suppClosed {X pre ρ cs cb} (H : Sub X pre ρ cs cb) :
       simp +decide [Environment.primitives, NameSet.ofList, NameSet.contains]
 
 /-- `whnf` in the kernel's context, verified in the part of it its input mentions. -/
-theorem Sub.whnf {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
+theorem Sub.whnf [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
     (he : cs.TrExprS e E) :
     WF cb (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
       e₁.SuppIn (Sub.supp X cs) ∧ cs.FVarsBelow e e₁ ∧ cs.TrExpr e₁ E :=
@@ -579,14 +579,14 @@ theorem Sub.whnf {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr
 def Sub.up (pre : List Name) (ρ : Lift) (cs : TypeChecker.VContext) (E : VExpr) : VExpr :=
   (E.instL (VLevel.shift pre.length cs.lparams.length)).lift' ρ
 
-theorem Sub.trExprS {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
+theorem Sub.trExprS [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
     (he : cs.TrExprS e E) : cb.tc.TrExprS e (Sub.up pre ρ cs E) := by
   have h1 := he.lparams_append H.pre_fresh
   rw [← TypeChecker.MLCtx.vlctx_instL, ← H.lparams] at h1
   have := (h1.mono H.venv).weakFV' cb.tc.Ewf.ordered H.lift cb.tc.Δwf
   exact this
 
-theorem Sub.isDefEq {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e₁ e₂ A : VExpr}
+theorem Sub.isDefEq [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e₁ e₂ A : VExpr}
     (h : cs.venv.IsDefEq cs.lparams.length cs.vlctx.toCtx e₁ e₂ A) :
     cb.venv.IsDefEq cb.lparams.length cb.tc.vlctx.toCtx
       (Sub.up pre ρ cs e₁) (Sub.up pre ρ cs e₂) (Sub.up pre ρ cs A) := by
@@ -597,11 +597,11 @@ theorem Sub.isDefEq {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e₁ e₂ A : VEx
   rw [TypeChecker.MLCtx.vlctx_instL, VLCtx.instL_toCtx] at W
   exact h1.weak' cb.tc.Ewf.ordered W
 
-theorem Sub.isType {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {A : VExpr}
+theorem Sub.isType [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {A : VExpr}
     (h : cs.IsType A) : cb.tc.IsType (Sub.up pre ρ cs A) :=
   let ⟨_, h⟩ := h; ⟨_, H.isDefEq h⟩
 
-theorem Sub.trExpr {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
+theorem Sub.trExpr [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr}
     (he : cs.TrExpr e E) : cb.tc.TrExpr e (Sub.up pre ρ cs E) :=
   let ⟨_, h1, _, h2⟩ := he; ⟨_, H.trExprS h1, _, H.isDefEq h2⟩
 
@@ -646,7 +646,7 @@ theorem Sub.push_lctx {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {name ty bi}
   · exact .inr hfv
 
 /-- Pushing a variable onto both contexts. -/
-theorem Sub.push {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {name : Name} {ty : Expr} {Ty : VExpr}
+theorem Sub.push [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {name : Name} {ty : Expr} {Ty : VExpr}
     {bi : BinderInfo} (hty : cs.TrExprS ty Ty) (hT : cs.IsType Ty) :
     ∃ wf, Sub X pre ρ.cons (Sub.pushS cs ⟨cb.ngen.curr⟩ name ty Ty bi wf)
       (cb.push name ty (Sub.up pre ρ cs Ty) bi (H.trExprS hty) (H.isType hT)) := by
@@ -725,7 +725,7 @@ theorem stripAnnotations_mono {env₁ env₂ : Environment}
     rw [stripAnnotations.eq_5 env₁ e h1 h2 h3 h4] at h
     rw [stripAnnotations.eq_5 env₂ e h1 h2 h3 h4]; exact h
 
-theorem Sub.consumeTypeAnnotations {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} :
+theorem Sub.consumeTypeAnnotations [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} :
     WF cb (consumeTypeAnnotations e) fun e' =>
       e' = e.consumeTypeAnnotations' ∧ cs.venv.StripOK e := by
   intro r h
@@ -734,7 +734,7 @@ theorem Sub.consumeTypeAnnotations {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e 
 
 /-- Stripping in the kernel's context strips only annotations the small context's environment
 defines. -/
-theorem Sub.consumeTypeAnnotations_heads {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} :
+theorem Sub.consumeTypeAnnotations_heads [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} :
     WF cb (AddInductive.consumeTypeAnnotations e) fun e' =>
       e' = e.consumeTypeAnnotations' ∧ cs.venv.StripOK e ∧
         e.StripHeads fun n => (∃ v, cs.env.find? n = some (.defnInfo v)) ∧ cs.venv.AnnotDef n := by
@@ -755,18 +755,18 @@ structure Ext (m : TypeChecker.MLCtx) (cb : VContext) (ρ : Lift) : Prop where
   lctx : ∀ fv ∈ m.vlctx.fvars,
     (cb.lctx.find? fv).map LocalDecl.erase = (m.lctx.find? fv).map LocalDecl.erase
 
-theorem Ext.trExprS {m cb ρ} (H : Ext m cb ρ) {e : Expr} {E : VExpr}
+theorem Ext.trExprS [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) {e : Expr} {E : VExpr}
     (he : TrExprS cb.venv cb.lparams m.vlctx e E) : cb.tc.TrExprS e (E.lift' ρ) := by
   have := he.weakFV' cb.tc.Ewf.ordered H.lift cb.tc.Δwf
   exact this
 
-theorem Ext.isDefEq {m cb ρ} (H : Ext m cb ρ) {e₁ e₂ A : VExpr}
+theorem Ext.isDefEq [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) {e₁ e₂ A : VExpr}
     (h : cb.venv.IsDefEq cb.lparams.length m.vlctx.toCtx e₁ e₂ A) :
     cb.venv.IsDefEq cb.lparams.length cb.tc.vlctx.toCtx (e₁.lift' ρ) (e₂.lift' ρ) (A.lift' ρ) := by
   have W := H.lift.toCtx
   exact h.weak' cb.tc.Ewf.ordered W
 
-theorem Ext.isType {m cb ρ} (H : Ext m cb ρ) {A : VExpr}
+theorem Ext.isType [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) {A : VExpr}
     (h : cb.venv.IsType cb.lparams.length m.vlctx.toCtx A) : cb.tc.IsType (A.lift' ρ) :=
   let ⟨_, h⟩ := h; ⟨_, H.isDefEq h⟩
 
@@ -783,7 +783,7 @@ theorem Ext.fresh {m cb ρ} (H : Ext m cb ρ) : m.lctx.find? ⟨cb.ngen.curr⟩ 
     · exact absurd (cb.reserved _ (htr.find?_eq_some.1 ⟨_, h'⟩)) cb.ngen.not_reserves_self
 
 /-- Pushing a variable onto both. -/
-theorem Ext.push {m cb ρ} (H : Ext m cb ρ) {name : Name} {ty : Expr} {Ty : VExpr}
+theorem Ext.push [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) {name : Name} {ty : Expr} {Ty : VExpr}
     {bi : BinderInfo} (hty : TrExprS cb.venv cb.lparams m.vlctx ty Ty)
     (hT : cb.venv.IsType cb.lparams.length m.vlctx.toCtx Ty) :
     Ext (.vlam ⟨cb.ngen.curr⟩ name ty Ty bi m)
@@ -898,7 +898,7 @@ theorem Ext.freshFor {m cb ρ} (H : Ext m cb ρ) {g} :
     TypeChecker.FreshFor cb.tc.toContext (cb.small m H.wf).toContext g :=
   .of_dom fun _ h => H.dom (H.wf.tr.find?_eq_some.1 (Option.isSome_iff_exists.1 h))
 
-theorem Ext.suppClosed {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants) :
+theorem Ext.suppClosed [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants) :
     (Ext.supp m).Closed cb.tc.toContext := by
   refine ⟨fun fv d hfv hd => ?_, ⟨fun n ci h _ => ?_, fun _ _ _ => ⟨trivial, trivial, trivial⟩,
     fun _ _ _ => ⟨trivial, trivial⟩, trivial⟩⟩
@@ -923,7 +923,7 @@ theorem Ext.notKernel {m cb ρ} (H : Ext m cb ρ) :
 theorem Ext.tdom {m cb ρ} (H : Ext m cb ρ) {e : Expr} (h : ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars) :
     TypeChecker.Dom cb.tc.toContext e := fun fv hfv => H.dom (h fv hfv)
 
-theorem Ext.liftTC {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+theorem Ext.liftTC [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
     {x : TypeChecker.M α} {Q P : α → Prop}
     (hsim : TypeChecker.M.SS cb.tc.toContext (cb.small m H.wf).toContext {} x x fun a _ => P a)
     (W : TypeChecker.M.WF (cb.small m H.wf) {} x fun a _ => Q a) :
@@ -932,7 +932,7 @@ theorem Ext.liftTC {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.con
     fun _ h => h.2
 
 /-- `whnf` in the kernel's context, verified in `m`. -/
-theorem Ext.whnf {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+theorem Ext.whnf [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
     {e : Expr} {E : VExpr} (he : (cb.small m H.wf).TrExprS e E) :
     WF cb (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
       (cb.small m H.wf).FVarsBelow e e₁ ∧ (cb.small m H.wf).TrExpr e₁ E := by
@@ -943,7 +943,7 @@ theorem Ext.whnf {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.const
     (TypeChecker.whnf.WF he)
 
 /-- `isDefEq` in the kernel's context, verified in `m`. -/
-theorem Ext.isDefEq' {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+theorem Ext.isDefEq' [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
     {e₁ e₂ : Expr} {E₁ E₂ : VExpr} (h₁ : (cb.small m H.wf).TrExprS e₁ E₁)
     (h₂ : (cb.small m H.wf).TrExprS e₂ E₂) :
     WF cb (monadLift (TypeChecker.isDefEq e₁ e₂) : M Bool) fun b =>
@@ -956,7 +956,7 @@ theorem Ext.isDefEq' {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.c
     (TypeChecker.isDefEq.WF h₁ h₂)
 
 /-- `ensureSort` in the kernel's context, verified in `m`. -/
-theorem Ext.ensureSort {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+theorem Ext.ensureSort [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
     {e e₀ : Expr} {E : VExpr} (he : (cb.small m H.wf).TrExprS e E) :
     WF cb (monadLift (TypeChecker.ensureSort e e₀) : M Expr) fun e1 =>
       (cb.small m H.wf).TrExpr e1 E ∧ ∃ u, e1 = .sort u := by
@@ -967,7 +967,7 @@ theorem Ext.ensureSort {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env
     (TypeChecker.ensureSort.WF he)
 
 /-- `checkType` in the kernel's context, verified in `m`. -/
-theorem Ext.checkType {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+theorem Ext.checkType [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
     {e : Expr} (hfv : e.FVarsIn (· ∈ m.vlctx.fvars)) :
     WF cb (monadLift (TypeChecker.checkType e) : M Expr) fun ty =>
       ∃ e' ty', (cb.small m H.wf).TrTyping e ty e' ty' := by
@@ -978,7 +978,7 @@ theorem Ext.checkType {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.
     (TypeChecker.checkType.WF hfv)
 
 /-- `ensureType` in the kernel's context, verified in `m`. -/
-theorem Ext.ensureType {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+theorem Ext.ensureType [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
     {e : Expr} {E : VExpr} (he : (cb.small m H.wf).TrExprS e E) {inferOnly : Bool} :
     WF cb (monadLift (TypeChecker.ensureType e inferOnly) : M Expr) fun e1 =>
       ∃ e', (cb.small m H.wf).TrExprS e e' ∧ ∃ u u', e1 = .sort u ∧
@@ -994,7 +994,7 @@ theorem Ext.ensureType {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env
 
 /-- `ensureType` in check mode in the kernel's context, verified in `m` from the variables it
 mentions alone: a check translates its input. -/
-theorem Ext.ensureType' {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+theorem Ext.ensureType' [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
     {e : Expr} (hfv : e.FVarsIn (· ∈ m.vlctx.fvars)) :
     WF cb (monadLift (TypeChecker.ensureType e false) : M Expr) fun e1 =>
       ∃ e', (cb.small m H.wf).TrExprS e e' ∧ ∃ u u', e1 = .sort u ∧

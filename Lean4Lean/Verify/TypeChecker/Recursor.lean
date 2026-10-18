@@ -28,7 +28,7 @@ theorem TrExprS.mkAppList {env : VEnv} {Us Δ} (henv : VEnv.Ordered env)
     have ⟨_, _, hfT, hxT⟩ := (VExpr.WF.appN_inv (vs := xs) henv hΔ hwf).app_inv henv hΔ
     TrExprS.mkAppList henv hΔ (f := f.app a) (f' := f'.app x) (.app hfT hxT hf hx) hxs hwf
 
-theorem quotReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e')
+theorem quotReduceRec.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e')
     (hq : c.env.quotInit = true) :
     RecM.WF c s (quotReduceRec e whnf isDefEq) fun oe _ =>
       ∀ e₁, oe = some e₁ → c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
@@ -161,7 +161,7 @@ theorem quotReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e')
       exact VEnv.WF.quotInd c.Ewf hΓ hind hmk hwf hq hx hy
   exact .pure nofun
 
-theorem toCtorWhenK.WF {c : VContext} {s : VState} {rval : RecursorVal} (hk : rval.k = true)
+theorem toCtorWhenK.WF [VEnv.Injective] {c : VContext} {s : VState} {rval : RecursorVal} (hk : rval.k = true)
     {d : VInductDecl} {t : Nat} {T : VInductiveType}
     (hs : c.venv.inducts T.name = some (d, t)) (ht : d.types[t]? = some T) (hK : d.IsKTarget)
     (hmi : rval.getMajorInduct = T.name) (hnp : rval.numParams = d.params.length)
@@ -256,7 +256,7 @@ theorem _root_.Lean.Expr.forIn_app_proj (I : Name) (e : Expr) (l : List Nat) (r 
   | nil => rfl
   | cons a l ih => rw [List.forIn_cons]; exact ih _
 
-theorem toCtorWhenStruct.WF {c : VContext} {s : VState} {I : Name} (he : c.TrExprS e e') :
+theorem toCtorWhenStruct.WF [VEnv.Injective] {c : VContext} {s : VState} {I : Name} (he : c.TrExprS e e') :
     RecM.WF c s (toCtorWhenStruct c.env whnf inferType I e) fun e₁ _ =>
       c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
   have hΓ := c.Δwf.toCtx
@@ -376,7 +376,7 @@ theorem _root_.Lean4Lean.List.Forall₂.split_left {R : α → β → Prop} :
 
 /-- A translation applied to arguments: its application to their translations, given that this is
 well formed. -/
-theorem TrExpr.mkAppList {env : VEnv} {Us Δ} (henv : VEnv.WF env)
+theorem TrExpr.mkAppList [VEnv.Injective] {env : VEnv} {Us Δ} (henv : VEnv.WF env)
     (hΔ : OnCtx Δ.toCtx (env.IsType Us.length)) {as : List Expr} {xs : List VExpr} {f f'}
     (hf : TrExpr env Us Δ f f') (has : as.Forall₂ (TrExprS env Us Δ) xs)
     (hwf : VExpr.WF env Us.length Δ.toCtx (f'.appN xs)) :
@@ -387,7 +387,7 @@ theorem TrExpr.mkAppList {env : VEnv} {Us Δ} (henv : VEnv.WF env)
 
 /-- The constructor a recursor's rule names, as the environment holds it: for an auxiliary type,
 the earlier type's constructor, with that type's parameters. -/
-theorem ruleCtorInfo {c : VContext} {s : Name} {d : VInductDecl} {t₀ t : Nat}
+theorem ruleCtorInfo [VEnv.Injective] {c : VContext} {s : Name} {d : VInductDecl} {t₀ t : Nat}
     {T : VInductiveType} {c' : VConstructor} (hs : c.venv.inducts s = some (d, t₀))
     (ht : d.allTypes[t]? = some T) (hcm : c' ∈ T.ctors) :
     ∃ w, c.env.find? c'.name = some (.ctorInfo w) ∧
@@ -409,7 +409,7 @@ theorem ruleCtorInfo {c : VContext} {s : Name} {d : VInductDecl} {t₀ t : Nat}
     refine ⟨w, ?_, by simp [hno, hwnp, hargslen]⟩
     rw [Kernel.Environment.find?, c.trenv.map_wf.find?'_eq_find?, hname]; exact hw
 
-theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem inductiveReduceRec.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (inductiveReduceRec c.env e whnf inferType isDefEq) fun oe _ =>
       ∀ e₁, oe = some e₁ → c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
   have hΓ := c.Δwf.toCtx

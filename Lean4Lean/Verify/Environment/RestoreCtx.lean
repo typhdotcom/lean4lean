@@ -117,7 +117,7 @@ theorem RCtx.lets_lift {U : Nat} {Δ₁ Δ₂ : VLCtx} {Δ : List VExpr} {k : Na
   exact (hY.weakBV henv₀ W).letsOK
 
 /-- A restored typing of the translation's, in contexts `RCtx` relates. -/
-theorem RCtx.hasType {U : Nat} {F : Name → Option VExpr} (HE : RestoreEnv E₁ E₀ U F R ls₀ Γ₀)
+theorem RCtx.hasType [VEnv.Injective] {U : Nat} {F : Name → Option VExpr} (HE : RestoreEnv E₁ E₀ U F R ls₀ Γ₀)
     {Δ₁ Δ₂ : VLCtx} {Δ : List VExpr} {k : Nat} (C : RCtx E₁ U R ren ls₀ Γ₀ Θ n Δ₁ Δ₂ Δ k)
     {e A : VExpr} (he : e.AuxAt R ls₀ Δ.length) (hA : A.AuxAt R ls₀ Δ.length)
     (h : E₁.HasType U Δ₁.toCtx e A) :
@@ -162,7 +162,7 @@ theorem RCtx.vlet {U : Nat} {Δ₁ Δ₂ : VLCtx} {Δ : List VExpr} {k : Nat}
 
 /-- Restoring a translation's term in a context keeps its `let`s typed, given that the
 occurrences it puts back are. -/
-theorem TrExprS.restoreLets {F : Name → Option VExpr}
+theorem TrExprS.restoreLets [VEnv.Injective] {F : Name → Option VExpr}
     (HE : RestoreEnv E₁ E₀ Us.length F R ls₀ Γ₀) (henv₁ : E₁.Ordered)
     (S : RestoreSpec r env' lparams auxRec Us E₁.ContainsLits R ren)
     (hF : PlacedFn (ElimNestedInductive.Result.restoreFn r env' lparams auxRec)
@@ -284,7 +284,7 @@ theorem TrExprS.restoreLets {F : Name → Option VExpr}
 /-- A telescope of the translation whose domains translate to types, restored, in contexts
 `RCtx` relates: the restored domains translate to the restored types. The occurrences restoring
 puts back are typed over the parameters `Θ`. -/
-theorem TeleDoms.restore {F : Name → Option VExpr}
+theorem TeleDoms.restore [VEnv.Injective] {F : Name → Option VExpr}
     (HE : RestoreEnv E₁ E₀ Us.length F R ls₀ Γ₀) (henv₁ : E₁.Ordered)
     (S : RestoreSpec r env' lparams auxRec Us E₁.ContainsLits R ren)
     (hF : PlacedFn (ElimNestedInductive.Result.restoreFn r env' lparams auxRec)
@@ -351,7 +351,7 @@ theorem paramVLCtx_snoc (Qs : List VExpr) (Q : VExpr) :
 /-- A nested block's translated constructor type whose dropped telescopes have typed domains,
 restored, still does: its parameters are those of the restored type's translation `Ps`, over
 which `RestoreEnv` carries the rest. -/
-theorem CtorDoms.restore {F : Name → Option VExpr} (henv₁ : E₁.Ordered)
+theorem CtorDoms.restore [VEnv.Injective] {F : Name → Option VExpr} (henv₁ : E₁.Ordered)
     (S : RestoreSpec r env' lparams auxRec Us E₁.ContainsLits R ren)
     (hF : PlacedFn (ElimNestedInductive.Result.restoreFn r env' lparams auxRec)
       (fun c => (R c).isSome) (fun c => (auxRec.find? c).isSome) lvls n)

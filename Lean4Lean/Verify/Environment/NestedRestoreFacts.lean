@@ -759,7 +759,7 @@ theorem foldl_typeNames_contains (ts : List InductiveType) : ∀ T ∈ ts,
 constructors because the final phase checks them against the auxiliary names `S`; the auxiliary
 types' because the elimination builds them from the environment's constants and the block's
 constructors (`run_spec`), and the auxiliary names are new. -/
-theorem restoreInputs_hin {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem restoreInputs_hin [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     {d : VInductDecl} {n : Nat} {ns : List VNested} {cname : Name → Name}
     (hfrE : ∀ x ∈ (d.typeConsts ++ d.ctorConsts ++ d.recConsts).map (·.1), env.find? x = none)
     {E₁ : VEnv} {lparams : List Name} {nparams : Nat} {level : VLevel}

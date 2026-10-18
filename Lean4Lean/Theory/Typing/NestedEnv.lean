@@ -69,7 +69,7 @@ namespace VInductiveType
 /-- What an auxiliary type's `AuxWF` gives, at the block's own levels and over its parameters as
 variables: the occurrence is typed at the body of the auxiliary type's declared type, and so is
 each constructor of the earlier type at the occurrence's parameters. -/
-theorem AuxWF.apps {env : VEnv} (henv : env.WF) {d : VInductDecl} {T : VInductiveType}
+theorem AuxWF.apps [VEnv.Injective] {env : VEnv} (henv : env.WF) {d : VInductDecl} {T : VInductiveType}
     {o : VNested} (hP : env.IsTele d.uvars [] d.params) (hA : T.AuxWF env d o) :
     (∀ a ∈ o.args, a.ClosedN d.params.length) ∧
     (∃ ps' X, T.type = .foralls ps' X ∧ env.TeleDefEq d.uvars [] ps' d.params ∧
@@ -179,7 +179,7 @@ variable {venv E₁ E₀ : VEnv}
 restored block: `E₁` has the translation's types, auxiliary ones included, `E₀` the restored
 block's own types; each auxiliary constant is replaced by the occurrence it stands for, as a
 function of the parameters (`nestedF`), typed in `E₀` from the restored block's `AuxWF`. -/
-theorem RestoreSpec.restoreEnv (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname)
+theorem RestoreSpec.restoreEnv [VEnv.Injective] (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname)
     (hRfresh : ∀ c h, R c = some h → venv.constants c = none)
     (hrenfresh : ∀ c c', ren c = some c' → venv.constants c = none)
     (hRdom : ∀ c h, R c = some h → ∃ k T, d.types[n + k]? = some T ∧

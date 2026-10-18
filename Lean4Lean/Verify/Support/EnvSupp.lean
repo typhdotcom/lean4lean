@@ -129,7 +129,7 @@ theorem TrExprS.suppIn_nil {env : VEnv} {Us : List Name} {e : Expr} {e' : VExpr}
 
 /-- The declarations of a translated environment mention no free variables, and only their own
 level parameters. -/
-theorem TrEnv'.suppIn_true {C Q venv} (H : TrEnv' .unsafe C Q venv) :
+theorem TrEnv'.suppIn_true [VEnv.Injective] {C Q venv} (H : TrEnv' .unsafe C Q venv) :
     ∀ n ci, C.find? n = some ci → ci.SuppIn fun _ => True := by
   have hS {Us e e'} (h : TrExprS venv Us [] e e') :
       e.SuppIn ⟨fun _ => False, (· ∈ Us), fun _ => True⟩ := h.suppIn_nil
@@ -148,7 +148,7 @@ theorem TrEnv'.suppIn_true {C Q venv} (H : TrEnv' .unsafe C Q venv) :
     exact hS he
   | _ => trivial
 
-theorem TrEnv.suppIn_true {env : Environment} {venv : VEnv} (H : TrEnv .unsafe env venv) :
+theorem TrEnv.suppIn_true [VEnv.Injective] {env : Environment} {venv : VEnv} (H : TrEnv .unsafe env venv) :
     ∀ n ci, env.find? n = some ci → ci.SuppIn fun _ => True := by
   intro n ci h
   rw [Kernel.Environment.find?, H.map_wf.find?'_eq_find?] at h

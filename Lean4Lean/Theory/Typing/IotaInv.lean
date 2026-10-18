@@ -8,7 +8,7 @@ open VExpr
 `lsB` and parameters `ps`, that is one of the type's constructors at any levels and parameters, is
 that constructor at `lsB` and `ps`; and the type's indices are determined by the term. For an
 auxiliary type, the constructor is the earlier type's, and its block decides both. -/
-theorem VEnv.WF.iotaHead {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.iotaHead [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t₀ i : Nat} {Ti : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t₀)) (hi : d.allTypes[i]? = some Ti)
     (hcm : c ∈ Ti.ctors) {lsB lsC : List VLevel} (hlsB : ∀ l ∈ lsB, l.WF U)
@@ -165,7 +165,7 @@ theorem VEnv.WF.iotaHead {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF
 /-- Iota reduction: the recursor of a recorded block applied to a constructor application of its
 type is the iota rule's right-hand side at the recursor's parameters, motives and minor
 premises, and the constructor's fields. -/
-theorem VEnv.WF.iota {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.iota [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t₀ t q : Nat} {Tj : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t₀)) (ht : d.allTypes[t]? = some Tj)
     (hq : d.allCtors[q]? = some (t, c)) {lsR lsC : List VLevel} {ps Ms ms idx psC fs : List VExpr}
@@ -342,7 +342,7 @@ theorem VEnv.WF.iota {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
 /-- A type of a recorded block in `Prop` with a single constructor without fields, applied to
 arguments: the constructor at the arguments' parameters is a term of it at the constructor's
 indices, and any two terms of it are definitionally equal, by proof irrelevance. -/
-theorem VEnv.WF.kTarget {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.kTarget [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hz : d.level ≈ .zero) (hc : T.ctors = [c]) (hf : c.fields = [])
@@ -396,7 +396,7 @@ theorem VEnv.WF.kTarget {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
 
 /-- A term of a non-recursive structure that is not a proposition is its constructor applied to
 its type's parameters and its projections. -/
-theorem VEnv.WF.structEtaProjs {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.structEtaProjs [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hc : T.ctors = [c]) (hi : T.indices = []) (hrec : d.isRec = false)

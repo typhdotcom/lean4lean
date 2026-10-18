@@ -207,7 +207,7 @@ theorem TrExprS.contains_nat_of_natArrow2
 operator, and then probe that operator. Nothing checks the operator's type, so it has to be read
 off `Nat.bitwise`'s recorded type through the application: unique typing gives the two function
 types as definitionally equal, and `forallE` injectivity takes the domains apart. -/
-theorem TrExprS.bitwiseOperand {env : VEnv} {Us : List Name} {opSrc : Expr} {V : VExpr}
+theorem TrExprS.bitwiseOperand [VEnv.Injective] {env : VEnv} {Us : List Name} {opSrc : Expr} {V : VExpr}
     (henv : env.WF) (hprim : env.HasPrimitives)
     (h : TrExprS env Us [] (.app (.const ``Nat.bitwise []) opSrc) V) :
     ∃ op, V = .app (.const ``Nat.bitwise []) op ∧
@@ -239,20 +239,20 @@ theorem TrExprS.natArrow2 (henv : env.Ordered)
 
 /-- Congruence for `IsDefEqU` under an application, with the typing supplied explicitly.
 `IsDefEqU` hides the type, so the caller has to say at which type the two sides agree. -/
-theorem VEnv.IsDefEqU.appDF' (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
+theorem VEnv.IsDefEqU.appDF' [VEnv.Injective] (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
     (hf : env.IsDefEqU U Γ f f') (ha : env.IsDefEqU U Γ a a')
     (hfT : env.HasType U Γ f (.forallE A B)) (haT : env.HasType U Γ a A) :
     env.IsDefEqU U Γ (.app f a) (.app f' a') :=
   ⟨_, .appDF (hf.of_l henv hΓ hfT) (ha.of_l henv hΓ haT)⟩
 
 /-- The same, when only the argument moves. -/
-theorem VEnv.IsDefEqU.app_arg' (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
+theorem VEnv.IsDefEqU.app_arg' [VEnv.Injective] (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
     (ha : env.IsDefEqU U Γ a a')
     (hfT : env.HasType U Γ f (.forallE A B)) (haT : env.HasType U Γ a A) :
     env.IsDefEqU U Γ (.app f a) (.app f a') := .appDF' henv hΓ ⟨_, hfT⟩ ha hfT haT
 
 /-- The same, when only the function moves. -/
-theorem VEnv.IsDefEqU.app_fun' (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
+theorem VEnv.IsDefEqU.app_fun' [VEnv.Injective] (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
     (hf : env.IsDefEqU U Γ f f')
     (hfT : env.HasType U Γ f (.forallE A B)) (haT : env.HasType U Γ a A) :
     env.IsDefEqU U Γ (.app f a) (.app f' a) := .appDF' henv hΓ hf ⟨_, haT⟩ hfT haT
@@ -268,7 +268,7 @@ through `congr_head`.
 The probes are produced in a context whose level-parameter count is `v.levelParams.length`,
 which is only *propositionally* zero -- the guard says `v.levelParams = []`. Taking `U` with
 `hU : U = 0` lets the caller hand over its facts as they come, instead of rewriting them first. -/
-theorem VEnv.ReflectsNatNatNat'.of_unary_step_equations (hU : U = 0)
+theorem VEnv.ReflectsNatNatNat'.of_unary_step_equations [VEnv.Injective] (hU : U = 0)
     (henv : VEnv.WF env) (hprim : env.HasPrimitives) (hnat : env.contains ``Nat) (G : Nat → Nat)
     (huT : env.HasType 0 [] g (.forallE .nat .nat))
     (huClosed : g.ClosedN)
@@ -307,7 +307,7 @@ with base `0`, `Nat.pow` through `Nat.mul` with base `1`.
 
 Same shape as `of_unary_step_equations` otherwise -- `f` stays opaque, and the operator enters
 only through its reflection, whose typing clause is what makes the congruence step available. -/
-theorem VEnv.ReflectsNatNatNat'.of_binary_step_equations (hU : U = 0)
+theorem VEnv.ReflectsNatNatNat'.of_binary_step_equations [VEnv.Injective] (hU : U = 0)
     (henv : VEnv.WF env) (hprim : env.HasPrimitives) (hnat : env.contains ``Nat)
     (G : Nat → Nat → Nat) (Z E : Nat → Nat)
     (hg : env.ReflectsNatNatNat' g G)
@@ -345,7 +345,7 @@ theorem VEnv.ReflectsNatNatNat'.of_binary_step_equations (hU : U = 0)
 /-- Recurrence for a binary `Nat` primitive whose successor equation recurses with a *changed
 first argument* rather than applying an operator to the result: `Nat.shiftLeft`, where
 `shl x (succ y) ≡ shl (2 * x) y`. The induction therefore generalizes the first argument. -/
-theorem VEnv.ReflectsNatNatNat'.of_first_arg_step_equations (hU : U = 0)
+theorem VEnv.ReflectsNatNatNat'.of_first_arg_step_equations [VEnv.Injective] (hU : U = 0)
     (henv : VEnv.WF env) (hprim : env.HasPrimitives) (hnat : env.contains ``Nat)
     (G : Nat → Nat → Nat) (C : Nat) (hg : env.ReflectsNatNatNat' g G)
     (hF0 : ∀ a, F a 0 = a)
@@ -381,7 +381,7 @@ theorem VEnv.ReflectsNatNatNat'.of_first_arg_step_equations (hU : U = 0)
 combinations, the diagonal one recursing: `Nat.beq` and `Nat.ble`, which differ only in the
 three constant answers. Both arguments are analysed, so this is a double induction rather than
 a recursion on the second argument alone. -/
-theorem VEnv.ReflectsNatNatBool'.of_constructor_cases (hU : U = 0) (henv : VEnv.WF env)
+theorem VEnv.ReflectsNatNatBool'.of_constructor_cases [VEnv.Injective] (hU : U = 0) (henv : VEnv.WF env)
     (hprim : env.HasPrimitives) (hnat : env.contains ``Nat) (b00 b0s bs0 : Bool)
     (hF00 : F 0 0 = b00) (hF0s : ∀ b, F 0 (b + 1) = b0s) (hFs0 : ∀ a, F (a + 1) 0 = bs0)
     (hFss : ∀ a b, F (a + 1) (b + 1) = F a b)
@@ -470,7 +470,7 @@ theorem VEnv.ReflectsNatNat'.of_pred_equations (hU : U = 0) (henv : VEnv.WF env)
 /-- Reflection transfers along a definitional equation on the head. In the environment
 `addDefEq` produces, the constant is equal to the value, so it inherits the value's reflection
 -- and this is the only place a constant enters. -/
-theorem VEnv.ReflectsNatNatNat'.congr_head (henv : VEnv.WF env)
+theorem VEnv.ReflectsNatNatNat'.congr_head [VEnv.Injective] (henv : VEnv.WF env)
     (hlit : ∀ k Γ, env.HasType 0 Γ (.natLit k) .nat)
     (h : env.ReflectsNatNatNat' f F)
     (hgf : env.IsDefEqU 0 [] g f)
@@ -482,7 +482,7 @@ theorem VEnv.ReflectsNatNatNat'.congr_head (henv : VEnv.WF env)
     .app_fun' henv trivial hgf hgT (hlit a [])
   exact .app_fun' henv trivial h₁ (.app hgT (hlit a [])) (hlit b [])
 
-theorem VEnv.ReflectsNatNatBool'.congr_head (henv : VEnv.WF env)
+theorem VEnv.ReflectsNatNatBool'.congr_head [VEnv.Injective] (henv : VEnv.WF env)
     (hlit : ∀ k Γ, env.HasType 0 Γ (.natLit k) .nat)
     (h : env.ReflectsNatNatBool' f F)
     (hgf : env.IsDefEqU 0 [] g f)
@@ -493,7 +493,7 @@ theorem VEnv.ReflectsNatNatBool'.congr_head (henv : VEnv.WF env)
   refine .app_fun' henv trivial ?_ (.app hgT (hlit a [])) (hlit b [])
   exact .app_fun' henv trivial hgf hgT (hlit a [])
 
-theorem VEnv.ReflectsNatNat'.congr_head (henv : VEnv.WF env)
+theorem VEnv.ReflectsNatNat'.congr_head [VEnv.Injective] (henv : VEnv.WF env)
     (hlit : ∀ k Γ, env.HasType 0 Γ (.natLit k) .nat) {f g : VExpr} {F : Nat → Nat}
     (h : env.ReflectsNatNat' f F)
     (hgf : env.IsDefEqU 0 [] g f)
@@ -550,7 +550,7 @@ across that equation.
 
 The extension's well-formedness and the equation itself are both the `.def` step of `VDecl.WF`,
 so neither has to be supplied by the caller. -/
-theorem VEnv.ReflectsNatNatNat'.toConst {ci' : VDefVal}
+theorem VEnv.ReflectsNatNatNat'.toConst [VEnv.Injective] {ci' : VDefVal}
     (hle : checked ≤ venv) (henv : checked.WF)
     (hwf : venv.WF) (hprim : checked.HasPrimitives) (hnat : checked.contains ``Nat)
     (hu : ci'.uvars = 0) (hci : ci'.WF venv)
@@ -564,7 +564,7 @@ theorem VEnv.ReflectsNatNatNat'.toConst {ci' : VDefVal}
     (fun k Γ => (hprim.natLitT henv.ordered hnat k Γ).mono (hle.trans le)) href hcf
     (HasType.defeqU_l hwfE trivial hcf.symm href.1)
 
-theorem VEnv.ReflectsNatNatBool'.toConst {ci' : VDefVal}
+theorem VEnv.ReflectsNatNatBool'.toConst [VEnv.Injective] {ci' : VDefVal}
     (hle : checked ≤ venv) (henv : checked.WF)
     (hwf : venv.WF) (hprim : checked.HasPrimitives) (hnat : checked.contains ``Nat)
     (hu : ci'.uvars = 0) (hci : ci'.WF venv)
@@ -579,7 +579,7 @@ theorem VEnv.ReflectsNatNatBool'.toConst {ci' : VDefVal}
 
 /-- The unary counterpart. The reflection now carries a typing clause, and the constant's is
 exactly what `congr_head` already needs, so it comes along for free. -/
-theorem VEnv.ReflectsNatNat'.toConst {ci' : VDefVal}
+theorem VEnv.ReflectsNatNat'.toConst [VEnv.Injective] {ci' : VDefVal}
     (hle : checked ≤ venv) (henv : checked.WF)
     (hwf : venv.WF) (hprim : checked.HasPrimitives) (hnat : checked.contains ``Nat)
     (hu : ci'.uvars = 0) (hci : ci'.WF venv)

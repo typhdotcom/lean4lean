@@ -711,7 +711,7 @@ theorem Expr.letFree_of_anySub {e : Expr} (h : e.anySub (·.isLet) = false)
 
 /-- The check the final phase makes of a restored term with a `let`, run in an environment with a
 model, translates and types it. -/
-theorem checkRestored.WF {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
+theorem checkRestored.WF [VEnv.Injective] {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
     (wf : VEnvAt env safety venv) {levelParams : List Name} {fuel : FuelConfig} {e : Expr}
     {isType : Bool} (hclosed : e.FVarsIn fun _ => False) (hlet : e.anySubterm (·.isLet))
     (h : checkRestored env safety levelParams fuel e isType = .ok ()) :

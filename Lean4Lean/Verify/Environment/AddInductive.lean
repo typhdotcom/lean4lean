@@ -83,7 +83,7 @@ def VEnv.ReturnsFirst (env : VEnv) (n : Name) (k : Nat) : Prop :=
   ∀ ci, env.constants n = some ci → ∃ As T, As.length = k ∧
     env.IsDefEq ci.uvars [] (.const n (VLevel.params ci.uvars)) (.lams As (.bvar (k - 1))) T
 
-theorem VEnv.ReturnsFirst.erases {env : VEnv} (henv : env.WF) (hk : 0 < k)
+theorem VEnv.ReturnsFirst.erases [VEnv.Injective] {env : VEnv} (henv : env.WF) (hk : 0 < k)
     (H : env.ReturnsFirst n k) :
     env.Erases n k 0 := by
   intro U Γ ls args hΓ hlen hwf
@@ -161,7 +161,7 @@ theorem TrExprS.returnsFirstArg {env : VEnv} {Us : List Name} :
   | _, _, _, .mdata .., _, _, _, hv, _ | _, _, _, .proj .., _, _, _, hv, _ => by
     simp [AddInductive.returnsFirstArg] at hv
 
-theorem AddInductive.checkTypeAnnotation.WF {env : Environment} {venv : VEnv}
+theorem AddInductive.checkTypeAnnotation.WF [VEnv.Injective] {env : Environment} {venv : VEnv}
     (H : TrEnv safety env venv) :
     (checkTypeAnnotation env n k).WF fun _ => venv.ReturnsFirst n k := by
   unfold checkTypeAnnotation
@@ -182,7 +182,7 @@ theorem AddInductive.checkTypeAnnotation.WF {env : Environment} {venv : VEnv}
 
 /-- Stripping succeeds only with each annotation it strips checked, and then strips as
 `consumeTypeAnnotations'` does. -/
-theorem AddInductive.stripAnnotations.WF {env : Environment} {venv : VEnv}
+theorem AddInductive.stripAnnotations.WF [VEnv.Injective] {env : Environment} {venv : VEnv}
     (H : TrEnv safety env venv) (henv : venv.WF) {e : Expr} :
     (stripAnnotations env e).WF fun e' => e' = e.consumeTypeAnnotations' ∧ venv.StripOK e := by
   induction e using Lean.Expr.consumeTypeAnnotations'.induct with
@@ -313,7 +313,7 @@ theorem addChecked.WF {env : Environment} (mapWF : env.constants.WF) (allow : Bo
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ) in
 /-- Stripping type annotations the kernel checked does not change a translation, up to defeq. -/
-theorem TrExprS.consumeTypeAnnotations' {e e'} (hok : env.StripOK e) (H : TrExprS env Us Δ e e')
+theorem TrExprS.consumeTypeAnnotations' [VEnv.Injective] {e e'} (hok : env.StripOK e) (H : TrExprS env Us Δ e e')
     {P : Name → Prop} (hP : e.StripHeads P) :
     ∃ e'', TrExprS env Us Δ e.consumeTypeAnnotations' e'' ∧
       env.IsDefEqU Us.length Δ.toCtx e' e'' ∧ e'.StripsToBy P e'' := by
@@ -385,17 +385,17 @@ theorem WF.throw {c : VContext} {Q} : WF c (throw e : M α) Q := nofun
 theorem WF.liftExcept {c : VContext} {x : Except Exception α} {Q} (h : x.WF Q) :
     WF c (liftM x : M α) Q := fun _ e => h _ e
 
-theorem VState.WF.emptyM (c : VContext) : TypeChecker.VState.WF c.tc {} :=
+theorem VState.WF.emptyM [VEnv.Injective] (c : VContext) : TypeChecker.VState.WF c.tc {} :=
   .emptyOf _ c.envAt.envClosed rfl
 
 /-- Stripping a binder type's annotations, each checked to return the type it annotates. -/
-theorem consumeTypeAnnotations.WF {c : VContext} {e : Expr} :
+theorem consumeTypeAnnotations.WF [VEnv.Injective] {c : VContext} {e : Expr} :
     WF c (consumeTypeAnnotations e) fun e' =>
       e' = e.consumeTypeAnnotations' ∧ c.venv.StripOK e :=
   stripAnnotations.WF c.envAt.tr c.envAt.tr.wf
 
 /-- A type checker call, run over the kernel's local context. -/
-theorem WF.liftTC {c : VContext} {x : TypeChecker.M α} {Q}
+theorem WF.liftTC [VEnv.Injective] {c : VContext} {x : TypeChecker.M α} {Q}
     (H : x.WF c.tc {} fun a _ => Q a) : WF c (monadLift x : M α) Q := by
   intro a eq
   change TypeChecker.M.run c.env c.safety c.lctx c.lparams c.fuel x = .ok a at eq

@@ -258,7 +258,7 @@ theorem VExpr.EndsInSort.foralls {u : VLevel} : ∀ (As : List VExpr),
   | _ :: As => EndsInSort.foralls (u := u) As
 
 /-- An application of a term whose type ends in a sort after as many binders is a type. -/
-theorem VEnv.IsType.appN_of_endsInSort {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.IsType.appN_of_endsInSort [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) : ∀ (as : List VExpr) {f F G : VExpr},
     env.HasType U Γ f F → env.IsDefEqU U Γ F G → G.EndsInSort as.length →
     VExpr.WF env U Γ (f.appN as) → env.IsType U Γ (f.appN as)
@@ -580,7 +580,7 @@ theorem _root_.Lean4Lean.VEnv.StripOKN.zeta {env : VEnv} {e : Expr} :
 variable! (henv : VEnv.WF env) {Us : List Name} in
 /-- A translation is definitionally equal to itself with as many annotations stripped as the
 environment defines as returning their first argument. -/
-theorem TrExprS.stripN_defeq {Δ : VLCtx} (hΔ : Δ.WF env Us.length) {e : Expr} :
+theorem TrExprS.stripN_defeq [VEnv.Injective] {Δ : VLCtx} (hΔ : Δ.WF env Us.length) {e : Expr} :
     ∀ {n : Nat} {E : VExpr}, env.StripOKN n e → TrExprS env Us Δ e E →
       env.IsDefEqU Us.length Δ.toCtx E (E.stripN n) := by
   have hΓ := hΔ.toCtx
@@ -684,7 +684,7 @@ theorem TrExprS.fvarsIn_of_skips {Δk Δs : VLCtx} {ρ : Lift} (W : VLCtx.FVLift
 
 /-- `checkPositivity`'s loop, on a type `T` in the context of the parameters and the variables
 `Δtop` opened above them. -/
-theorem checkPositivity.loop.WF {venv₀ : VEnv} {types : List InductiveType} {Us : List Name}
+theorem checkPositivity.loop.WF [VEnv.Injective] {venv₀ : VEnv} {types : List InductiveType} {Us : List Name}
     (hUs : Us.Nodup) {stats : InductiveStats} {Mp : MLCtx} {pfvs : List FVarId}
     {params : List VExpr} (hMp : Mp.IsTele pfvs params)
     (hpar : stats.params.toList = pfvs.map .fvar) (hlev : stats.levels = Us.map .param)
@@ -847,7 +847,7 @@ theorem _root_.Lean4Lean.VLCtx.toCtx_length_of_vlam :
     simp [VLCtx.toCtx, VLCtx.toCtx_length_of_vlam fun x hx => h x (.tail _ hx)]
 
 /-- Pushing a variable onto both, at the kernel's translation of its type however it is written. -/
-theorem Ext.push_eq {m cb ρ} (H : Ext m cb ρ) {name : Name} {ty : Expr} {Ty T' : VExpr}
+theorem Ext.push_eq [VEnv.Injective] {m cb ρ} (H : Ext m cb ρ) {name : Name} {ty : Expr} {Ty T' : VExpr}
     {bi : BinderInfo} (hty : TrExprS cb.venv cb.lparams m.vlctx ty Ty)
     (hT : cb.venv.IsType cb.lparams.length m.vlctx.toCtx Ty) (e : Ty.lift' ρ = T') {h1 h2} :
     Ext (.vlam ⟨cb.ngen.curr⟩ name ty Ty bi m) (cb.push name ty T' bi h1 h2) ρ.cons := by
@@ -886,7 +886,7 @@ def KeptInv (c : VContext) (Δk : VLCtx) (params Vs : List VExpr) : Prop :=
 /-- A check of a term without `let`s, run in the kernel's context, also checks it in any context
 below it that keeps every variable its translation mentions: there it translates to the term
 whose lift is its translation, a type. -/
-theorem ensureType_kept {c : VContext} {mk : MLCtx} {ρ : Lift} (X : Ext mk c ρ)
+theorem ensureType_kept [VEnv.Injective] {c : VContext} {mk : MLCtx} {ρ : Lift} (X : Ext mk c ρ)
     (hcl : ConstMap.Closed c.env.constants) (hl : ∀ x ∈ mk.vlctx, ∃ A, x.2 = .vlam A)
     {e : Expr} {E : VExpr} (hE : TrExprS c.venv c.lparams mk.vlctx e E) :
     WF c (monadLift (TypeChecker.ensureType e false) : M Expr) fun _ =>
@@ -904,7 +904,7 @@ theorem ensureType_kept {c : VContext} {mk : MLCtx} {ρ : Lift} (X : Ext mk c ρ
 
 /-- A check of a term, run in the kernel's context, also checks it in any context below it that has
 the variables the term mentions. -/
-theorem ensureType_keptSyn {c : VContext} (hcl : ConstMap.Closed c.env.constants) {e : Expr} :
+theorem ensureType_keptSyn [VEnv.Injective] {c : VContext} (hcl : ConstMap.Closed c.env.constants) {e : Expr} :
     WF c (monadLift (TypeChecker.ensureType e false) : M Expr) fun _ =>
       ∀ mP ρP, Ext mP c ρP → e.FVarsIn (· ∈ mP.vlctx.fvars) →
         ∃ Y u, TrExprS c.venv c.lparams mP.vlctx e Y ∧
@@ -914,7 +914,7 @@ theorem ensureType_keptSyn {c : VContext} (hcl : ConstMap.Closed c.env.constants
   exact ⟨Y, u', hY, hYT⟩
 
 set_option maxHeartbeats 1000000 in
-theorem checkConstructors.loop.WF {venv₀ : VEnv} {types : List InductiveType} {Us : List Name}
+theorem checkConstructors.loop.WF [VEnv.Injective] {venv₀ : VEnv} {types : List InductiveType} {Us : List Name}
     (hUs : Us.Nodup) {stats : InductiveStats} {Mp : MLCtx} {pfvs : List FVarId}
     {params : List VExpr} (hMp : Mp.IsTele pfvs params)
     (hpar : stats.params.toList = pfvs.map .fvar) (hlev : stats.levels = Us.map .param)
@@ -1559,7 +1559,7 @@ theorem WF.forIn'_range {c : VContext} {σ : Type} {n : Nat}
   refine (WF.forIn'_list fun a h s => H a _ s).mono fun _ h a ha => h a ?_
   simp [List.mem_range'_1, Std.Legacy.Range.size]; omega
 /-- One constructor of the `idx`th type, as `checkConstructors` checks it. -/
-theorem checkCtor.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem checkCtor.WF [VEnv.Injective] {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c₁ params level typeTr)
     (hc : c.mlctx = c₁.mlctx) (hU : c.lparams = c₁.lparams) (hle : c₀.venv ≤ c.venv)
     (hconst : ∀ (j : Nat) (t : InductiveType) (T' : VExpr), types[j]? = some t →
@@ -1657,7 +1657,7 @@ theorem checkCtor.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List Indu
         fun _ _ h => by simp at h⟩
       · rw [this]; rfl
       · exact .refl
-theorem WF.getEnv {c : VContext} :
+theorem WF.getEnv [VEnv.Injective] {c : VContext} :
     AddInductive.WF c (liftM TypeChecker.getEnv : M Environment) (· = c.env) := by
   refine WF.liftTC ?_
   have := TypeChecker.M.WF.getEnv (c := c.tc) (s := {}) (f := fun e => (Pure.pure e : TypeChecker.M _))
@@ -1665,7 +1665,7 @@ theorem WF.getEnv {c : VContext} :
   simpa using this
 
 /-- `checkConstructors`, in the checking environment. -/
-theorem checkConstructors.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem checkConstructors.WF [VEnv.Injective] {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c₁ params level typeTr)
     (hc : c.mlctx = c₁.mlctx) (hU : c.lparams = c₁.lparams) (hle : c₀.venv ≤ c.venv)
     (hconst : ∀ (j : Nat) (t : InductiveType) (T' : VExpr), types[j]? = some t →
@@ -1725,7 +1725,7 @@ theorem isKTarget.loop_iff (stats : InductiveStats) : ∀ (e : Expr) (i : Nat),
   | .proj .., _, hi => by simp [isKTarget.loop, declareConstructors.arity, hi]
 
 /-- `isKTarget`: whether the block is a subsingleton in `Prop`. -/
-theorem isKTarget.WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem isKTarget.WF [VEnv.Injective] {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     {c' : VContext} (hc' : c'.lparams = c.lparams) (hle : c₀.venv ≤ c'.venv) (henv : c'.venv.WF)
     {isUnsafe : Bool}
@@ -1806,7 +1806,7 @@ theorem Expr.eqv'_fvar_r {a : Expr} {fv} (h : a.eqv' (.fvar fv) = true) : a = .f
   cases a <;> simp [Expr.eqv'] at h
   subst h; rfl
 
-theorem isLargeEliminator.loop.WF {venv : VEnv} {Us : List Name} {stats : InductiveStats}
+theorem isLargeEliminator.loop.WF [VEnv.Injective] {venv : VEnv} {Us : List Name} {stats : InductiveStats}
     {np : Nat} (hnp : stats.params.size = np) {ps Ds indices : List VExpr} {fields : List VField}
     {n : Name} (hps : ps.length = np) (hDs : Ds.length = fields.length)
     (hlvl : ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → fields[k]? = some f → ∀ u,
@@ -1978,7 +1978,7 @@ theorem isLargeEliminator.loop.WF {venv : VEnv} {Us : List Name} {stats : Induct
     · exact h
 
 /-- `isLargeEliminator`: when it answers yes, the block may eliminate into every sort. -/
-theorem isLargeEliminator.WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem isLargeEliminator.WF [VEnv.Injective] {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     {c' : VContext} (hc' : c'.lparams = c.lparams) (hle : c₀.venv ≤ c'.venv) (henv : c'.venv.WF)
     (hcl : ConstMap.Closed c'.env.constants) {isUnsafe : Bool}
@@ -2056,7 +2056,7 @@ theorem getElimLevel.loop_eq {lparams : List Name} :
 /-- `getElimLevel`: the recursor's motive gets a fresh level parameter only when the block may
 eliminate into every sort, searching `u`, `u_1`, `u_2`, … for a name not among the level
 parameters. -/
-theorem getElimLevel.WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem getElimLevel.WF [VEnv.Injective] {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     {c' : VContext} (hc' : c'.lparams = c.lparams) (hle : c₀.venv ≤ c'.venv) (henv : c'.venv.WF)
     (hcl : ConstMap.Closed c'.env.constants) {isUnsafe : Bool}

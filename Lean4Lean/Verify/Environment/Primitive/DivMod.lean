@@ -19,7 +19,7 @@ The checker's parameters come back here at the level of the model: `lhsB` bundle
 equation applies the definition to, `H'` is what the step does to the recursive call and `E` what
 the recursion returns when it stops. `F` and `hF` are what those are worth arithmetically, which
 is `natFuelRec`'s business. -/
-theorem checkNatFuelRec.WF {c : VContext} {ite : Bool}
+theorem checkNatFuelRec.WF [VEnv.Injective] {c : VContext} {ite : Bool}
     {F : Nat → Nat → Nat} {hF : Nat → Nat} {H' : VExpr → VExpr} {E : Nat → Nat}
     (hprim : c.venv.HasPrimitives) (hnat : c.venv.contains ``Nat)
     (hbool : c.venv.contains ``Bool) (hsub : c.venv.contains ``Nat.sub)
@@ -276,7 +276,7 @@ by the time the rest of the checks run; the top equation `mod (succ x) y ≡ if 
 `else succ x`, with a conditional inside its `then`; and `go`'s own equation, which is the shared
 recursion's business. The step does nothing to the recursive call, and the recursion returns the
 dividend when it stops. -/
-theorem checkNatMod.WF {ves : VEnvs} (wf : ves.WF env)
+theorem checkNatMod.WF [VEnv.Injective] {ves : VEnvs} (wf : ves.WF env)
     (hname : v.name = ``Nat.mod) :
     let c := .mk' wf .safe v.levelParams; Data v ci' c →
     (checkNatMod v).WF c state fun _ _ => PrimitiveResult (ves.venv .safe) v ci' := by
@@ -440,7 +440,7 @@ theorem checkNatMod.WF {ves : VEnvs} (wf : ves.WF env)
 is covered by the top equation `div x y ≡ if 1 ≤ y then go y _ (succ x) x _ else 0`. The step
 counts, so the recursive call is wrapped in a `succ`, and the recursion returns `0` when it
 stops. -/
-theorem checkNatDiv.WF {ves : VEnvs} (wf : ves.WF env)
+theorem checkNatDiv.WF [VEnv.Injective] {ves : VEnvs} (wf : ves.WF env)
     (hname : v.name = ``Nat.div) :
     let c := .mk' wf .safe v.levelParams; Data v ci' c →
     (checkNatDiv v).WF c state fun _ _ => PrimitiveResult (ves.venv .safe) v ci' := by

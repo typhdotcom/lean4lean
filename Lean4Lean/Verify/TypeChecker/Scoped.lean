@@ -74,7 +74,7 @@ which `s₀` is well formed, which sets aside no fact the run used, and where th
 establishes `P` of its result). Then `P` of `a` is learned in `c` over `base`. No context it is
 learned for needs to declare only variables the name generator had made: those `c` declares are
 kept as they are. -/
-theorem Learned.of_rerun {c : VContext} {s₀ : VState} {x : M α} {a s₁} {base : MLCtx}
+theorem Learned.of_rerun [VEnv.Injective] {c : VContext} {s₀ : VState} {x : M α} {a s₁} {base : MLCtx}
     {D : FVarId → Prop} {Pre : MLCtx → Prop} {P : α → MLCtx → Prop}
     (run : x c.toContext s₀.toState = .ok (a, s₁)) (hss : SuppState c.toContext s₀.toState)
     (hDc : ∀ fv, D fv → c.lctx.Dom fv)

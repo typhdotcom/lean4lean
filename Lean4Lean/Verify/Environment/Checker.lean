@@ -59,7 +59,7 @@ private theorem TypeChecker.M.WF.pureBind {c : VContext}
 /-- The part of `checkConstantVal` that does not check the name. `addDefinition` runs it before
 `Primitive.checkDef`, so that the latter's `isDefEq` calls act on terms already known to be well
 typed, and defers the name check until the primitive verdict is available. -/
-theorem checkConstantValBody.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem checkConstantValBody.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (ci : ConstantInfo) (state : VState := {}) :
     (checkConstantValBody env ci.toConstantVal).WF (.mk' wf safety ci.levelParams) state fun _ _ =>
       ∃ ci' : VConstVal,
@@ -81,7 +81,7 @@ theorem checkConstantValBody.WF {env : Environment} {ves : VEnvs} (wf : ves.WF e
   refine ⟨{ name := ci.name, uvars := ci.levelParams.length, type := type' }, rfl, htype, rfl, ?_⟩
   exact ⟨_, hhasType.defeqU_r (wf.tr (safety := safety)).wf (by trivial) hdefeq.symm⟩
 
-theorem checkConstantValCore.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem checkConstantValCore.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (ci : ConstantInfo) (allowPrimitive : Bool) (state : VState := {}) :
     (checkConstantVal env ci.toConstantVal allowPrimitive).WF
       (.mk' wf safety ci.levelParams) state fun _ _ =>
@@ -97,7 +97,7 @@ theorem checkConstantValCore.WF {env : Environment} {ves : VEnvs} (wf : ves.WF e
   exact (checkConstantValBody.WF wf ci _).mono fun _ _ _ ⟨ci', hu, ht, hn', hci⟩ =>
     ⟨ci', hu, ht, hn', hci, hname⟩
 
-theorem checkConstantVal.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem checkConstantVal.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (ci : ConstantInfo) (allowPrimitive : Bool) (hs : safety ≤ ci.safety) (state : VState := {}) :
     (checkConstantVal env ci.toConstantVal allowPrimitive).WF
       (.mk' wf safety ci.levelParams) state fun _ _ =>
@@ -119,7 +119,7 @@ separately.
 
 Stated against a single-level model (`VEnvAt`): a mutual block's bodies are checked in the
 temporary environment holding the whole block as axioms, which has no model at every level. -/
-theorem checkBodyCore.WF {env : Environment} {venv : VEnv} (wf : VEnvAt env safety venv)
+theorem checkBodyCore.WF [VEnv.Injective] {env : Environment} {venv : VEnv} (wf : VEnvAt env safety venv)
     (decl : Declaration) (levelParams : List Name) (type value : Expr)
     (type' : VExpr) (hdeclType : TrExprS venv levelParams [] type type')
     (hclosed : value.FVarsIn fun _ => False) (state : VState := {}) :
@@ -139,7 +139,7 @@ def checkBody (env : Environment) (name : Name)
   Environment.checkNoMVarNoFVar env name value
   checkBodyCore env decl type value
 
-theorem checkBody.WF {env : Environment} (wf : VEnvAt env safety venv)
+theorem checkBody.WF [VEnv.Injective] {env : Environment} (wf : VEnvAt env safety venv)
     (decl : Declaration) (name : Name) (value : Expr)
     (hdeclType : TrExprS venv levelParams [] type type')
     (state : VState := {}) :
@@ -158,7 +158,7 @@ def checkTheorem (env : Environment) (v : TheoremVal) : M Unit := do
   if !(← isDefEq valueType v.type) then
     throw <| Exception.declTypeMismatch env (.thmDecl v) valueType
 
-theorem checkTheorem.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : TheoremVal) :
+theorem checkTheorem.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : TheoremVal) :
     (checkTheorem env v).WF (.mk' wf .safe v.levelParams) {} fun _ _ =>
       ∃ ci' : VDefVal, TrDefVal .safe (ves.venv .safe) (.thmInfo v) ci' ∧
         ci'.WF (ves.venv .safe) ∧
@@ -177,7 +177,7 @@ theorem checkTheorem.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v :
   · simp at hnonprim; exact hnonprim
 
 /-- The type and the body, with neither the name check nor the primitive check. -/
-theorem checkDefinitionBody.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem checkDefinitionBody.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (v : DefinitionVal) (state : VState := {}) :
     (checkDefinitionBody env v).WF (.mk' wf safety v.levelParams) state fun _ _ => ∃ ci' : VDefVal,
       v.levelParams.length = ci'.uvars ∧
@@ -194,7 +194,7 @@ def checkDefinition (env : Environment) (v : DefinitionVal) : M Unit := do
   checkDefinitionBody env v
   Environment.checkName env v.name (← Primitive.checkDef v)
 
-theorem checkDefinition.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem checkDefinition.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (v : DefinitionVal) :
     (checkDefinition env v).WF (.mk' wf .safe v.levelParams) {} fun _ _ => ∃ ci' : VDefVal,
       (Environment.primitives.contains v.name → Primitive.PrimitiveResult (ves.venv .safe) v ci') ∧
@@ -219,7 +219,7 @@ def checkOpaque (env : Environment) (v : OpaqueVal) : M Unit := do
 the resulting `VDefVal`; `TrEnv'.opaque` consumes it. An opaque body still contributes no
 definitional equality -- that is `TrEnv'.opaque` adding no `addDefEq`, not the body going
 unrecorded. -/
-theorem checkOpaque.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : OpaqueVal) :
+theorem checkOpaque.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : OpaqueVal) :
     (checkOpaque env v).WF (.mk' wf .safe v.levelParams) {} fun _ _ => ∃ ci' : VDefVal,
       v.levelParams.length = ci'.uvars ∧
       TrExprS (ves.venv .safe) v.levelParams [] v.type ci'.type ∧

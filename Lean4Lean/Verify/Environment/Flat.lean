@@ -19,7 +19,7 @@ theorem ElimNestedInductive.run_ne_nil {fuel nparams : Nat} {types : List Induct
   rintro rfl; cases h
 
 /-- `AddInductive.run` on a block without nested occurrences or primitive names. -/
-theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem AddInductive.run.WF_nonPrimitive [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams nn : Nat) (types : List InductiveType)
     (isUnsafe : Bool) (fuel : FuelConfig) (hne : types ≠ []) :
     (AddInductive.run nparams types nn
@@ -170,7 +170,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     (fun ci h hp => hR.allowPrimitive ▸ hRp ci h hp) hRnames hRmaj (hR.safety ▸ hRtr)
 
 /-- `AddInductive.run` on a block without nested occurrences. -/
-theorem AddInductive.run.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem AddInductive.run.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
     (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig) (hne : types ≠ [])
     (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
@@ -183,7 +183,7 @@ theorem AddInductive.run.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
   | true =>
     exact AddInductive.run.WF_primitive wf lparams nparams types isUnsafe fuel (hallow rfl)
 
-theorem addInductive.WF_flat {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem addInductive.WF_flat [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
     (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig)
     (hflat : IsFlat env lparams nparams types fuel)
@@ -210,7 +210,7 @@ theorem addInductive.WF_flat {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     fun _ h => .pure ⟨_, h⟩
 
 /-- A flat block's `FlatResult` gives a model of the environment it extends. -/
-theorem FlatResult.ves {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem FlatResult.ves [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     {lparams : List Name} {nparams : Nat} {types : List InductiveType}
     {isUnsafe allowPrimitive : Bool} {env' : Environment}
     (hR : FlatResult ves env lparams nparams types isUnsafe allowPrimitive 0 env') :

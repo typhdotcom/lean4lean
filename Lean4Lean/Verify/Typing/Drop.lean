@@ -354,7 +354,7 @@ theorem weakFV (henv : env.Ordered) {Δ Δ' : VLCtx} {dk n k : Nat}
     exact .cons (h1.weakFV henv W hΔ') h2'
       (ih (W.cons_bvar (.vlam _)) ⟨hΔ', nofun, h2'⟩)
 
-theorem instL (henv : env.WF) {Us' ps : List Name} {ls : List Level} {ls' : List VLevel}
+theorem instL [VEnv.Injective] (henv : env.WF) {Us' ps : List Name} {ls : List Level} {ls' : List VLevel}
     (Hls : ls.mapM (VLevel.ofLevel Us') = some ls') (eq : ps.length = ls.length)
     {Δ : VLCtx} (hΔ : VLCtx.WF env ls'.length Δ) {r : Expr} (H : TeleDoms env ps Δ r)
     {Δ₂ : VLCtx} (hΔ₂ : VLCtx.IsDefEq env Us'.length (Δ.instL ls') Δ₂) :
@@ -403,7 +403,7 @@ theorem abstract (W : VLCtx.Abstract Δ₀ v₀ d₀ dk k Δ₁ Δ) {r : Expr}
   | cons h1 h2 _ ih =>
     exact .cons (h1.abstract W) (W.toCtx ▸ h2) (ih (W.succ (d := .vlam _)))
 
-theorem defeqDFC (henv : env.WF) {Δ₁ : VLCtx} {r : Expr} (H : TeleDoms env Us Δ₁ r) :
+theorem defeqDFC [VEnv.Injective] (henv : env.WF) {Δ₁ : VLCtx} {r : Expr} (H : TeleDoms env Us Δ₁ r) :
     ∀ {Δ₂ : VLCtx}, VLCtx.IsDefEq env Us.length Δ₁ Δ₂ → TeleDoms env Us Δ₂ r := by
   induction H with
   | nil h1 h2 h3 => intros; exact .nil h1 h2 h3

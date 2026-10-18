@@ -92,7 +92,7 @@ theorem VEnv.TeleDefEq.getElem {env : VEnv} {U : Nat} : ∀ {Γ As Bs : List VEx
     simpa using VEnv.TeleDefEq.getElem h2 i A B hA hB
 
 /-- Arguments for a telescope are arguments, entry by entry, for one agreeing with it. -/
-theorem VEnv.Ctx.SubstEq.getElem_teleDefEq {env envT : VEnv} {U U' : Nat} {Γ : List VExpr}
+theorem VEnv.Ctx.SubstEq.getElem_teleDefEq [VEnv.Injective] {env envT : VEnv} {U U' : Nat} {Γ : List VExpr}
     (henv : env.WF) (hle : envT ≤ env) (hΓ : OnCtx Γ (env.IsType U)) {ps params : List VExpr}
     (hT : envT.TeleDefEq U' [] ps params) {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U)
     {As : List VExpr}
@@ -143,7 +143,7 @@ theorem VEnv.WF.ctorShape {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDe
 /-- The `k`th projection's declared domain, at the parameters and the earlier projections, is its
 type, when the earlier fields whose projections are not typed (`Q`) are mentioned by no declared
 domain up to the `k`th. -/
-theorem VEnv.WF.declDomain_defeq {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.declDomain_defeq [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hc : T.ctors = [c]) {envT : VEnv} {Ds : List VExpr} (hTwf : envT.WF) (hle : envT ≤ env)
@@ -224,7 +224,7 @@ theorem VEnv.WF.declDomain_defeq {env : VEnv} {U : Nat} {Γ : List VExpr} (henv 
 fields that are `P`, of whose declared domains no later one mentions them, and having checked,
 when the structure may be a proposition (`mp`), that the other earlier fields and the `k`th are
 proofs: the projection is allowed and typed, and its declared domain is its type. -/
-theorem VEnv.WF.projKernel {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.projKernel [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hc : T.ctors = [c]) {envT : VEnv} {Ds : List VExpr} (hTwf : envT.WF) (hle : envT ≤ env)

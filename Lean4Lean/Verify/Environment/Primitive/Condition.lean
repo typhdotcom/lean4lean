@@ -176,10 +176,10 @@ theorem Condition.WF.hprop0 {cnd : Condition} (w : Condition.WF c cnd) :
 theorem Condition.WF.hdec0 {cnd : Condition} (w : Condition.WF c cnd) :
     TrExprS c.venv c.lparams [] cnd.dec w.dec' := by rw [← w.vnil]; exact w.hdec
 
-theorem Condition.WF.propC {cnd : Condition} (w : Condition.WF c cnd) : w.prop'.ClosedN :=
+theorem Condition.WF.propC [VEnv.Injective] {cnd : Condition} (w : Condition.WF c cnd) : w.prop'.ClosedN :=
   w.hprop0.closedN_nil c.Ewf.ordered
 
-theorem Condition.WF.decC {cnd : Condition} (w : Condition.WF c cnd) : w.dec'.ClosedN :=
+theorem Condition.WF.decC [VEnv.Injective] {cnd : Condition} (w : Condition.WF c cnd) : w.dec'.ClosedN :=
   w.hdec0.closedN_nil c.Ewf.ordered
 
 /-- When the decision procedure is known to evaluate, which is the only hypothesis `WF_ite` and
@@ -367,7 +367,7 @@ is the condition's `asBool` at those literals, so a reflected `asBool` evaluates
 Containment comes from the translation rather than from a guard on the branch -- a constant only
 translates if it is in the environment -- which is why none of the branches using a `Condition`
 name its `asBool` in their guards. -/
-theorem ReflectNatNat.WF.apply_lit {c : VContext} {fc : Name} {f : Nat → Nat → Bool}
+theorem ReflectNatNat.WF.apply_lit [VEnv.Injective] {c : VContext} {fc : Name} {f : Nat → Nat → Bool}
     {reflect proof} (W : ReflectNatNat.WF c (.const fc []) reflect proof)
     (H : c.venv.ReflectsNatNatBool fc f) (a b : Nat) :
     c.IsDefEqU (W.asBool'.appN [.natLit a, .natLit b]) (.boolLit (f a b)) := by
@@ -379,13 +379,13 @@ theorem ReflectNatNat.WF.apply_lit {c : VContext} {fc : Name} {f : Nat → Nat �
 
 /-- The two conditions that decide by a reflected primitive, at literal arguments. `Condition.WF`
 is otherwise generic in the `impl`; this is where a branch commits to which one it ran. -/
-theorem Condition.WF.natLE_apply {c : VContext} (w : Condition.WF c Condition.natLE)
+theorem Condition.WF.natLE_apply [VEnv.Injective] {c : VContext} (w : Condition.WF c Condition.natLE)
     (hprim : c.venv.HasPrimitives) {be : VExpr} (a b : Nat)
     (hbe : w.himpl.apply [.natLit a, .natLit b] be) :
     c.IsDefEqU be (.boolLit (Nat.ble a b)) :=
   hbe ▸ w.himpl.apply_lit hprim.natBLE a b
 
-theorem Condition.WF.natEq_apply {c : VContext} (w : Condition.WF c Condition.natEq)
+theorem Condition.WF.natEq_apply [VEnv.Injective] {c : VContext} (w : Condition.WF c Condition.natEq)
     (hprim : c.venv.HasPrimitives) {be : VExpr} (a b : Nat)
     (hbe : w.himpl.apply [.natLit a, .natLit b] be) :
     c.IsDefEqU be (.boolLit (Nat.beq a b)) :=
@@ -393,14 +393,14 @@ theorem Condition.WF.natEq_apply {c : VContext} (w : Condition.WF c Condition.na
 
 /-- The two decisions at literal arguments, in the extension a closed-off equation is read in.
 The condition was checked before any binder, so `vnil` is what moves it to the empty context. -/
-theorem Condition.WF.natLE_apply₀ {c : VContext} (w : Condition.WF c Condition.natLE)
+theorem Condition.WF.natLE_apply₀ [VEnv.Injective] {c : VContext} (w : Condition.WF c Condition.natLE)
     (hprim : c.venv.HasPrimitives) (E : c.Ext) {be : VExpr} (a b : Nat)
     (hbe : w.himpl.apply [.natLit a, .natLit b] be) :
     E.IsDefEqU₀ be (.boolLit (Nat.ble a b)) := by
   have h := E.mono (w.natLE_apply hprim a b hbe)
   rw [w.vnil] at h; exact h
 
-theorem Condition.WF.natEq_apply₀ {c : VContext} (w : Condition.WF c Condition.natEq)
+theorem Condition.WF.natEq_apply₀ [VEnv.Injective] {c : VContext} (w : Condition.WF c Condition.natEq)
     (hprim : c.venv.HasPrimitives) (E : c.Ext) {be : VExpr} (a b : Nat)
     (hbe : w.himpl.apply [.natLit a, .natLit b] be) :
     E.IsDefEqU₀ be (.boolLit (Nat.beq a b)) := by
@@ -557,14 +557,14 @@ theorem TrExprS.app1_nil_inv {env : VEnv} {Us : List Name} {Δ : VLCtx} {hd A : 
   exact ⟨_, hA, rfl⟩
 
 /-- The predicate of a condition, at the two arguments every use of one applies it to. -/
-theorem Condition.WF.prop_app2_inv (w : Condition.WF c cnd) [hOK : cnd.OK]
+theorem Condition.WF.prop_app2_inv [VEnv.Injective] (w : Condition.WF c cnd) [hOK : cnd.OK]
     (H : TrExprS c.venv c.lparams Δ (mkAppN cnd.prop #[A, B]) P) :
     ∃ a' b', TrExprS c.venv c.lparams Δ A a' ∧ TrExprS c.venv c.lparams Δ B b' ∧
       P = (w.prop'.app a').app b' :=
   TrExprS.app2_nil_inv c.Ewf (CondOK.noProj hOK.prop) w.hprop0 H
 
 /-- The decision procedure, likewise. -/
-theorem Condition.WF.dec_app2_inv (w : Condition.WF c cnd) [hOK : cnd.OK]
+theorem Condition.WF.dec_app2_inv [VEnv.Injective] (w : Condition.WF c cnd) [hOK : cnd.OK]
     (H : TrExprS c.venv c.lparams Δ (mkAppN cnd.dec #[A, B]) D) :
     ∃ a' b', TrExprS c.venv c.lparams Δ A a' ∧ TrExprS c.venv c.lparams Δ B b' ∧
       D = (w.dec'.app a').app b' :=
@@ -772,7 +772,7 @@ theorem VEnv.IsDefEqU.natProj {env : VEnv} {U Γ} (henv : env.WF) (hΓ : OnCtx �
 decision. Everything `checkITE` says is about applications of this term, so this is where the
 `VExpr` it denotes is pinned down -- including that the `type` and `toDec` occurring under its
 binders are the very ones `Reflection.WF` names, which is `of_nil_unique`'s job. -/
-theorem Reflection.ite_tr {c : VContext} {r : Reflection} (w : Reflection.WF c r)
+theorem Reflection.ite_tr [VEnv.Injective] {c : VContext} {r : Reflection} (w : Reflection.WF c r)
     (hnil : c.vlctx = []) (htypeOK : CondOK r.type) (htoDecOK : CondOK r.toDec)
     {toDec' : VExpr} (htoDec : c.TrExprS r.toDec toDec')
     {ite₀ : VExpr} (H : TrExprS c.venv c.lparams [] r.ite ite₀) :
@@ -853,7 +853,7 @@ theorem TrExprS.polyProj {env : VEnv} {Us : List Name} {Δ : VLCtx} {n₁ n₂ n
 
 /-- The two projections applied to a type and both branches pick one. `checkITE` compares the
 conditional against a projection, and the caller's branches are what it is then applied to. -/
-theorem VEnv.IsDefEqU.polyProj {env : VEnv} {U Γ} (henv : env.WF)
+theorem VEnv.IsDefEqU.polyProj [VEnv.Injective] {env : VEnv} {U Γ} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {α t e : VExpr}
     (hα : env.HasType U Γ α vexpr(Type))
     (htT : env.HasType U Γ t α) (heT : env.HasType U Γ e α) {i : Nat} (hi : i = 0 ∨ i = 1) :
@@ -885,7 +885,7 @@ theorem VEnv.IsDefEqU.polyProj {env : VEnv} {U Γ} (henv : env.WF)
 /-- `Prop → Bool → type p b → ∀ α : Type, α → α → α`, the type `checkITE` checks the conditional
 against. The third domain is where the reflection's own relation enters, and `of_nil_any` is what
 puts the `type'` of `Reflection.WF` there rather than some other translation of `r.type`. -/
-theorem TrExprS.reflIteType (w : Reflection.WF c r)
+theorem TrExprS.reflIteType [VEnv.Injective] (w : Reflection.WF c r)
     (hnil : c.vlctx = []) (hbool : c.venv.contains ``Bool) (htypeOK : CondOK r.type)
     (hΔ : OnCtx Δ.toCtx (c.venv.IsType c.lparams.length)) :
     TrExprS c.venv c.lparams Δ
@@ -930,7 +930,7 @@ theorem TrExprS.propProp {env : VEnv} {Us : List Name} {Δ : VLCtx} {n bi} :
 /-- `∀ p : Prop, type p b → C`, the shape of the types `checkNatDITE` checks `ofTrue` and
 `ofFalse` against; `C` is the proposition itself for `ofTrue` and its negation for `ofFalse`, so
 it is taken as a parameter with its translation. -/
-theorem TrExprS.reflOfType (w : Reflection.WF c r)
+theorem TrExprS.reflOfType [VEnv.Injective] (w : Reflection.WF c r)
     (hnil : c.vlctx = []) (hbool : c.venv.contains ``Bool) (htypeOK : CondOK r.type)
     {Δ : VLCtx} (b : Bool)
     (hcod : TrExprS c.venv c.lparams
@@ -964,7 +964,7 @@ theorem TrExprS.reflOfType (w : Reflection.WF c r)
 /-- `Prop → Bool → type p b → (p → Nat) → (¬p → Nat) → Nat`, the type `checkNatDITE` checks the
 `dite` gadget against. `Not` enters as a parameter: the check before it is what establishes that
 the constant is a `Prop → Prop`, and nothing else about it is known. -/
-theorem TrExprS.reflDiteType (w : Reflection.WF c r)
+theorem TrExprS.reflDiteType [VEnv.Injective] (w : Reflection.WF c r)
     (hnil : c.vlctx = []) (hbool : c.venv.contains ``Bool) (hnat : c.venv.contains ``Nat)
     (htypeOK : CondOK r.type)
     {Not' : VExpr} (hNotTr : ∀ {Δ}, TrExprS c.venv c.lparams Δ (.const ``Not []) Not')
@@ -1032,7 +1032,7 @@ theorem TrExprS.reflDiteType (w : Reflection.WF c r)
 
 /-- The shape of `Reflection.natDITE`'s translation: three lambdas over `dite` at `Nat` and the
 reflection's own decision. The `checkITE` counterpart is `ite_tr`. -/
-theorem Reflection.natDITE_tr {c : VContext} {r : Reflection} (w : Reflection.WF c r)
+theorem Reflection.natDITE_tr [VEnv.Injective] {c : VContext} {r : Reflection} (w : Reflection.WF c r)
     (hnil : c.vlctx = []) (htypeOK : CondOK r.type) (htoDecOK : CondOK r.toDec)
     {toDec' : VExpr} (htoDec : c.TrExprS r.toDec toDec')
     {d₀ : VExpr} (H : TrExprS c.venv c.lparams [] r.natDITE d₀) :
@@ -1124,7 +1124,7 @@ arguments in an arbitrary context. Two steps: the checked equation lives at the 
 over `[]`, so it weakens past whatever the caller has built (everything in sight is closed, so the
 lift is the identity), and then the two binders are closed off by a substitution whose typing
 obligations are exactly the caller's hypotheses. -/
-theorem Reflection.WF.genPH (w : Reflection.WF c r) (E : c.Ext)
+theorem Reflection.WF.genPH [VEnv.Injective] (w : Reflection.WF c r) (E : c.Ext)
     (hnil : c.vlctx = []) (hbool : c.venv.contains ``Bool) (b : Bool) {X Y : VExpr}
     (hXY : c.venv.IsDefEqU c.lparams.length
       [(w.type'.app (.bvar 0)).app (.boolLit b), vexpr(Prop)] X Y)
@@ -1179,7 +1179,7 @@ def Reflection.WF.IteEq (w : Reflection.WF c r) (ite₀ : VExpr) (b : Bool) : Pr
     E.venv.IsDefEqU c.lparams.length Γ (((ite₀.app p).app (.boolLit b)).app H)
       (.lam vexpr(Type) (.lam (.bvar 0) (.lam (.bvar 1) (.bvar (if b then 1 else 0)))))
 
-theorem Reflection.check.WF {c : VContext} {s : VState} {r : Reflection} {fail : ∀ {α}, M α}
+theorem Reflection.check.WF [VEnv.Injective] {c : VContext} {s : VState} {r : Reflection} {fail : ∀ {α}, M α}
     (hbool : c.venv.contains ``Bool) (hnil : c.vlctx = []) (htypeOK : CondOK r.type)
     (hfail : ∀ {α c s Q}, (@fail α).WF c s Q) :
     (r.check fail).WF c s fun _ _ => Nonempty (Reflection.WF c r) := by
@@ -1241,7 +1241,7 @@ theorem Reflection.WF.ITE_T.toDecT {c : VContext} {r : Reflection} {w : Reflecti
 conditional the reflection builds *is* the corresponding projection, at every proposition and in
 every context. The checker verifies this once, under its own `p` and `H` binders; `genPH` moves
 it, and `ite_tr` is what makes the term it moves recognizable as `iteApp`. -/
-theorem Reflection.checkITE.WF {fail : ∀ {α}, M α}
+theorem Reflection.checkITE.WF [VEnv.Injective] {fail : ∀ {α}, M α}
     (w : Reflection.WF c r) (hnil : c.vlctx = []) (hbool : c.venv.contains ``Bool)
     {toDec' : VExpr} (htoDec : c.TrExprS r.toDec toDec') (htoDecC : toDec'.ClosedN)
     (htypeOK : CondOK r.type) (htoDecOK : CondOK r.toDec) (hiteOK : CondOK r.ite)
@@ -1477,7 +1477,7 @@ theorem Reflection.WF.DITE_T.toDecT {c : VContext} {r : Reflection} {w : Reflect
 /-- Verification boundary for `Reflection.checkNatDITE`: at evidence for either literal, the
 `dite` the reflection builds takes the corresponding branch, applied to the proof that `ofTrue`
 or `ofFalse` extracts. Same shape as `checkITE.WF`, with four binders instead of two. -/
-theorem Reflection.checkNatDITE.WF {c : VContext} {s : VState} {r : Reflection}
+theorem Reflection.checkNatDITE.WF [VEnv.Injective] {c : VContext} {s : VState} {r : Reflection}
     {fail : ∀ {α}, M α} (w : Reflection.WF c r) (hnil : c.vlctx = [])
     (hbool : c.venv.contains ``Bool) (hnat : c.venv.contains ``Nat)
     {toDec' : VExpr} (htoDec : c.TrExprS r.toDec toDec') (htoDecC : toDec'.ClosedN)
@@ -1856,7 +1856,7 @@ theorem Reflection.checkNatDITE.WF {c : VContext} {s : VState} {r : Reflection}
 bridge as `reflect_ite`, with the branches under binders: the consumer's are lambdas, the
 reflection's are the functions they denote, and the proof each branch is applied to is the one
 `ofTrue`/`ofFalse` extracts. -/
-theorem Condition.WF.reflect_dite {prop dec asBool proof : Expr}
+theorem Condition.WF.reflect_dite [VEnv.Injective] {prop dec asBool proof : Expr}
     {prop' dec' asBool' proof' toDec' : VExpr} (w : Reflection.WF c reflect)
     (w' : Condition.WF c ⟨prop, dec, .reflectNatNat asBool reflect proof⟩)
     (hw'dec : w'.dec' = dec') (hnil : c.vlctx = []) (hnat : c.venv.contains ``Nat)
@@ -1976,7 +1976,7 @@ which is what makes the gadget the decision procedure the `e ≡ dec` check comp
 The typings are proved under the gadget's own two `Nat` binders and moved to the consumer's
 arguments by `genTeleT`; the inner beta step likewise travels by `genTele`, while the outer one
 is done at the consumer's context directly, since that is where its argument typings live. -/
-theorem Condition.check.gadget_types {c : VContext}
+theorem Condition.check.gadget_types [VEnv.Injective] {c : VContext}
     {type' toDec' prop' asBool' proof' eTy' : VExpr} (hnat : c.venv.contains ``Nat)
     (htypeC : type'.ClosedN) (htoDecC : toDec'.ClosedN)
     (hpropC : prop'.ClosedN) (habC : asBool'.ClosedN) (hpfC : proof'.ClosedN)
@@ -2102,7 +2102,7 @@ them, and nothing checks that: `toDec` is only ever used, inside `ite`/`natDITE`
 Everything is exported at an arbitrary context and arbitrary arguments, since that is where a
 consumer needs it: `genTeleT` moves the typings, and the two beta steps -- one per redex -- are
 what turns the gadget applied to two naturals into `toDec` at the three pieces. -/
-theorem Condition.check.gadget_pieces {c : VContext} {prop asBool proof : Expr} {r : Reflection}
+theorem Condition.check.gadget_pieces [VEnv.Injective] {c : VContext} {prop asBool proof : Expr} {r : Reflection}
     {e' eTy' : VExpr} (w : Reflection.WF c r) (hnil : c.vlctx = []) (hnat : c.venv.contains ``Nat)
     (hpropOK : CondOK prop) (hasBoolOK : CondOK asBool) (hproofOK : CondOK proof)
     (htypeOK : CondOK r.type) (htoDecOK : CondOK r.toDec)
@@ -2335,7 +2335,7 @@ theorem Condition.decide_tr_inv' {env : VEnv} {Us : List Name} {Δ : VLCtx} {cnd
 decision at them is the literals' `Nat.beq`. The arguments are only *worth* literals -- a
 recognizer reaches them through a closing, which computes rather than substitutes a literal in --
 so both are read off their equations. -/
-theorem Condition.WF.natEq_args {c : VContext} (w : Condition.WF c Condition.natEq)
+theorem Condition.WF.natEq_args [VEnv.Injective] {c : VContext} (w : Condition.WF c Condition.natEq)
     (hprim : c.venv.HasPrimitives) (hnat : c.venv.contains ``Nat) (E : c.Ext)
     {A B : VExpr} {x y : Nat} (hA : E.IsDefEqU₀ A (.natLit x)) (hB : E.IsDefEqU₀ B (.natLit y)) :
     List.Forall₂ (E.venv.HasType c.lparams.length []) [A, B] Condition.natEq.impl.domain ∧
@@ -2351,7 +2351,7 @@ theorem Condition.WF.natEq_args {c : VContext} (w : Condition.WF c Condition.nat
     ⟨_, hhd.choose_spec⟩ (.cons hA.symm (.cons hB.symm .nil)) hwfl
 
 /-- `natEq`'s conditional at arguments that are worth literals: the branch `Nat.beq` selects. -/
-theorem Condition.WF.natEq_iteEval {c : VContext} {w : Condition.WF c Condition.natEq}
+theorem Condition.WF.natEq_iteEval [VEnv.Injective] {c : VContext} {w : Condition.WF c Condition.natEq}
     (hite : w.IteEval) (hprim : c.venv.HasPrimitives) (hnat : c.venv.contains ``Nat)
     (E : c.Ext) {A B α' t' e' : VExpr} {x y : Nat}
     (hA : E.IsDefEqU₀ A (.natLit x)) (hB : E.IsDefEqU₀ B (.natLit y))
@@ -2364,7 +2364,7 @@ theorem Condition.WF.natEq_iteEval {c : VContext} {w : Condition.WF c Condition.
   simpa [VExpr.appN] using h
 
 /-- The same for the `dite` form, whose branches take the decision's proof. -/
-theorem Condition.WF.natEq_diteEval {c : VContext} {w : Condition.WF c Condition.natEq}
+theorem Condition.WF.natEq_diteEval [VEnv.Injective] {c : VContext} {w : Condition.WF c Condition.natEq}
     (hdite : w.DiteEval) (hprim : c.venv.HasPrimitives) (hnat : c.venv.contains ``Nat)
     (E : c.Ext) {A B t' e' : VExpr} {x y : Nat}
     (hA : E.IsDefEqU₀ A (.natLit x)) (hB : E.IsDefEqU₀ B (.natLit y))
@@ -2380,7 +2380,7 @@ theorem Condition.WF.natEq_diteEval {c : VContext} {w : Condition.WF c Condition
 worth their `Nat.beq`. The arguments' values are asked for at any translation of them, so that
 this composes with `natBinLitTr` -- `Nat.bitwise` decides on `n % 2 = 1`, whose left side is
 itself a reflected primitive at a probe variable. -/
-theorem Condition.WF.natEq_decideTr {c : VContext} {w : Condition.WF c Condition.natEq}
+theorem Condition.WF.natEq_decideTr [VEnv.Injective] {c : VContext} {w : Condition.WF c Condition.natEq}
     (hite : w.IteEval) (hprim : c.venv.HasPrimitives) (hnat : c.venv.contains ``Nat)
     (hbool : c.venv.contains ``Bool) (E : c.Ext) {Δ : VLCtx} {σ : VExpr.Subst}
     {A B : Expr} {r : VExpr} (x y : Nat) (hnpA : noProj A) (hnpB : noProj B)
@@ -2409,7 +2409,7 @@ theorem Condition.WF.natEq_decideTr {c : VContext} {w : Condition.WF c Condition
 /-- The `dite` equation as a fact about `VExpr`s: a conditional built from the condition's own
 `prop` and `dec` collapses to the branch the decision selects. This is the content of `WF_dite`
 without the `Expr`-level packaging, and it is what `Condition.WF.DiteEval` is proved from. -/
-theorem Condition.WF.reflect_diteEval {c : VContext} (E : c.Ext)
+theorem Condition.WF.reflect_diteEval [VEnv.Injective] {c : VContext} (E : c.Ext)
     {prop' dec' asBool' proof' toDec' : VExpr} {reflect : Reflection} (w : Reflection.WF c reflect)
     (hWD : w.WF_dite toDec') (hDT : w.DITE_T toDec')
     (htypeTΓ : ∀ {Γ}, E.venv.HasType c.lparams.length Γ w.type' vexpr(Prop → Bool → Prop))
@@ -2478,7 +2478,7 @@ theorem Condition.WF.reflect_diteEval {c : VContext} (E : c.Ext)
   cases hfab : b <;> simpa [hfab] using hval
 
 /-- The `ite` equation as a fact about `VExpr`s, the counterpart of `reflect_diteEval`. -/
-theorem Condition.WF.reflect_iteEval {c : VContext} (E : c.Ext)
+theorem Condition.WF.reflect_iteEval [VEnv.Injective] {c : VContext} (E : c.Ext)
     {prop' dec' asBool' proof' toDec' : VExpr} {reflect : Reflection} (w : Reflection.WF c reflect)
     (hWI : w.WF_ite toDec') (hIT : w.ITE_T toDec')
     (htypeTΓ : ∀ {Γ}, E.venv.HasType c.lparams.length Γ w.type' vexpr(Prop → Bool → Prop))
@@ -2559,7 +2559,7 @@ theorem Condition.WF.reflect_iteEval {c : VContext} (E : c.Ext)
 consumer's conditional decides by `dec` applied to the arguments, the reflection's by `toDec` at
 the proposition, the boolean and the evidence; `e ≡ dec` is what joins them, and the rest is
 reading the three pieces' arities off the checks. -/
-theorem Condition.WF.reflect_ite {c : VContext} {prop dec asBool proof : Expr}
+theorem Condition.WF.reflect_ite [VEnv.Injective] {c : VContext} {prop dec asBool proof : Expr}
     {reflect : Reflection} {prop' dec' asBool' proof' toDec' : VExpr}
     (w : Reflection.WF c reflect)
     (w' : Condition.WF c ⟨prop, dec, .reflectNatNat asBool reflect proof⟩)
@@ -2623,7 +2623,7 @@ hold, exactly as they select which checks run; `Condition.bool` at `dite := true
 that case is vacuous rather than excluded. `natOnly` follows the `impl` because the `.bool`
 branch only ever builds and compares `ite` at `Nat`, while a `reflectNatNat`'s `checkITE`
 covers every `α : Type`. -/
-theorem Condition.check.WF {c : VContext} {s : VState} {cond : Condition}
+theorem Condition.check.WF [VEnv.Injective] {c : VContext} {s : VState} {cond : Condition}
     {fail : ∀ {α}, M α} {ite dite : Bool}
     (hnat : c.venv.contains ``Nat) (hbool : c.venv.contains ``Bool) [hok : cond.OK]
     -- the check runs before any binder, which is what makes its results usable at the arbitrary

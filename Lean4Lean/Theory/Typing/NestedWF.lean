@@ -395,7 +395,7 @@ variable (H : d.RestoreSpec R ren n ns cname)
 include H HE
 
 /-- The conditions on a constructor's fields carry over to the restored block. -/
-theorem RestoreSpec.fieldsWF (hdom : ∀ c, F c ≠ none ∨ R c ≠ none ∨ ren c ≠ none →
+theorem RestoreSpec.fieldsWF [VEnv.Injective] (hdom : ∀ c, F c ≠ none ∨ R c ≠ none ∨ ren c ≠ none →
       c ∈ d.names ∨ E₁.constants c = none) :
     ∀ {Δ : List VExpr} {k : Nat} {Ds : List VExpr} {fs : List VField}, k = Δ.length →
       d.FieldsWF E₁ (Δ ++ d.params.reverse) k Ds fs →
@@ -577,7 +577,7 @@ variable {R : Name → Option VAuxHead} {ren : Name → Option Name} {d : VInduc
 
 /-- The block a translated nested block restores to is well formed, given the translation's check
 and what the restoration needs to know of its terms. -/
-theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd : d.WF venv)
+theorem RestoreSpec.wf [VEnv.Injective] (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd : d.WF venv)
     (hn : 0 < n)
     (hRfresh : ∀ c h, R c = some h → venv.constants c = none)
     (hrenfresh : ∀ c c', ren c = some c' → venv.constants c = none)

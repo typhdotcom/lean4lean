@@ -229,7 +229,7 @@ theorem FieldsElab.of_getElem {venv : VEnv} {d : VInductDecl} :
 
 /-- A type's sort is zero exactly when that of a definitionally equal type, in an agreeing
 context, is. -/
-theorem sort_zero_iff {env : VEnv} {U : Nat} (henv : env.WF) {Γ₁ Γ₂ : List VExpr}
+theorem sort_zero_iff [VEnv.Injective] {env : VEnv} {U : Nat} (henv : env.WF) {Γ₁ Γ₂ : List VExpr}
     (hc : VEnv.IsDefEqCtx env U [] Γ₁ Γ₂) (hΓ₂ : OnCtx Γ₂ (env.IsType U)) {D F : VExpr}
     {u v : VLevel} (hD : env.HasType U Γ₁ D (.sort u)) (hDF : env.IsDefEqU U Γ₂ D F)
     (hF : env.HasType U Γ₂ F (.sort v)) : (u ≈ .zero ↔ v ≈ .zero) := by
@@ -244,7 +244,7 @@ theorem sort_zero_iff {env : VEnv} {U : Nat} (henv : env.WF) {Γ₁ Γ₂ : List
 
 /-- What `loopCtors` left of a constructor is what `Elaborates` asks of it, for any declaration
 whose types agree with `d₀`'s on names and indices. -/
-theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
+theorem CtorDone.elab [VEnv.Injective] {c : VContext} {pre : List Name} {params : List VExpr}
     {types : List InductiveType} {d₀ d : VInductDecl} {VB : VEnv} {UB j : Nat}
     {hj : j < types.length} {ct : Constructor} {cv : VConstructor}
     (H : CtorDone c pre params types d₀ VB UB j hj ct cv)
@@ -746,7 +746,7 @@ def IndicesE (c₀ : VContext) (types : List InductiveType) (d : VInductDecl) : 
 checking environment of `c`: they are new there, the names `X`, unless the block is primitive and
 `c`'s environment has them already. Its constructors' fields are read as `d`'s fields, which `run`
 then builds the recursors from. -/
-theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem mkRecInfos.WF_core [VEnv.Injective] {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c₁ params level typeTr)
     (hc : c.mlctx = c₁.mlctx) (hU : c.lparams = c₁.lparams) (hle : c₀.venv ≤ c.venv)
     (henv : c.venv.WF) (hNM : NotMentionsOK c.venv c.lparams stats types) {isUnsafe : Bool}
@@ -1810,7 +1810,7 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
 
 /-- `mkRecInfos`, in the checking environment with the constructors added as axioms. Its
 constructors' fields are read as `d`'s fields, which `run` then builds the recursors from. -/
-theorem mkRecInfos.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem mkRecInfos.WF [VEnv.Injective] {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c₁ params level typeTr)
     (hc : c.mlctx = c₁.mlctx) (hU : c.lparams = c₁.lparams) (hle : c₀.venv ≤ c.venv)
     (henv : c.venv.WF) {isUnsafe : Bool}

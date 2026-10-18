@@ -374,7 +374,7 @@ theorem insertDefs_find? : ∀ {cis : List DefinitionVal} {C : ConstMap} {name c
       · exact .inl h
     · exact .inr ⟨e, .tail _ he, h1, h2⟩
 
-theorem TrEnv'.of_value (H : TrEnv' safety C Q venv) (h : C.find? name = some ci)
+theorem TrEnv'.of_value [VEnv.Injective] (H : TrEnv' safety C Q venv) (h : C.find? name = some ci)
     (hs : safety ≤ ci.safety) (hv : ci.deltaValue? = some v) :
     TrExpr venv ci.levelParams [] v (.const ci.name (VLevel.params ci.levelParams.length)) := by
   have {C n ci'} (hC : C.WF) :
@@ -514,7 +514,7 @@ theorem TrEnv'.defn_rule (H : TrEnv' safety C Q venv) {v : DefinitionVal}
     · simp only [inductConsts, List.mem_append, List.mem_map] at h
       obtain ⟨(⟨_, -, ⟨⟩⟩ | ⟨_, -, ⟨⟩⟩) | ⟨_, -, ⟨⟩⟩, -⟩ := h
 
-nonrec theorem TrEnv.of_value (H : TrEnv safety env venv) (h : env.find? name = some ci)
+nonrec theorem TrEnv.of_value [VEnv.Injective] (H : TrEnv safety env venv) (h : env.find? name = some ci)
     (hs : safety ≤ ci.safety) (hv : ci.deltaValue? = some v) :
     TrExpr venv ci.levelParams [] v (.const ci.name (VLevel.params ci.levelParams.length)) :=
   H.of_value (by rwa [← H.map_wf.find?'_eq_find?]) hs hv

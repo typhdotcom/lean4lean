@@ -956,11 +956,11 @@ variable! (henv : Ordered env) {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ
 theorem TrExprS.trExpr (H : TrExprS env Us Δ e e') : TrExpr env Us Δ e e' :=
   ⟨_, H, H.wf henv hΔ⟩
 
-theorem TrExpr.defeq (henv : VEnv.WF env) (hΔ : OnCtx Δ.toCtx (env.IsType Us.length))
+theorem TrExpr.defeq [VEnv.Injective] (henv : VEnv.WF env) (hΔ : OnCtx Δ.toCtx (env.IsType Us.length))
     (h1 : TrExpr env Us Δ e e₁) (h2 : env.IsDefEqU Us.length Δ.toCtx e₁ e₂) :
     TrExpr env Us Δ e e₂ := let ⟨_, H, h1⟩ := h1; ⟨_, H, h1.trans henv hΔ h2⟩
 
-theorem TrExpr.app (henv : VEnv.WF env) (hΔ : OnCtx Δ.toCtx (env.IsType Us.length))
+theorem TrExpr.app [VEnv.Injective] (henv : VEnv.WF env) (hΔ : OnCtx Δ.toCtx (env.IsType Us.length))
     (h1 : env.HasType Us.length Δ.toCtx f' (.forallE A B))
     (h2 : env.HasType Us.length Δ.toCtx a' A)
     (h3 : TrExpr env Us Δ f f')
@@ -973,7 +973,7 @@ theorem TrExpr.app (henv : VEnv.WF env) (hΔ : OnCtx Δ.toCtx (env.IsType Us.len
   ⟨_, .app h3.hasType.1 h4.hasType.1 s3 s4, _, h3.appDF h4⟩
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
-theorem TrExprS.uniq (H1 : TrExprS env Us Δ₁ e e₁) (H2 : TrExprS env Us Δ₂ e e₂) :
+theorem TrExprS.uniq [VEnv.Injective] (H1 : TrExprS env Us Δ₁ e e₁) (H2 : TrExprS env Us Δ₂ e e₂) :
     env.IsDefEqU Us.length Δ₁.toCtx e₁ e₂ := by
   induction H1 generalizing Δ₂ e₂ with
   | bvar l1 => let .bvar r1 := H2; exact ⟨_, (hΔ.find?_uniq henv l1 r1).2⟩
@@ -1010,7 +1010,7 @@ theorem TrExprS.uniq (H1 : TrExprS env Us Δ₁ e e₁) (H2 : TrExprS env Us Δ�
     let .proj r1 _ := H2; exact l2.proj_congr henv hΔ.wf.toCtx (ih1 hΔ r1)
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
-theorem TrExpr.uniq (H1 : TrExpr env Us Δ₁ e e₁) (H2 : TrExpr env Us Δ₂ e e₂) :
+theorem TrExpr.uniq [VEnv.Injective] (H1 : TrExpr env Us Δ₁ e e₁) (H2 : TrExpr env Us Δ₂ e e₂) :
     env.IsDefEqU Us.length Δ₁.toCtx e₁ e₂ := by
   let ⟨_, H1, eq1⟩ := H1
   let ⟨_, H2, eq2⟩ := H2
@@ -1018,7 +1018,7 @@ theorem TrExpr.uniq (H1 : TrExpr env Us Δ₁ e e₁) (H2 : TrExpr env Us Δ₂ 
     eq2.defeqDFC henv (hΔ.defeqCtx.symm henv)
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
-theorem TrExprS.defeqDFC (H : TrExprS env Us Δ₁ e e₁) : ∃ e₂, TrExprS env Us Δ₂ e e₂ := by
+theorem TrExprS.defeqDFC [VEnv.Injective] (H : TrExprS env Us Δ₁ e e₁) : ∃ e₂, TrExprS env Us Δ₂ e e₂ := by
   induction H generalizing Δ₂ with
   | bvar h1 => have ⟨_, _, h1⟩ := hΔ.find?_defeqDFC h1; exact ⟨_, .bvar h1⟩
   | fvar h1 => have ⟨_, _, h1⟩ := hΔ.find?_defeqDFC h1; exact ⟨_, .fvar h1⟩
@@ -1078,11 +1078,11 @@ theorem TrExprS.defeqDFC (H : TrExprS env Us Δ₁ e e₁) : ∃ e₂, TrExprS e
     exact ⟨_, .proj h1' ⟨_, h2.choose_spec.hasType.2⟩⟩
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
-theorem TrExprS.defeqDFC' (H : TrExprS env Us Δ₁ e e') : TrExpr env Us Δ₂ e e' := by
+theorem TrExprS.defeqDFC' [VEnv.Injective] (H : TrExprS env Us Δ₁ e e') : TrExpr env Us Δ₂ e e' := by
   let ⟨_, H'⟩ := H.defeqDFC henv hΔ
   refine ⟨_, H', H'.uniq henv (hΔ.symm henv) H⟩
 
-theorem TrExpr.lam (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
+theorem TrExpr.lam [VEnv.Injective] (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
     (h1 : env.IsType Us.length Δ.toCtx ty')
     (h2 : TrExpr env Us Δ ty ty')
     (h3 : TrExpr env Us ((none, .vlam ty') :: Δ) body body') :
@@ -1097,7 +1097,7 @@ theorem TrExpr.lam (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
   ⟨_, .lam ⟨_, this.hasType.2⟩ s2 s3', _,
     .symm <| .lamDF this <| h3.symm.trans_l henv hΔΔ.wf.toCtx h3'⟩
 
-theorem TrExpr.forallE (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
+theorem TrExpr.forallE [VEnv.Injective] (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
     (h1 : env.IsType Us.length Δ.toCtx ty')
     (h2 : env.IsType Us.length (ty' :: Δ.toCtx) body')
     (h3 : TrExpr env Us Δ ty ty')
@@ -1115,7 +1115,7 @@ theorem TrExpr.forallE (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
   have h5 := h4.hasType.2.defeq_l henv this
   ⟨_, .forallE ⟨_, this.hasType.2⟩ ⟨_, h5⟩ s3 s4', _, .symm <| .forallEDF this h4⟩
 
-theorem TrExpr.letE (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
+theorem TrExpr.letE [VEnv.Injective] (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
     (h1 : env.HasType Us.length Δ.toCtx val' ty')
     (h2 : TrExpr env Us Δ ty ty')
     (h3 : TrExpr env Us Δ val val')
@@ -1140,7 +1140,7 @@ theorem TrExpr.lit (h1 : env.ContainsLits l)
 theorem TrExpr.mdata (h : TrExpr env Us Δ e e') : TrExpr env Us Δ (.mdata d e) e' :=
   let ⟨_, s2, h2⟩ := h; ⟨_, .mdata s2, h2⟩
 
-theorem TrExpr.proj {env Us Δ e e' s i} (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
+theorem TrExpr.proj [VEnv.Injective] {env Us Δ e e' s i} (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
     (H : TrExpr env Us Δ e e') (H2 : VExpr.WF env Us.length Δ.toCtx (.proj s i e')) :
     TrExpr env Us Δ (.proj s i e) (.proj s i e') :=
   let ⟨_, s2, h2⟩ := H
@@ -1223,7 +1223,7 @@ theorem TrExprS.inst {Δ : VLCtx} (henv : Ordered env)
     TrExprS env Us Δ (e.instantiate1' e₀) (e'.inst e₀') :=
   h₀.instN henv t₀ .zero H
 
-theorem TrExpr.inst (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
+theorem TrExpr.inst [VEnv.Injective] (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
     (t₀ : env.HasType Us.length Δ.toCtx e₀' A₀)
     (H : TrExpr env Us ((none, .vlam A₀) :: Δ) e e')
     (h₀ : TrExpr env Us Δ e₀ e₀') :
@@ -1312,7 +1312,7 @@ theorem TrExprS.inst_let {Δ : VLCtx} (henv : Ordered env)
     TrExprS env Us Δ (e.instantiate1' e₀) e' :=
   h₀.instN_let henv .zero H
 
-theorem TrExpr.inst_let (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
+theorem TrExpr.inst_let [VEnv.Injective] (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
     (t₀ : env.HasType Us.length Δ.toCtx e₀' A₀)
     (H : TrExpr env Us ((none, .vlet A₀ e₀') :: Δ) e e')
     (h₀ : TrExpr env Us Δ e₀ e₀') :
@@ -1526,7 +1526,7 @@ end
 
 include henv hΔ
 
-theorem TrExprS.instL (H : TrExprS env ps Δ e e') :
+theorem TrExprS.instL [VEnv.Injective] (H : TrExprS env ps Δ e e') :
     TrExpr env Us (Δ.instL ls') (e.instantiateLevelParams ps ls) (e'.instL ls') := by
   simp [Expr.instantiateLevelParams_eq]
   generalize (_ && _) = red, eqF : (fun x : Name => _) = F
@@ -1566,7 +1566,7 @@ theorem TrExprS.instL (H : TrExprS env ps Δ e e') :
     exact .proj henv (hΔ.instL Hls') (ih hΔ)
       (VLCtx.instL_toCtx _ ▸ h2.instL Hls')
 
-theorem TrExpr.instL (H : TrExpr env ps Δ e e') :
+theorem TrExpr.instL [VEnv.Injective] (H : TrExpr env ps Δ e e') :
     TrExpr env Us (Δ.instL ls') (e.instantiateLevelParams ps ls) (e'.instL ls') :=
   let ⟨_, s1, h1⟩ := H
   have Hls' := .of_mapM_ofLevel Hls
@@ -2160,7 +2160,7 @@ theorem BetaReduce.cheapBetaReduce (hc : e.Closed) : BetaReduce e e.cheapBetaRed
     · exact Expr.instantiateList_eq_self hl₁.1.looseBVarRange_zero
     · exact ih hl₁.2 _ (Nat.lt_of_succ_lt_succ lt)
 
-theorem TrExpr.beta (H : TrExpr env Us Δ e e')
+theorem TrExpr.beta [VEnv.Injective] (H : TrExpr env Us Δ e e')
     (henv : VEnv.WF env) (hΓ : VLCtx.WF env Us.length Δ)
     (H : BetaReduce e e₂) : TrExpr env Us Δ e₂ e' := by
   induction H generalizing e' with
@@ -2186,7 +2186,7 @@ theorem TrExpr.beta (H : TrExpr env Us Δ e e')
 theorem FVarsBelow.cheapBetaReduce (he : e.Closed) : FVarsBelow Δ e e.cheapBetaReduce :=
   .betaReduce (.cheapBetaReduce he)
 
-theorem TrExpr.cheapBetaReduce (H : TrExpr env Us Δ e e')
+theorem TrExpr.cheapBetaReduce [VEnv.Injective] (H : TrExpr env Us Δ e e')
     (henv : VEnv.WF env) (hΓ : VLCtx.WF env Us.length Δ)
     (noBV : Δ.NoBV) : TrExpr env Us Δ e.cheapBetaReduce e' :=
   H.beta henv hΓ <| .cheapBetaReduce <| noBV ▸ H.closed.mono (by simp)
@@ -2234,7 +2234,7 @@ theorem TrExprS.inst_fvar {Δ : VLCtx} (henv : Ordered env)
     simp [VLocalDecl.depth, VLocalDecl.liftN] at this
     exact this.inst_let henv hf
 
-theorem TrExpr.rebuild_mkAppRevList (henv : env.WF) (hΔ : Δ.WF env Us.length)
+theorem TrExpr.rebuild_mkAppRevList [VEnv.Injective] (henv : env.WF) (hΔ : Δ.WF env Us.length)
     (he : TrExprS env Us Δ e e') (h1 : TrExprS env Us Δ (e.mkAppRevList as) ea')
     (h2 : TrExpr env Us Δ e₁ e') : TrExpr env Us Δ (e₁.mkAppRevList as) ea' := by
   induction as generalizing ea' with
@@ -2244,7 +2244,7 @@ theorem TrExpr.rebuild_mkAppRevList (henv : env.WF) (hΔ : Δ.WF env Us.length)
     have := ih a3
     exact .app henv hΔ a1 a2 (ih a3) (a4.trExpr henv hΔ)
 
-theorem TrExpr.rebuild_mkAppList (henv : env.WF) (hΔ : Δ.WF env Us.length)
+theorem TrExpr.rebuild_mkAppList [VEnv.Injective] (henv : env.WF) (hΔ : Δ.WF env Us.length)
     (he : TrExprS env Us Δ e e') (h1 : TrExprS env Us Δ (e.mkAppList as) ea')
     (h2 : TrExpr env Us Δ e₁ e') : TrExpr env Us Δ (e₁.mkAppList as) ea' := by
   rw [← Expr.mkAppRevList_reverse] at h1 ⊢

@@ -244,7 +244,7 @@ end VExpr
 namespace VInductDecl
 variable {d : VInductDecl} {venv : VEnv}
 
-theorem Positive.defeq (henv : venv.WF) {Γ} (hΓ : OnCtx Γ (venv.IsType d.uvars)) {k t t'}
+theorem Positive.defeq [VEnv.Injective] (henv : venv.WF) {Γ} (hΓ : OnCtx Γ (venv.IsType d.uvars)) {k t t'}
     (H : d.Positive venv Γ k t) (h : venv.IsDefEqU d.uvars Γ t t') : d.Positive venv Γ k t' := by
   cases H with
   | none h1 hA => exact .none (h.symm.trans henv hΓ h1) hA
@@ -369,7 +369,7 @@ theorem ParamsSoFar.done {venv U nparams T₀ T' params Δ type}
     ParamsAgree venv U nparams T₀ T' params := fun hl ps B he hp => by
   have := (H hl ps B he hp).1; rwa [List.take_of_length_le (by omega)] at this
 
-theorem _root_.Lean4Lean.TypeChecker.whnf.forallE_eq {c : TypeChecker.VContext}
+theorem _root_.Lean4Lean.TypeChecker.whnf.forallE_eq [VEnv.Injective] {c : TypeChecker.VContext}
     {s : TypeChecker.VState} (h : e.consumeMData = .forallE n ty body bi) :
     TypeChecker.M.WF c s (TypeChecker.whnf e) fun e₁ _ => e₁ = .forallE n ty body bi :=
   (TypeChecker.Inner.whnf.forallE_eq h).run
@@ -378,7 +378,7 @@ theorem _root_.Lean4Lean.TypeChecker.whnf.forallE_eq {c : TypeChecker.VContext}
 theorem WF.and {c : VContext} {x : M α} {Q R : α → Prop} (h1 : WF c x Q) (h2 : WF c x R) :
     WF c x fun a => Q a ∧ R a := fun a h => ⟨h1 a h, h2 a h⟩
 
-theorem whnf_forallE_self {c : VContext} (e : Expr) :
+theorem whnf_forallE_self [VEnv.Injective] {c : VContext} (e : Expr) :
     WF c (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ => 0 < e.leadingForalls → e₁ = e := by
   cases e with
   | forallE n t b bi => exact (WF.liftTC (TypeChecker.whnf.forallE_eq rfl)).mono fun _ h _ => h
@@ -399,7 +399,7 @@ theorem foralls_drop_eq {ps : List VExpr} {B A body : VExpr} {i : Nat} (hi : i <
 /-- The first type's loop: each parameter and index becomes a local variable, of the type the
 binder normalizes to with annotations stripped, and the type of the block is, up to defeq, a pi over
 them into the remaining type. -/
-theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
+theorem loopFirst.WF [VEnv.Injective] {c₀ : VContext} (henv : c₀.venv.WF)
     {nparams : Nat} {stats₀ : InductiveStats} (h₀ : stats₀.indConsts = #[]) {T₀ : Expr}
     {T' : VExpr} {k : Expr → InductiveStats → Nat → M α} {Q}
     (H : ∀ type V (c : VContext) fvs params idx, SameBase c₀ c →
@@ -553,7 +553,7 @@ abbrev initStats (c : VContext) : InductiveStats :=
   { (default : InductiveStats) with levels := c.lparams.map .param }
 
 /-- The first type of the block. -/
-theorem loopInd0.WF {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.venv.WF)
+theorem loopInd0.WF [VEnv.Injective] {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.venv.WF)
     {nparams : Nat} {types : List InductiveType}
     (hne : types ≠ []) {k : InductiveStats → M α} {Q}
     (H : ∀ stats c params level typeTr, TypesSoFar c₀ nparams types 1 stats c params level typeTr →
@@ -631,7 +631,7 @@ theorem getType.WF {c : VContext} {fv : FVarId} {d : LocalDecl}
     h] at e
   cases e; rfl
 
-theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
+theorem loopLater.WF [VEnv.Injective] {c₀ : VContext} (henv : c₀.venv.WF)
     (hcl : ConstMap.Closed c₀.env.constants)
     {nparams : Nat} {stats : InductiveStats} (hne : stats.indConsts.isEmpty = false)
     {Mp : MLCtx} {pfvs : List FVarId} {params : List VExpr} (hMp : Mp.IsTele pfvs params)
@@ -859,7 +859,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
 in the same universe. Its loop runs in a local context holding the earlier types' indices too, which
 the type does not mention, so each step is read in the context of the parameters and its own
 indices. -/
-theorem loopIndLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
+theorem loopIndLater.WF [VEnv.Injective] {c₀ : VContext} (henv : c₀.venv.WF)
     (hclE : ConstMap.Closed c₀.env.constants)
     {nparams : Nat} {types : List InductiveType} {k : InductiveStats → M α} {Q}
     {dIdx : Nat} (hd : 1 ≤ dIdx) (hlt : dIdx < types.length) {stats c params level typeTr}
@@ -985,7 +985,7 @@ theorem loopIndEnd.WF {c₀ : VContext} {nparams : Nat} {types : List InductiveT
   simp only [h1, h2, h3, h4, beq_self_eq_true, ↓reduceIte]
   exact H _ _ _ _ _ hT
 
-theorem loopIndFrom.WF {c₀ : VContext} (henv : c₀.venv.WF)
+theorem loopIndFrom.WF [VEnv.Injective] {c₀ : VContext} (henv : c₀.venv.WF)
     (hclE : ConstMap.Closed c₀.env.constants)
     {nparams : Nat} {types : List InductiveType} {k : InductiveStats → M α} {Q}
     (H : ∀ stats c params level typeTr, TypesData c₀ nparams types stats c params level typeTr →
@@ -1002,7 +1002,7 @@ theorem loopIndFrom.WF {c₀ : VContext} (henv : c₀.venv.WF)
       loopIndFrom.WF henv hclE H m (dIdx + 1) (by omega) (by omega) (by omega) _ _ _ _ _ hT'
 
 /-- `checkInductiveTypes` from the empty local context. -/
-theorem checkInductiveTypes.WF {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.venv.WF)
+theorem checkInductiveTypes.WF [VEnv.Injective] {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.venv.WF)
     (hclE : ConstMap.Closed c₀.env.constants)
     {nparams : Nat} {types : List InductiveType}
     (hne : types ≠ []) {k : InductiveStats → M α} {Q}
@@ -1257,7 +1257,7 @@ theorem FieldKept.append {venv : VEnv} {U : Nat} {params : List VExpr} {D : VExp
 
 /-- The kernel's checks of a constructor's fields, run again in the contexts kept, give the
 specification's `FieldsKeptWF`, where its views are the fields' types. -/
-theorem _root_.Lean4Lean.VInductDecl.FieldsKeptWF.of_fieldKept {venv : VEnv} (henv : venv.WF)
+theorem _root_.Lean4Lean.VInductDecl.FieldsKeptWF.of_fieldKept [VEnv.Injective] {venv : VEnv} (henv : venv.WF)
     {d : VInductDecl} {c : VConstructor} {Ds : List VExpr}
     (hP0 : venv.IsTele d.uvars [] d.params) (hFW : d.FieldsWF venv d.params.reverse 0 Ds c.fields)
     (hK : ∀ k D, Ds[k]? = some D → FieldKept venv d.uvars d.params D (c.fields.map VField.type) k) :
@@ -1474,7 +1474,7 @@ theorem FieldsChecked.defeqDFC {venv : VEnv} {d : VInductDecl} (henv : venv.Orde
     exact .cons ⟨u, hD.defeqDFC henv hΓ, hb⟩ (fun h => (hpos h).defeqDFC henv hΓ)
       (ih (.succ hΓ hD))
 
-theorem FieldsWF.of_checked {venv : VEnv} {d : VInductDecl} (henv : venv.WF) {Γ k Ds fs}
+theorem FieldsWF.of_checked [VEnv.Injective] {venv : VEnv} {d : VInductDecl} (henv : venv.WF) {Γ k Ds fs}
     (hΓ : OnCtx Γ (venv.IsType d.uvars)) (H1 : FieldsChecked venv d Γ k Ds)
     (H2 : FieldsElab venv d Γ k Ds fs) : d.FieldsWF venv Γ k Ds fs := by
   induction H2 with
@@ -1513,7 +1513,7 @@ theorem declareConstructors.arity_domStrips (e : Expr) :
   simp [arity_domStrips']
 
 /-- A constructor that `checkConstructors` checked, as `mkRecInfos` elaborated it. -/
-theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {d : VInductDecl}
+theorem ctor_WF [VEnv.Injective] {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {d : VInductDecl}
     (hU : d.uvars = U.length) (hnp : d.params.length = nparams)
     (hparams : venv.IsTele d.uvars [] d.params)
     {t : InductiveType} {T : VInductiveType} {nidx : Nat} (hname : T.name = t.name)
@@ -1696,7 +1696,7 @@ theorem typeConsts_eq {U : Nat} {X : InductiveType → VInductiveType → Prop} 
     exact congrArg _ (typeConsts_eq t₁ t₂)
 
 /-- What the phases established about the elaborated `d` makes it a well-formed declaration. -/
-theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem decl_WF [VEnv.Injective] {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     (hne : types ≠ []) {venvAx : VEnv}
     (hAx : c.venv.addConstList (typeConstsOf c.lparams.length types typeTr) = some venvAx)
@@ -1859,7 +1859,7 @@ theorem arity_leadingForalls : ∀ (e : Expr) (i : Nat),
   | .letE .., _ | .lit .., _ | .mdata .., _ | .proj .., _ => by
     simp [declareConstructors.arity, Expr.leadingForalls]
 
-theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem ctorVals_tr [VEnv.Injective] {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     {isUnsafe : Bool} (hsafety : c.safety = inductSafety isUnsafe)
     {venvAx : VEnv} (henvAx : venvAx.WF) (hle : c.venv ≤ venvAx) {d : VInductDecl}

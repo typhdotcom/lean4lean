@@ -63,7 +63,7 @@ theorem ProjWalk.step {c : VContext} {L : List VExpr} {R : VExpr} {vals : List V
   | _ => simp [Expr.leadingForalls] at har; omega
 
 /-- Instantiating the binder with a value of its domain continues the walk. -/
-theorem ProjWalk.inst {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr} {i : Nat}
+theorem ProjWalk.inst [VEnv.Injective] {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr} {i : Nat}
     {b : Expr} {A B : VExpr}
     (hb : TrExprS c.venv c.lparams ((none, .vlam A) :: c.vlctx) b B)
     (hB : VEnv.EqUpToLevels c.lparams.length ((VExpr.foralls (L.drop (i + 1)) R).subst
@@ -126,7 +126,7 @@ theorem ProjWalkD.step {c : VContext} {L : List VExpr} {R : VExpr} {vals : List 
 
 /-- Instantiating a walk's binder with a closed value: the plain translation and the telescope
 instantiate, and so does each dropped telescope that keeps the binder. -/
-theorem ProjWalkD.inst_tr {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+theorem ProjWalkD.inst_tr [VEnv.Injective] {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
     {i : Nat} {b : Expr} {A B : VExpr}
     (hb : PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B)
     (hB : VEnv.EqUpToLevels c.lparams.length ((VExpr.foralls (L.drop (i + 1)) R).subst
@@ -146,7 +146,7 @@ theorem ProjWalkD.inst_tr {c : VContext} {L : List VExpr} {R : VExpr} {vals : Li
       ← VExpr.inst_lift_cons]
     exact this
 
-theorem ProjWalkD.inst_fam {c : VContext} {p m : Nat} {nm : Name} {dom b : Expr}
+theorem ProjWalkD.inst_fam [VEnv.Injective] {c : VContext} {p m : Nat} {nm : Name} {dom b : Expr}
     {bi : BinderInfo} {A : VExpr} (hA : c.TrExprS dom A)
     (H : TeleDoms c.venv c.lparams c.vlctx (.forallE nm dom (Expr.dropAfter p m b) bi))
     (hlen : p + m ≤ b.leadingForalls)
@@ -167,7 +167,7 @@ theorem ProjWalkD.inst_closed {b v : Expr} (hb : b.looseBVarRange' ≤ 1)
     (by simp [hv]))
 
 /-- Instantiating a parameter's binder continues the walk. -/
-theorem ProjWalkD.inst_param {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+theorem ProjWalkD.inst_param [VEnv.Injective] {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
     {i p M : Nat} {nm : Name} {dom b : Expr} {bi : BinderInfo} {A B : VExpr}
     (H : ProjWalkD c L R vals i (p + 1) M (.forallE nm dom b bi)) (hA : c.TrExprS dom A)
     (hb : PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B)
@@ -188,7 +188,7 @@ theorem ProjWalkD.inst_param {c : VContext} {L : List VExpr} {R : VExpr} {vals :
   exact ProjWalkD.inst_fam hA this (by omega) hv hvT
 
 /-- Instantiating a field's binder, which the rest mentions, continues the walk. -/
-theorem ProjWalkD.inst_field {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
+theorem ProjWalkD.inst_field [VEnv.Injective] {c : VContext} {L : List VExpr} {R : VExpr} {vals : List VExpr}
     {i M : Nat} {nm : Name} {dom b : Expr} {bi : BinderInfo} {A B : VExpr}
     (H : ProjWalkD c L R vals i 0 (M + 1) (.forallE nm dom b bi)) (hA : c.TrExprS dom A)
     (hb : PTr c.lparams c.venv.ContainsLits ((none, .vlam A) :: c.vlctx) b B)
@@ -234,7 +234,7 @@ theorem ProjWalkD.skip_field {c : VContext} {L : List VExpr} {R : VExpr} {vals :
       Expr.lowerLooseBVars'_eq_self (show b.looseBVarRange' ≤ 1 by omega)] at this
     simpa using this
 
-theorem inferProj.WF'_doms {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExpr}
+theorem inferProj.WF'_doms [VEnv.Injective] {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExpr}
     (he : c.TrExprS e e') (hty : c.TrExprS ety ety') (hasty : c.HasType e' ety')
     (hb : c.FVarsBelow e ety)
     (hCD : ∀ n w, c.env.constants.find? n = some (.ctorInfo w) →

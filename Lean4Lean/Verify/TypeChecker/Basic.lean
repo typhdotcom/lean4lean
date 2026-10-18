@@ -201,7 +201,7 @@ theorem _root_.Lean4Lean.TypeChecker.VContext.dom_of_tr {c : VContext}
   simpa [LocalContext.Dom, Option.isSome_iff_exists] using c.trlctx.find?_eq_some.2 this
 
 /-- The state a fresh local declaration's scope starts in is well formed. -/
-theorem VState.WF.enterLocal {c : VContext} {m} [cwf : c.MLCWF m] {s : VState}
+theorem VState.WF.enterLocal [VEnv.Injective] {c : VContext} {m} [cwf : c.MLCWF m] {s : VState}
     (wf : s.WF (c.withMLC m)) {name ty ty' bi}
     (hfresh : m.lctx.find? ⟨s.ngen.curr⟩ = none)
     (hty : (c.withMLC m).TrExprS ty ty') [cwf' : c.MLCWF (.vlam ⟨s.ngen.curr⟩ name ty ty' bi m)] :
@@ -216,7 +216,7 @@ theorem VState.WF.enterLocal {c : VContext} {m} [cwf : c.MLCWF m] {s : VState}
     exact ⟨VContext.dom_of_tr hty, by simp [LocalDecl.value', Expr.fvarsList]; exact hE.dom⟩
 
 /-- The state a fresh let-declaration's scope starts in is well formed. -/
-theorem VState.WF.enterLet {c : VContext} {m} [cwf : c.MLCWF m] {s : VState}
+theorem VState.WF.enterLet [VEnv.Injective] {c : VContext} {m} [cwf : c.MLCWF m] {s : VState}
     (wf : s.WF (c.withMLC m)) {name ty ty' val val'}
     (hfresh : m.lctx.find? ⟨s.ngen.curr⟩ = none)
     (hty : (c.withMLC m).TrExprS ty ty') (hval : (c.withMLC m).TrExprS val val')
@@ -241,7 +241,7 @@ theorem VState.WF.restoreDecl {c : VContext} {m m'} [cwf : c.MLCWF m] [cwf' : c.
     (s.restore s₁).WF (c.withMLC m) :=
   wf.restore wf₁ le H hb hx rfl rfl rfl rfl rfl hnew
 
-protected theorem RecM.WF.withLocalDecl {c : VContext} {m} [cwf : c.MLCWF m]
+protected theorem RecM.WF.withLocalDecl [VEnv.Injective] {c : VContext} {m} [cwf : c.MLCWF m]
     {s₀ s : VState} {f : Expr → RecM α} {Q name ty ty' bi}
     (hty : (c.withMLC m).TrExprS ty ty')
     (hty' : (c.withMLC m).IsType ty')
@@ -264,7 +264,7 @@ protected theorem RecM.WF.withLocalDecl {c : VContext} {m} [cwf : c.MLCWF m]
 
 /-- The `M`-level twin of `RecM.WF.withLocalDecl`. The primitive checker probes its
 definitions under `withLocalDecl` in `M`, so it needs this form. -/
-protected theorem M.WF.withLocalDecl {c : VContext} {m} [cwf : c.MLCWF m]
+protected theorem M.WF.withLocalDecl [VEnv.Injective] {c : VContext} {m} [cwf : c.MLCWF m]
     {s₀ s : VState} {f : Expr → M α} {Q name ty ty' bi}
     (hty : (c.withMLC m).TrExprS ty ty')
     (hty' : (c.withMLC m).IsType ty')
@@ -285,7 +285,7 @@ protected theorem M.WF.withLocalDecl {c : VContext} {m} [cwf : c.MLCWF m]
   exact wf.restoreDecl wf'' hs2 hfresh (wf.supp.ctxExt hfresh) (.vlam .refl)
     (by simp [MLCtx.under]) (fun fv h1 h2 => by simp at h1; exact h1.resolve_right h2)
 
-protected theorem RecM.WF.withLetDecl {c : VContext} {m} [cwf : c.MLCWF m]
+protected theorem RecM.WF.withLetDecl [VEnv.Injective] {c : VContext} {m} [cwf : c.MLCWF m]
     {s₀ s : VState} {f : Expr → RecM α} {Q name ty ty'}
     (hty : (c.withMLC m).TrExprS ty ty')
     (hval : (c.withMLC m).TrExprS val val')
@@ -347,7 +347,7 @@ theorem inferType.WF' {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlct
 
 /-- With the translation already in hand, `hinf` is satisfied whichever mode is used, so this
 holds at both settings of `inferOnly`. -/
-theorem inferType.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem inferType.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (inferType e inferOnly) fun ty _ => ∃ ty', c.TrTyping e ty e' ty' := by
   refine .stateWF fun wf => ?_
   refine (inferType.WF' he.fvarsIn fun _ => ⟨_, he⟩).le
@@ -355,7 +355,7 @@ theorem inferType.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
   have := h2.uniq c.Ewf (.refl c.Ewf c.Δwf) he
   exact h4.defeqU_l c.Ewf c.Δwf this
 
-theorem inferType.WF_uniq {c : VContext} {s : VState}
+theorem inferType.WF_uniq [VEnv.Injective] {c : VContext} {s : VState}
     (he : c.TrExprS e e') (hty : c.HasType e' ty') :
     RecM.WF c s (inferType e true) fun ty _ => c.TrExpr ty ty' :=
   (inferType.WF he).le fun _ _ _ ⟨_, _, _, h1, h2⟩ =>
@@ -381,7 +381,7 @@ def UnfoldDefinition.WF (c : VContext) (e e₀ : Expr) (e' : VExpr) : Option Exp
   | none => ∀ {{n ci v ls}}, c.env.find? n = some ci → ci.deltaValue? = some v →
     e₀ = .const n ls → ls.length = ci.numLevelParams → False
 
-theorem unfoldDefinitionCore.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem unfoldDefinitionCore.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (unfoldDefinitionCore e) fun oe _ => UnfoldDefinition.WF c e e e' oe := by
   dsimp [unfoldDefinitionCore]
   split <;> [refine .getEnv ?_; (rename_i H; exact .pure fun _ _ _ _ _ _ h => nomatch H _ _ h)]
@@ -425,7 +425,7 @@ theorem unfoldDefinitionCore.WF {c : VContext} {s : VState} (he : c.TrExprS e e'
     rename_i eq; rw [BEq.comm, Expr.eqv_const] at eq
     exact ⟨_, _, _, eq, h3, rfl⟩
 
-theorem unfoldDefinition.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem unfoldDefinition.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (unfoldDefinition e) fun oe _ => UnfoldDefinition.WF c e e.getAppFn e' oe := by
   simp [unfoldDefinition]; split; rotate_left
   · rename_i h; refine (unfoldDefinitionCore.WF he).mono fun _ _ _ H => ?_
@@ -440,7 +440,7 @@ theorem unfoldDefinition.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
   · exact (e.mkAppList_getAppArgsList ▸ h1.mkAppList :)
   · exact h2.rebuild_mkAppList c.Ewf c.Δwf stk.tr (e.mkAppList_getAppArgsList ▸ he :)
 
-theorem ensureSortCore.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem ensureSortCore.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (ensureSortCore e e₀) fun e1 _ =>
       (∃ u, e1 = .sort u) ∧ c.TrExpr e1 e' ∧ c.FVarsBelow e e1 := by
   simp [ensureSortCore]; split

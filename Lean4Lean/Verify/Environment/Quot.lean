@@ -390,7 +390,7 @@ end QuotInit
 
 /-- Initializing quotients: `checkEqType` finds a safe `Eq` of the expected type, which each
 model has as `eqConst`, and the four constants `addQuot` adds translate to theirs. -/
-theorem addQuot.WF_uninit {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem addQuot.WF_uninit [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (h : env.quotInit = false) :
     (Environment.addQuot env).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by

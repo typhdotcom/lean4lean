@@ -340,7 +340,7 @@ theorem appN_ne_forallE {A B : VExpr} : ∀ (is : List VExpr) (f : VExpr),
   | [], _, h => h _ _
   | _ :: is, _, _ => appN_ne_forallE is _ nofun
 
-theorem primField_level {venv : VEnv} {I : Name} (henv : venv.WF)
+theorem primField_level [VEnv.Injective] {venv : VEnv} {I : Name} (henv : venv.WF)
     (hI : venv.constants I = some ⟨0, .sort (.succ .zero)⟩) {l : VLevel}
     (h : venv.HasType 0 [] (.const I []) (.sort l)) : l ≈ .succ .zero :=
   (VEnv.IsDefEq.uniqU henv trivial h (primConst_isType hI)).sort_inv henv trivial
@@ -348,7 +348,7 @@ theorem primField_level {venv : VEnv} {I : Name} (henv : venv.WF)
 /-- A primitive block elaborated in the environment with its constructors as axioms is elaborated
 in the one with its type only: the fields' types and their inductive hypotheses' views are the
 type itself. -/
-theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx)
+theorem elaborates_prim [VEnv.Injective] {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx)
     {cs : List (Name × VConstant)} (hAxT : venvT.addConstList cs = some venvAx)
     (henvAx : venvAx.WF)
     (hIT : venvT.constants I = some ⟨0, .sort (.succ .zero)⟩) {envAx : Environment}
@@ -477,7 +477,7 @@ an environment that already has them, while `AddInduct` asks for the constructor
 one with only the types. What closes the gap is that these types mention only the block's type,
 which for `Bool` and `Nat` is a computation; the primitive clauses of `FlatResult` are what
 `PrimitiveInductiveResult` supplies. -/
-theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem AddInductive.run.WF_primitive [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
     (isUnsafe : Bool) (fuel : FuelConfig)
     (hallow : Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :

@@ -93,7 +93,7 @@ theorem AddInductive.majorAt_of_recs {envC env' : Environment} {d : VInductDecl}
 /-- Everything `run` established about a block without nested occurrences: the elaborated `d` is
 well formed, and the constants `run` added are an `AddInduct` step. `d` elaborates the block
 in `venvAx`, the checking environment with the types only. -/
-theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem AddInductive.assemble_step [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     {lparams : List Name} {nparams nn : Nat} {types : List InductiveType}
     {isUnsafe ap : Bool} {fuel : FuelConfig} (hne : types ≠ [])
     {stats : InductiveStats} {c : AddInductive.VContext} {params : List VExpr} {level : VLevel}
@@ -300,7 +300,7 @@ theorem AddInductive.find_inductInfo_of_inserts {C₀ : ConstMap} (hC₀ : C₀.
 /-- Everything `run` established about a block without nested occurrences or primitive names
 gives `FlatResult`: the elaborated `d` is well formed, and the constants `run` added are an
 `AddInduct` step. -/
-theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem AddInductive.assemble [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     {lparams : List Name} (hUs : lparams.Nodup) {nparams nn : Nat} {types : List InductiveType}
     {isUnsafe : Bool} {fuel : FuelConfig} (hne : types ≠ [])
     {stats : InductiveStats} {c : AddInductive.VContext} {params : List VExpr} {level : VLevel}

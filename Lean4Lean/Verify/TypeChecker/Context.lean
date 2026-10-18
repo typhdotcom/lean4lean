@@ -219,7 +219,7 @@ structure VContext extends Context where
 @[simp] abbrev VContext.vlctx (c : VContext) := c.mlctx.vlctx
 
 theorem VContext.trlctx (c : VContext) : TrLCtx c.venv c.lparams c.lctx' c.vlctx := c.mlctx_wf.tr
-theorem VContext.Ewf (c : VContext) : VEnv.WF c.venv := c.trenv.wf
+theorem VContext.Ewf [VEnv.Injective] (c : VContext) : VEnv.WF c.venv := c.trenv.wf
 theorem VContext.Δwf (c : VContext) : c.vlctx.WF c.venv c.lparams.length := c.trlctx.wf
 
 nonrec abbrev VContext.TrExprS (c : VContext) : Expr → VExpr → Prop :=

@@ -554,13 +554,13 @@ theorem onCtx : ∀ {Δ : List VExpr}, OnCtx (Δ ++ Γ₀) (E₁.IsType U) →
 
 /-- A well-formed term of `E₀` whose auxiliary constants sit at the parameters is its restoration,
 up to definitional equality. -/
-theorem defeq {Δ : List VExpr} {e : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₀.IsType U))
+theorem defeq [VEnv.Injective] {Δ : List VExpr} {e : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₀.IsType U))
     (he : e.AuxAt R ls₀ Δ.length) (hW : VExpr.WF E₀ U (Δ ++ Γ₀) (e.replaceConst F)) :
     E₀.IsDefEqU U (Δ ++ Γ₀) (e.replaceConst F) (e.restore R fun _ => none) :=
   VEnv.replaceConst_restore H.wf H.hFR H.hR hΓ he hW
 
 /-- A context of the translation, carried over, is its restoration, up to definitional equality. -/
-theorem ctx_defeq : ∀ {Δ : List VExpr}, OnCtx (Δ ++ Γ₀) (E₁.IsType U) →
+theorem ctx_defeq [VEnv.Injective] : ∀ {Δ : List VExpr}, OnCtx (Δ ++ Γ₀) (E₁.IsType U) →
     VExpr.CtxAuxAt R ls₀ Δ →
     OnCtx (Δ.map (·.replaceConst F) ++ Γ₀) (E₀.IsType U) ∧
     VEnv.IsDefEqCtx E₀ U Γ₀ (Δ.map (·.replaceConst F) ++ Γ₀)
@@ -577,7 +577,7 @@ theorem ctx_defeq : ∀ {Δ : List VExpr}, OnCtx (Δ ++ Γ₀) (E₁.IsType U) �
     refine ⟨⟨h1, _, hu⟩, .succ h2 (hd.of_l H.wf h1 hu)⟩
 
 /-- A typing of the translation, carried to the restored terms. -/
-theorem hasType {Δ : List VExpr} {e A : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₁.IsType U))
+theorem hasType [VEnv.Injective] {Δ : List VExpr} {e A : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₁.IsType U))
     (hΔ : VExpr.CtxAuxAt R ls₀ Δ) (he : e.AuxAt R ls₀ Δ.length) (hA : A.AuxAt R ls₀ Δ.length)
     (h : E₁.HasType U (Δ ++ Γ₀) e A) :
     E₀.HasType U (Δ.map (·.restore R fun _ => none) ++ Γ₀) (e.restore R fun _ => none)
@@ -594,12 +594,12 @@ theorem hasType {Δ : List VExpr} {e A : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₁
   have := (h'.defeqU_l H.wf h1 he').defeqU_r H.wf h1 hA'
   exact this.defeqDFC H.wf.ordered h2
 
-theorem isType {Δ : List VExpr} {A : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₁.IsType U))
+theorem isType [VEnv.Injective] {Δ : List VExpr} {A : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₁.IsType U))
     (hΔ : VExpr.CtxAuxAt R ls₀ Δ) (hA : A.AuxAt R ls₀ Δ.length) (h : E₁.IsType U (Δ ++ Γ₀) A) :
     E₀.IsType U (Δ.map (·.restore R fun _ => none) ++ Γ₀) (A.restore R fun _ => none) :=
   let ⟨u, h⟩ := h; ⟨u, H.hasType (A := .sort u) hΓ hΔ hA trivial h⟩
 
-theorem isDefEqU {Δ : List VExpr} {e e' : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₁.IsType U))
+theorem isDefEqU [VEnv.Injective] {Δ : List VExpr} {e e' : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E₁.IsType U))
     (hΔ : VExpr.CtxAuxAt R ls₀ Δ) (he : e.AuxAt R ls₀ Δ.length) (he' : e'.AuxAt R ls₀ Δ.length)
     (h : E₁.IsDefEqU U (Δ ++ Γ₀) e e') :
     E₀.IsDefEqU U (Δ.map (·.restore R fun _ => none) ++ Γ₀) (e.restore R fun _ => none)
@@ -617,7 +617,7 @@ theorem isDefEqU {Δ : List VExpr} {e e' : VExpr} (hΓ : OnCtx (Δ ++ Γ₀) (E�
 
 /-- A telescope of the translation, carried to the restored terms: `As` sits above `Δ`, its
 entries' auxiliary constants at the parameters. -/
-theorem isTele : ∀ {Δ As : List VExpr}, OnCtx (Δ ++ Γ₀) (E₁.IsType U) →
+theorem isTele [VEnv.Injective] : ∀ {Δ As : List VExpr}, OnCtx (Δ ++ Γ₀) (E₁.IsType U) →
     VExpr.CtxAuxAt R ls₀ (As.reverse ++ Δ) → E₁.IsTele U (Δ ++ Γ₀) As →
     E₀.IsTele U (Δ.map (·.restore R fun _ => none) ++ Γ₀) (As.map (·.restore R fun _ => none))
   | _, [], _, _, _ => .nil
@@ -675,7 +675,7 @@ theorem restoreNested_names_sub :
 
 /-- Strict positivity carries from the translation to the restored block, with the auxiliary
 constants replaced by the occurrences as functions of the parameters. -/
-theorem RestoreSpec.positive (H : d.RestoreSpec R ren n ns cname)
+theorem RestoreSpec.positive [VEnv.Injective] (H : d.RestoreSpec R ren n ns cname)
     (HE : RestoreEnv E₁ E₀ d.uvars F R (VLevel.params d.uvars) d.params.reverse)
     (hE₁ : E₁.Ordered)
     (hdom : ∀ c, F c ≠ none ∨ R c ≠ none ∨ ren c ≠ none → c ∈ d.names ∨ E₁.constants c = none) :
@@ -796,7 +796,7 @@ theorem RestoreSpec.positive (H : d.RestoreSpec R ren n ns cname)
       exact VExpr.mentions_mono hsub (by simpa using List.all_eq_true.1 h4 y hy)
 
 /-- Strict positivity is up to definitional equality of the type. -/
-theorem Positive.defeqU {env : VEnv} (henv : env.WF) {Γ k t t'}
+theorem Positive.defeqU [VEnv.Injective] {env : VEnv} (henv : env.WF) {Γ k t t'}
     (hΓ : OnCtx Γ (env.IsType d.uvars)) (h : env.IsDefEqU d.uvars Γ t t')
     (H : d.Positive env Γ k t) : d.Positive env Γ k t' := by
   cases H with

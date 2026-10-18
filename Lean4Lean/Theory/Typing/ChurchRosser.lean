@@ -60,7 +60,7 @@ theorem IsDefEq.skipsP (henv : VEnv.WF env) (hΓ : OnCtx Γ' (env.IsType U))
   exact ⟨_, H.weakN henv W, .liftN⟩
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) (hΓ : OnCtx Γ (env.IsType U)) in
-theorem IsDefEq.weakN_iff'P (W : Ctx.LiftN n k Γ Γ') :
+theorem IsDefEq.weakN_iff'P [VEnv.Injective] (W : Ctx.LiftN n k Γ Γ') :
     env.IsDefEq U Γ' (e1.liftN n k) (e2.liftN n k) (A.liftN n k) ↔ env.IsDefEq U Γ e1 e2 A := by
   refine ⟨fun h => ?_, fun h => h.weakN henv W⟩
   have ⟨_, H⟩ := (IsDefEqU.weakN_iffP henv hΓ' W).1 ⟨_, h⟩
@@ -68,7 +68,7 @@ theorem IsDefEq.weakN_iff'P (W : Ctx.LiftN n k Γ Γ') :
   exact (IsDefEqU.weakN_iffP henv hΓ' W).1 <| (H.weakN henv W).uniqU henv hΓ' h.symm
 
 variable! (henv : VEnv.WF env) in
-theorem _root_.Lean4Lean.OnCtx.weakN_invP
+theorem _root_.Lean4Lean.OnCtx.weakN_invP [VEnv.Injective]
     (W : Ctx.LiftN n k Γ Γ') (H : OnCtx Γ' (env.IsType U)) : OnCtx Γ (env.IsType U) := by
   induction W with
   | zero As h =>
@@ -81,17 +81,17 @@ theorem _root_.Lean4Lean.OnCtx.weakN_invP
     exact ⟨ih H1, _, (IsDefEq.weakN_iff'P henv H1 (ih H1) W).1 H2⟩
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
-theorem IsDefEq.weakN_iffP (W : Ctx.LiftN n k Γ Γ') :
+theorem IsDefEq.weakN_iffP [VEnv.Injective] (W : Ctx.LiftN n k Γ Γ') :
     env.IsDefEq U Γ' (e1.liftN n k) (e2.liftN n k) (A.liftN n k) ↔ env.IsDefEq U Γ e1 e2 A :=
   IsDefEq.weakN_iff'P henv hΓ' (hΓ'.weakN_invP henv W) W
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
-theorem HasType.weakN_iffP (W : Ctx.LiftN n k Γ Γ') :
+theorem HasType.weakN_iffP [VEnv.Injective] (W : Ctx.LiftN n k Γ Γ') :
     env.HasType U Γ' (e.liftN n k) (A.liftN n k) ↔ env.HasType U Γ e A :=
   IsDefEq.weakN_iffP henv hΓ' W
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
-theorem IsType.weakN_iffP (W : Ctx.LiftN n k Γ Γ') :
+theorem IsType.weakN_iffP [VEnv.Injective] (W : Ctx.LiftN n k Γ Γ') :
     env.IsType U Γ' (A.liftN n k) ↔ env.IsType U Γ A :=
   exists_congr fun _ => HasType.weakN_iffP henv hΓ' W (A := .sort _)
 
@@ -101,7 +101,7 @@ theorem HasType.skipsP (W : Ctx.LiftN n k Γ Γ')
   IsDefEq.skipsP henv hΓ' W h1 h2 h2
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
-theorem IsDefEqU.weak'_iffP (W : Ctx.Lift' l Γ Γ') :
+theorem IsDefEqU.weak'_iffP [VEnv.Injective] (W : Ctx.Lift' l Γ Γ') :
     env.IsDefEqU U Γ' (e1.lift' l) (e2.lift' l) ↔ env.IsDefEqU U Γ e1 e2 := by
   generalize e : l.depth = n
   induction n generalizing l Γ' with
@@ -114,7 +114,7 @@ theorem IsDefEqU.weak'_iffP (W : Ctx.Lift' l Γ Γ') :
       weakN_iffP henv hΓ' W2, ih (hΓ'.weakN_invP henv W2) W1 Lift.depth_consN]
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
-theorem IsDefEq.weak'_iffP (W : Ctx.Lift' l Γ Γ') :
+theorem IsDefEq.weak'_iffP [VEnv.Injective] (W : Ctx.Lift' l Γ Γ') :
     env.IsDefEq U Γ' (e1.lift' l) (e2.lift' l) (A.lift' l) ↔ env.IsDefEq U Γ e1 e2 A := by
   generalize e : l.depth = n
   induction n generalizing l Γ' with
@@ -127,21 +127,21 @@ theorem IsDefEq.weak'_iffP (W : Ctx.Lift' l Γ Γ') :
       weakN_iffP henv hΓ' W2, ih (hΓ'.weakN_invP henv W2) W1 Lift.depth_consN]
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
-theorem HasType.weak'_iffP (W : Ctx.Lift' l Γ Γ') :
+theorem HasType.weak'_iffP [VEnv.Injective] (W : Ctx.Lift' l Γ Γ') :
     env.HasType U Γ' (e.lift' l) (A.lift' l) ↔ env.HasType U Γ e A :=
   IsDefEq.weak'_iffP henv hΓ' W
 
 variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
-theorem IsType.weak'_iffP (W : Ctx.Lift' l Γ Γ') :
+theorem IsType.weak'_iffP [VEnv.Injective] (W : Ctx.Lift' l Γ Γ') :
     env.IsType U Γ' (e.lift' l) ↔ env.IsType U Γ e :=
   exists_congr fun _ => HasType.weak'_iffP henv hΓ' W (A := .sort _)
 
 variable! (henv : VEnv.WF env) (hΓ : OnCtx Γ' (env.IsType U)) in
-theorem _root_.Lean4Lean.VExpr.WF.weak'_iffP (W : Ctx.Lift' l Γ Γ') :
+theorem _root_.Lean4Lean.VExpr.WF.weak'_iffP [VEnv.Injective] (W : Ctx.Lift' l Γ Γ') :
     VExpr.WF env U Γ' (e.lift' l) ↔ VExpr.WF env U Γ e := IsDefEqU.weak'_iffP henv hΓ W
 
 variable! (henv : VEnv.WF env) in
-theorem _root_.Lean4Lean.OnCtx.weak'_invP
+theorem _root_.Lean4Lean.OnCtx.weak'_invP [VEnv.Injective]
     (W : Ctx.Lift' ρ Γ Γ') (H : OnCtx Γ' (env.IsType U)) : OnCtx Γ (env.IsType U) := by
   generalize e : ρ.depth = n
   induction n generalizing ρ Γ' with
@@ -178,7 +178,7 @@ theorem _root_.Lean4Lean.Pattern.Check.OK.instN (W : Ctx.InstN Γ₀ e₀ A₀ k
 
 open Pattern.RHS in
 variable! (hΓ : OnCtx Γ (env.IsType univs)) in
-theorem IsDefEq.apply_pat
+theorem IsDefEq.apply_pat [VEnv.Injective]
     (ih : ∀ a A, Γ ⊢ m2 a : A → Γ ⊢ m2 a ≡ m2' a)
     (he : Γ ⊢ apply m1 m2 r : A) : Γ ⊢ apply m1 m2 r ≡ apply m1 m2' r : A := by
   induction r generalizing A with simp [apply] at he ⊢
@@ -239,7 +239,7 @@ inductive NormalEq : List VExpr → VExpr → VExpr → Prop where
     Γ ⊢ h ≡ₚ h'
 
 variable! (hΓ : OnCtx Γ (env.IsType univs)) in
-theorem NormalEq.defeq (H : Γ ⊢ e1 ≡ₚ e2) : Γ ⊢ e1 ≡ e2 := by
+theorem NormalEq.defeq [VEnv.Injective] (H : Γ ⊢ e1 ≡ₚ e2) : Γ ⊢ e1 ≡ e2 := by
   induction H with
   | refl h => exact ⟨_, h⟩
   | sortDF h1 h2 h3 => exact ⟨_, .sortDF h1 h2 h3⟩
@@ -266,7 +266,7 @@ theorem NormalEq.defeq (H : Γ ⊢ e1 ≡ₚ e2) : Γ ⊢ e1 ≡ e2 := by
   | proofIrrel h1 h2 h3 => exact ⟨_, .proofIrrel h1 h2 h3⟩
 
 variable! (hΓ : OnCtx Γ (env.IsType univs)) in
-theorem NormalEq.symm (H : Γ ⊢ e1 ≡ₚ e2) : Γ ⊢ e2 ≡ₚ e1 := by
+theorem NormalEq.symm [VEnv.Injective] (H : Γ ⊢ e1 ≡ₚ e2) : Γ ⊢ e2 ≡ₚ e1 := by
   induction H with
   | refl h => exact .refl h
   | sortDF h1 h2 h3 => exact .sortDF h2 h1 h3.symm
@@ -332,7 +332,7 @@ theorem NormalEq.instN (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : Γ₁ ⊢
   | proofIrrel h1 h2 h3 => exact .proofIrrel (h1.instN henv W h₀) (h2.instN henv W h₀) (h3.instN henv W h₀)
 
 variable! (hΓ₁ : OnCtx Γ₁ (env.IsType univs)) (h₀ : Γ₀ ⊢ e₀ : A₀) (H' : Γ₀ ⊢ e₀ ≡ₚ e₀') in
-theorem NormalEq.instN_r (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : Γ₁ ⊢ e : A) :
+theorem NormalEq.instN_r [VEnv.Injective] (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : Γ₁ ⊢ e : A) :
     Γ ⊢ e.inst e₀ k ≡ₚ e.inst e₀' k := by
   induction e generalizing Γ₁ Γ k A with dsimp [inst]
   | bvar i =>
@@ -400,7 +400,7 @@ theorem NormalEq.defeq_l (W : Γ ⊢ A ≡ A' : sort u) (H : A::Γ ⊢ e1 ≡ₚ
     A'::Γ ⊢ e1 ≡ₚ e2 := defeqDFC hΓ (.succ .zero W) H
 
 variable! (hΓ₀ : OnCtx Γ₀ (IsType env univs)) in
-theorem NormalEq.weakN_inv_DFC (W : Ctx.LiftN n k Γ Γ₂) (W₂ : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
+theorem NormalEq.weakN_inv_DFC [VEnv.Injective] (W : Ctx.LiftN n k Γ Γ₂) (W₂ : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
     (H : Γ₁ ⊢ e1.liftN n k ≡ₚ e2.liftN n k) : Γ ⊢ e1 ≡ₚ e2 := by
   generalize eq1 : e1.liftN n k = e1' at H
   generalize eq2 : e2.liftN n k = e2' at H
@@ -505,7 +505,7 @@ theorem NormalEq.weakN_inv_DFC (W : Ctx.LiftN n k Γ Γ₂) (W₂ : IsDefEqCtx e
       ((HasType.weakN_iffP henv hΓ₂ W).1 (hw.defeq h3'))
 
 variable! (hΓ' : OnCtx Γ' (IsType env univs)) in
-theorem NormalEq.weakN_iff (W : Ctx.LiftN n k Γ Γ') :
+theorem NormalEq.weakN_iff [VEnv.Injective] (W : Ctx.LiftN n k Γ Γ') :
     Γ' ⊢ e1.liftN n k ≡ₚ e2.liftN n k ↔ Γ ⊢ e1 ≡ₚ e2 :=
   ⟨fun H => H.weakN_inv_DFC hΓ' W .zero, fun H => H.weakN W⟩
 
@@ -521,7 +521,7 @@ omit [Params] in private theorem meas_liftN : meas (e.liftN n k) = meas e := by
 omit [Params] in private theorem meas_lift : meas e.lift = meas e := meas_liftN
 
 attribute [local simp] meas meas_lift in
-theorem NormalEq.trans (hΓ : OnCtx Γ (IsType env univs)) :
+theorem NormalEq.trans [VEnv.Injective] (hΓ : OnCtx Γ (IsType env univs)) :
     Γ ⊢ e1 ≡ₚ e2 → Γ ⊢ e2 ≡ₚ e3 → Γ ⊢ e1 ≡ₚ e3
   | .sortDF l1 _ l3, .sortDF r1 r2 r3 => .sortDF l1 r2 (l3.trans r3)
   | .constDF l1 l2 _ l4 l5, .constDF _ _ r3 r4 r5 =>
@@ -578,7 +578,7 @@ termination_by meas e1 + meas e2 + meas e3
 
 open Pattern.RHS in
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem NormalEq.apply_pat
+theorem NormalEq.apply_pat [VEnv.Injective]
     (ih : ∀ a A, Γ ⊢ m2 a : A → Γ ⊢ m2 a ≡ₚ m2' a)
     (he : Γ ⊢ apply m1 m2 r : A) :
     Γ ⊢ apply m1 m2 r ≡ₚ apply m1 m2' r := by
@@ -674,7 +674,7 @@ theorem ParRed.instN (W : Ctx.InstN Γ₀ a1 A₀ k Γ₁ Γ)
     exact .extra h1 (Pattern.matches_instN h2) (h3.instN W H₀') (fun a => ih _ W)
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRed.defeq (H : Γ ⊢ e ≫ e') (he : Γ ⊢ e : A) : Γ ⊢ e ≡ e' : A := by
+theorem ParRed.defeq [VEnv.Injective] (H : Γ ⊢ e ≫ e') (he : Γ ⊢ e : A) : Γ ⊢ e ≡ e' : A := by
   induction H generalizing A with
   | bvar | sort | const => exact he
   | app _ _ ih1 ih2 =>
@@ -701,7 +701,7 @@ theorem ParRed.defeq (H : Γ ⊢ e ≫ e') (he : Γ ⊢ e : A) : Γ ⊢ e ≡ e'
      .apply_pat hΓ (fun _ _ h => ⟨_, ih _ hΓ h⟩) (.defeqU_l henv hΓ (pat_wf h1 h2 he h3) he)
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRed.hasType (H : Γ ⊢ e ≫ e') (he : Γ ⊢ e : A) : Γ ⊢ e' : A :=
+theorem ParRed.hasType [VEnv.Injective] (H : Γ ⊢ e ≫ e') (he : Γ ⊢ e : A) : Γ ⊢ e' : A :=
   (H.defeq hΓ he).hasType.2
 
 variable! (hΓ₀ : OnCtx Γ₀ (IsType env univs)) in
@@ -897,7 +897,7 @@ theorem CParRed.exists (H : Γ ⊢ e : A) : ∃ e', Γ ⊢ e ⋙ e' := by
   | proj => exact absurd H (Params.proj_untyped hΓ)
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRed.triangle (H1 : Γ ⊢ e : A) (H : Γ ⊢ e ≫ e') (H2 : Γ ⊢ e ⋙ o) :
+theorem ParRed.triangle [VEnv.Injective] (H1 : Γ ⊢ e : A) (H : Γ ⊢ e ≫ e') (H2 : Γ ⊢ e ⋙ o) :
     ∃ o', Γ ⊢ e' ≫ o' ∧ Γ ⊢ o' ≡ₚ o := by
   induction e using VExpr.brecOn generalizing Γ A e' o with | _ e e_ih => ?_
   revert e_ih; change let motive := ?_; ∀ _: e.below (motive := motive), _; intro motive e_ih
@@ -1047,7 +1047,7 @@ theorem ParRed.triangle (H1 : Γ ⊢ e : A) (H : Γ ⊢ e ≫ e') (H2 : Γ ⊢ e
         exact ⟨(·.elim g2 g1), (·.casesOn r1 l1), (·.casesOn r2 l2)⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRed.church_rosser (H : Γ ⊢ e : A)
+theorem ParRed.church_rosser [VEnv.Injective] (H : Γ ⊢ e : A)
     (H1 : Γ ⊢ e ≫ e₁) (H2 : Γ ⊢ e ≫ e₂) :
       ∃ e₁' e₂', Γ ⊢ e₁ ≫ e₁' ∧ Γ ⊢ e₂ ≫ e₂' ∧ Γ ⊢ e₁' ≡ₚ e₂' := by
   let ⟨e', h'⟩ := CParRed.exists hΓ H
@@ -1059,19 +1059,19 @@ def ParRedS (Γ : List VExpr) : VExpr → VExpr → Prop := ReflTransGen (ParRed
 local notation:65 Γ " ⊢ " e1 " ≫* " e2:36 => ParRedS Γ e1 e2
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRedS.hasType (H : Γ ⊢ e ≫* e') : Γ ⊢ e : A → Γ ⊢ e' : A := by
+theorem ParRedS.hasType [VEnv.Injective] (H : Γ ⊢ e ≫* e') : Γ ⊢ e : A → Γ ⊢ e' : A := by
   induction H with
   | rfl => exact id
   | tail h1 h2 ih => exact h2.hasType hΓ ∘ ih
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRedS.defeq (H : Γ ⊢ e ≫* e') (h : Γ ⊢ e : A) : Γ ⊢ e ≡ e' : A := by
+theorem ParRedS.defeq [VEnv.Injective] (H : Γ ⊢ e ≫* e') (h : Γ ⊢ e : A) : Γ ⊢ e ≡ e' : A := by
   induction H with
   | rfl => exact h
   | tail h1 h2 ih => exact ih.trans (h2.defeq hΓ (hasType hΓ h1 h))
 
 variable! (hΓ : OnCtx Γ₀ (IsType env univs)) in
-theorem ParRedS.defeqDFC (W : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
+theorem ParRedS.defeqDFC [VEnv.Injective] (W : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
     (h : Γ₁ ⊢ e1 : A) (H : Γ₁ ⊢ e1 ≫* e2) : Γ₂ ⊢ e1 ≫* e2 := by
   induction H with
   | rfl => exact .rfl
@@ -1116,7 +1116,7 @@ theorem ParRedS.proj (h : Γ ⊢ e ≫* e') : Γ ⊢ .proj s k e ≫* .proj s k 
   | tail _ a2 ih => exact .tail ih (.proj a2)
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRedS.inst (Ha : Γ ⊢ a : A)
+theorem ParRedS.inst [VEnv.Injective] (Ha : Γ ⊢ a : A)
     (hf : A :: Γ ⊢ f ≫* f') (ha : Γ ⊢ a ≫* a') : Γ ⊢ f.inst a ≫* f'.inst a' := by
   have : Γ ⊢ f.inst a ≫* f.inst a' := by
     induction ha with
@@ -1165,7 +1165,7 @@ theorem ParRedExt.isApp {l : ParRedExt} (H : l.apply (.app f a) = e') : IsApp e'
   | _ => subst H; trivial
 
 variable! (hΓ : OnCtx (A::Γ) (IsType env univs)) in
-theorem hasType_app_bvar0
+theorem hasType_app_bvar0 [VEnv.Injective]
     (H : A :: Γ ⊢ e.lift.app (bvar 0) : B) : ∃ B', Γ ⊢ e : .forallE A B' := by
   have ⟨_, _, c1, c2⟩ := H.app_inv henv hΓ
   replace c1 :=
@@ -1181,7 +1181,7 @@ theorem hasType_app_bvar0
   exact ⟨_, (HasType.lam f2 f3).defeqU_l henv hΓ.1 ⟨_, f1⟩⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRedExt.parRed_beta :
+theorem ParRedExt.parRed_beta [VEnv.Injective] :
     Γ ⊢ f ≡ₚ lam A e' → ∀ {a B}, Γ ⊢ f.app a : B → ∃ e, Γ ⊢ f.app a ≫* e ∧ Γ ⊢ e ≡ₚ e'.inst a := by
   refine (?_ : _ ∧ ∀ (l : ParRedExt), l.depth ≤ Γ.length →
     Γ ⊢ f ≡ₚ l.apply ((lam A e').lift.app (bvar 0)) → ∃ e, Γ ⊢ f ≫* e ∧ Γ ⊢ e ≡ₚ l.apply e').1
@@ -1317,7 +1317,7 @@ theorem ParRedExt.parRed_beta :
   | _ => cases l.isApp eq
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem NormalEq.parRed (H1 : Γ ⊢ e₁ ≡ₚ e₂) (H2 : Γ ⊢ e₂ ≫ e₂') :
+theorem NormalEq.parRed [VEnv.Injective] (H1 : Γ ⊢ e₁ ≡ₚ e₂) (H2 : Γ ⊢ e₂ ≫ e₂') :
     ∃ e₁', Γ ⊢ e₁ ≫* e₁' ∧ Γ ⊢ e₁' ≡ₚ e₂' := by
   induction H1 generalizing e₂' with
   | refl l1 => exact ⟨_, .tail .rfl H2, .refl (H2.hasType hΓ l1)⟩
@@ -1422,7 +1422,7 @@ theorem NormalEq.parRed (H1 : Γ ⊢ e₁ ≡ₚ e₂) (H2 : Γ ⊢ e₂ ≫ e�
   | proofIrrel l1 l2 l3 => exact ⟨_, .rfl, .proofIrrel l1 l2 (H2.hasType hΓ l3)⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem NormalEq.parRedS (H1 : Γ ⊢ e₁ ≡ₚ e₂) (H2 : Γ ⊢ e₂ ≫* e₂') :
+theorem NormalEq.parRedS [VEnv.Injective] (H1 : Γ ⊢ e₁ ≡ₚ e₂) (H2 : Γ ⊢ e₂ ≫* e₂') :
     ∃ e₁', Γ ⊢ e₁ ≫* e₁' ∧ Γ ⊢ e₁' ≡ₚ e₂' := by
   induction H2 with
   | rfl => exact ⟨_, .rfl, H1⟩
@@ -1438,7 +1438,7 @@ def CRDefEq (Γ : List VExpr) (e₁ e₂ : VExpr) : Prop :=
   ∃ e₁' e₂', Γ ⊢ e₁ ≫* e₁' ∧ Γ ⊢ e₂ ≫* e₂' ∧ Γ ⊢ e₁' ≡ₚ e₂'
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem ParRedS.church_rosser  (H : Γ ⊢ e : A)
+theorem ParRedS.church_rosser [VEnv.Injective]  (H : Γ ⊢ e : A)
     (H1 : Γ ⊢ e ≫* e₁) (H2 : Γ ⊢ e ≫* e₂) : Γ ⊢ e₁ ≫≪ e₂ := by
   refine ⟨⟨_, H1.hasType hΓ H⟩, ⟨_, H2.hasType hΓ H⟩, ?_⟩
   induction H2 with
@@ -1459,23 +1459,23 @@ theorem ParRedS.church_rosser  (H : Γ ⊢ e : A)
     exact ⟨_, _, .trans a1 c1, b2, c2.trans hΓ b3⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem CRDefEq.normalEq (H : Γ ⊢ e₁ ≡ₚ e₂) : Γ ⊢ e₁ ≫≪ e₂ :=
+theorem CRDefEq.normalEq [VEnv.Injective] (H : Γ ⊢ e₁ ≡ₚ e₂) : Γ ⊢ e₁ ≫≪ e₂ :=
   let ⟨_, h⟩ := H.defeq hΓ; ⟨⟨_, h.hasType.1⟩, ⟨_, h.hasType.2⟩, _, _, .rfl, .rfl, H⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem CRDefEq.refl (H : Γ ⊢ e : A) : Γ ⊢ e ≫≪ e := .normalEq hΓ (.refl H)
+theorem CRDefEq.refl [VEnv.Injective] (H : Γ ⊢ e : A) : Γ ⊢ e ≫≪ e := .normalEq hΓ (.refl H)
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem CRDefEq.defeq : Γ ⊢ e₁ ≫≪ e₂ → Γ ⊢ e₁ ≡ e₂
+theorem CRDefEq.defeq [VEnv.Injective] : Γ ⊢ e₁ ≫≪ e₂ → Γ ⊢ e₁ ≡ e₂
   | ⟨⟨_, h1⟩, ⟨_, h2⟩, _, _, h3, h4, h5⟩ =>
     ⟨_, .trans_l henv hΓ (h3.defeq hΓ h1) <| .transU_r henv hΓ (h5.defeq hΓ) (h4.defeq hΓ h2).symm⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem CRDefEq.symm : Γ ⊢ e₁ ≫≪ e₂ → Γ ⊢ e₂ ≫≪ e₁
+theorem CRDefEq.symm [VEnv.Injective] : Γ ⊢ e₁ ≫≪ e₂ → Γ ⊢ e₂ ≫≪ e₁
   | ⟨h1, h2, _, _, h3, h4, h5⟩ => ⟨h2, h1, _, _, h4, h3, h5.symm hΓ⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem CRDefEq.trans : Γ ⊢ e₁ ≫≪ e₂ → Γ ⊢ e₂ ≫≪ e₃ → Γ ⊢ e₁ ≫≪ e₃
+theorem CRDefEq.trans [VEnv.Injective] : Γ ⊢ e₁ ≫≪ e₂ → Γ ⊢ e₂ ≫≪ e₃ → Γ ⊢ e₁ ≫≪ e₃
   | ⟨l1, ⟨_, l2⟩, _, _, l3, l4, l5⟩, ⟨_, r2, _, _, r3, r4, r5⟩ => by
     let ⟨_, _, _, _, m1, m2, m3⟩ := l4.church_rosser hΓ l2 r3
     let ⟨_, a1, a2⟩ := l5.parRedS hΓ m1
@@ -1483,7 +1483,7 @@ theorem CRDefEq.trans : Γ ⊢ e₁ ≫≪ e₂ → Γ ⊢ e₂ ≫≪ e₃ → 
     exact ⟨l1, r2, _, _, .trans l3 a1, .trans r4 b1, a2.trans hΓ <| m3.trans hΓ (b2.symm hΓ)⟩
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
-theorem IsDefEq.church_rosser
+theorem IsDefEq.church_rosser [VEnv.Injective]
     (H : Γ ⊢ e₁ ≡ e₂ : A) : Γ ⊢ e₁ ≫≪ e₂ := by
   have mk {Γ e₁ e₂ A e₁' e₂'} (H : Γ ⊢ e₁ ≡ e₂ : A)
       (h1 : Γ ⊢ e₁ ≫* e₁') (h2 : Γ ⊢ e₂ ≫* e₂') (h3 : Γ ⊢ e₁' ≡ₚ e₂') : Γ ⊢ e₁≫≪ e₂ :=

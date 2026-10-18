@@ -98,7 +98,7 @@ class VState.WF (c : VContext) (s : VState) where
 extending the level-`lab` context, whose own level `lab` extends that one, which sees the levels
 below `lab`, and which sets aside the levels above `lab` (or `lab` is the current depth, with no
 ceiling on either side). -/
-theorem VState.WF.ectx_transfer {c c₂ : VContext} {s : VState} (wf : s.WF c) {lab : Nat}
+theorem VState.WF.ectx_transfer [VEnv.Injective] {c c₂ : VContext} {s : VState} (wf : s.WF c) {lab : Nat}
     (hS₂ : ScopeShape c₂.mlctx s.scopeFV c₂.ceiling c₂.top)
     (hvis : c.ceiling.all (lab ≤ ·)) (hv : c₂.venv = c.venv) (hlp : c₂.lparams = c.lparams)
     (hb : (levelCtx c.mlctx s.scopeFV c.ceiling c.top lab).Below c₂.mlctx)
@@ -296,7 +296,7 @@ theorem VState.WF.restore {c c' : VContext} {s₀ s₁ : VState} (wf : s₀.WF c
     ceil_lt := wf.ceil_lt }
 
 /-- Entering a variable's scope keeps the union-find's equivalences, each at its level. -/
-theorem VState.WF.enter_ectx {c c' : VContext} {s : VState} (wf : s.WF c)
+theorem VState.WF.enter_ectx [VEnv.Injective] {c c' : VContext} {s : VState} (wf : s.WF c)
     (hb : c.mlctx.Below c'.mlctx) (hx : c'.mlctx.under ⟨s.ngen.curr⟩ = c.mlctx)
     (hxm : ⟨s.ngen.curr⟩ ∈ c'.vlctx.fvars) (hv : c'.venv = c.venv) (hl : c'.lparams = c.lparams) (hc : c'.ceiling = c.ceiling)
     (ht : c'.top = c.top) :
@@ -336,7 +336,7 @@ theorem VState.WF.enter_ids {s : VState} (wf : s.WF c) :
   · simp only [NameGenerator.next_idx]; omega
 
 /-- Opening the scope of a fresh variable declared on top keeps the state well formed. -/
-theorem VState.WF.enter {c c' : VContext} {s : VState} (wf : s.WF c)
+theorem VState.WF.enter [VEnv.Injective] {c c' : VContext} {s : VState} (wf : s.WF c)
     (hfresh : c.lctx.find? ⟨s.ngen.curr⟩ = none)
     (hb : c.mlctx.Below c'.mlctx) (hx : c'.mlctx.under ⟨s.ngen.curr⟩ = c.mlctx)
     (hxm : ⟨s.ngen.curr⟩ ∈ c'.vlctx.fvars)
@@ -497,7 +497,7 @@ theorem MLCtx.WF.mkForall'_congr {c : MLCtx} (wf : c.WF env Us)
     | .vlam .. => let ⟨_, h⟩ := wf.2.2.2; exact ih wf.1 (.forallEDF h H) _
     | .vlet .. => exact ih wf.1 H _
 
-theorem MLCtx.WF.mkForall_tr (henv : VEnv.WF env) {c : MLCtx} (wf : c.WF env Us)
+theorem MLCtx.WF.mkForall_tr [VEnv.Injective] (henv : VEnv.WF env) {c : MLCtx} (wf : c.WF env Us)
     (H1 : TrExpr env Us c.vlctx e e')
     (H2 : env.IsType Us.length c.vlctx.toCtx e') (n hn) :
     TrExpr env Us (c.dropN n hn).vlctx (c.mkForall n hn e) (c.mkForall' n hn e') ∧
@@ -543,7 +543,7 @@ theorem MLCtx.WF.mkLambda'_congr {c : MLCtx} (wf : c.WF env Us)
     | .vlam .. => let ⟨_, h⟩ := wf.2.2.2; exact ih wf.1 (.lamDF h H) _
     | .vlet .. => exact ih wf.1 H _
 
-theorem MLCtx.WF.mkLambda_tr (henv : VEnv.WF env) {c : MLCtx} (wf : c.WF env Us)
+theorem MLCtx.WF.mkLambda_tr [VEnv.Injective] (henv : VEnv.WF env) {c : MLCtx} (wf : c.WF env Us)
     (H1 : TrExpr env Us c.vlctx e e')
     (H2 : env.HasType Us.length c.vlctx.toCtx e' ty') (n hn) :
     TrExpr env Us (c.dropN n hn).vlctx (c.mkLambda n hn e) (c.mkLambda' n hn e') ∧

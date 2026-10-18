@@ -9,7 +9,7 @@ theorem reduceNative.WF :
   unfold reduceNative; split <;> [skip; exact .pure nofun]
   split <;> [exact .throw; skip]; split <;> [exact .throw; exact .pure nofun]
 
-theorem rawNatLitExt?.WF {c : VContext} (H : rawNatLitExt? e = some n) (he : c.TrExprS e e') :
+theorem rawNatLitExt?.WF [VEnv.Injective] {c : VContext} (H : rawNatLitExt? e = some n) (he : c.TrExprS e e') :
     c.venv.contains ``Nat ∧ e' = .natLit n := by
   have : c.TrExprS (.lit (.natVal n)) e' := by
     unfold rawNatLitExt? at H; split at H <;> rename_i h
@@ -25,7 +25,7 @@ def reduceBinNatOpG (guard : Nat → Nat → Prop) [DecidableRel guard]
   if guard v1 v2 then return none
   return some <| .lit <| .natVal <| f v1 v2
 
-theorem reduceBinNatOpG.WF {guard} [DecidableRel guard] {c : VContext}
+theorem reduceBinNatOpG.WF [VEnv.Injective] {guard} [DecidableRel guard] {c : VContext}
     (he : c.TrExprS (.app (.app (.const fc ls) a) b) e')
     (hprim : Environment.primitives.contains fc)
     (heval : c.venv.ReflectsNatNatNat fc f) :
@@ -56,7 +56,7 @@ theorem reduceBinNatOpG.WF {guard} [DecidableRel guard] {c : VContext}
   have := ha1.appDF a3 |>.toU.of_r c.Ewf c.Δwf hb1
   exact ⟨_, .appDF this b3⟩
 
-theorem reduceBinNatPred.WF {c : VContext}
+theorem reduceBinNatPred.WF [VEnv.Injective] {c : VContext}
     (he : c.TrExprS (.app (.app (.const fc ls) a) b) e')
     (hprim : Environment.primitives.contains fc)
     (heval : c.venv.ReflectsNatNatBool fc f) :
@@ -86,7 +86,7 @@ theorem reduceBinNatPred.WF {c : VContext}
   have := ha1.appDF a3 |>.toU.of_r c.Ewf c.Δwf hb1
   exact  ⟨_, .appDF this b3⟩
 
-theorem reduceNat.WF {c : VContext} (he : c.TrExprS e e') :
+theorem reduceNat.WF [VEnv.Injective] {c : VContext} (he : c.TrExprS e e') :
     RecM.WF c s (reduceNat e) fun oe _ => ∀ e₁, oe = some e₁ →
       c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
   generalize hP : (fun oe => _) = P
@@ -140,7 +140,7 @@ theorem reduceNat.WF {c : VContext} (he : c.TrExprS e e') :
     refine p2.toU.symm.trans c.Ewf c.Δwf ?_
     exact ⟨_, ha1.appDF <| a3.of_r c.Ewf c.Δwf ha2⟩
 
-theorem reduceProjCore.WF (he : c.TrExprS (.proj n i e) e') :
+theorem reduceProjCore.WF [VEnv.Injective] (he : c.TrExprS (.proj n i e) e') :
     RecM.WF c s (reduceProjCore n i e) fun oe _ =>
       ∀ e₁, oe = some e₁ → c.FVarsBelow (.proj n i e) e₁ ∧ c.TrExpr e₁ e' := by
   have .proj (e' := s') a1 a2 := he
@@ -201,7 +201,7 @@ theorem reduceProjCore.WF (he : c.TrExprS (.proj n i e) e') :
     exact H c₁ _ sC (fun P hP _ => h1 P hP FVarsIn.strLitToConstructor) h2 h3
   · exact H e _ s' .rfl a1 (a1.wf c.Ewf c.Δwf)
 
-theorem reduceProj.WF (he : c.TrExprS (.proj n i e) e') :
+theorem reduceProj.WF [VEnv.Injective] (he : c.TrExprS (.proj n i e) e') :
     RecM.WF c s (reduceProj n i e cheapProj) fun oe _ =>
       ∀ e₁, oe = some e₁ → c.FVarsBelow (.proj n i e) e₁ ∧ c.TrExpr e₁ e' := by
   unfold reduceProj

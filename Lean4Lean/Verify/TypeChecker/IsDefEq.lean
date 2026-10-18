@@ -18,7 +18,7 @@ theorem closed_cons_fvar {fvs : List Expr} (hcl : ∀ a ∈ fvs, a.looseBVarRang
     ∀ a ∈ .fvar v :: fvs, a.looseBVarRange' = 0 := by
   simp only [List.mem_cons, forall_eq_or_imp]; exact ⟨rfl, hcl⟩
 
-theorem isDefEqLambda.WF {c : VContext} {s : VState}
+theorem isDefEqLambda.WF [VEnv.Injective] {c : VContext} {s : VState}
     {m} [mwf : c.MLCWF m]
     {fvs : List Expr} (hsubst : subst.toList.reverse = fvs)
     (hcl : ∀ a ∈ fvs, a.looseBVarRange' = 0)
@@ -62,7 +62,7 @@ theorem isDefEqLambda.WF {c : VContext} {s : VState}
   have ⟨_, bb⟩ := eq.symm.trans c'.Ewf mwf'.1.tr.wf.toCtx (h hb)
   exact ⟨_, .symm <| .lamDF tt'.symm <| bb.symm⟩
 
-theorem isDefEqForall.WF {c : VContext} {s : VState}
+theorem isDefEqForall.WF [VEnv.Injective] {c : VContext} {s : VState}
     {m} [mwf : c.MLCWF m]
     {fvs : List Expr} (hsubst : subst.toList.reverse = fvs)
     (hcl : ∀ a ∈ fvs, a.looseBVarRange' = 0)
@@ -108,7 +108,7 @@ theorem isDefEqForall.WF {c : VContext} {s : VState}
 
 /-- A union-find equivalence at a level holds at every deeper level up to the current depth, and
 the current depth's context is the whole context. -/
-theorem _root_.Lean4Lean.TypeChecker.VState.WF.linkE_top {c : VContext} {s : VState} (wf : s.WF c) {l : Nat} {e₁ e₂ : Expr}
+theorem _root_.Lean4Lean.TypeChecker.VState.WF.linkE_top [VEnv.Injective] {c : VContext} {s : VState} (wf : s.WF c) {l : Nat} {e₁ e₂ : Expr}
     (h : s.LinkE c l e₁ e₂) : s.LinkE c s.scopeIds.size e₁ e₂ := by
   intro hc'
   cases hce : c.ceiling with
@@ -129,13 +129,13 @@ theorem _root_.Lean4Lean.TypeChecker.VState.WF.linkE_top {c : VContext} {s : VSt
       rw [e2]; rw [e1] at h'; exact h'
 
 /-- A union-find equivalence at a level the ceiling keeps holds in the whole context. -/
-theorem _root_.Lean4Lean.TypeChecker.VState.WF.linkE_now {c : VContext} {s : VState} (wf : s.WF c) {l : Nat} {e₁ e₂ : Expr}
+theorem _root_.Lean4Lean.TypeChecker.VState.WF.linkE_now [VEnv.Injective] {c : VContext} {s : VState} (wf : s.WF c) {l : Nat} {e₁ e₂ : Expr}
     (h : s.LinkE c l e₁ e₂) (hc : c.ceiling.all (l ≤ ·)) :
     EquivManager.IsDefEqE c.venv c.lparams c.vlctx e₁ e₂ := by
   obtain ⟨_, W⟩ := (wf.shape.levelCtx_below l).fvlift
   exact (h hc).weak' c.Ewf W c.Δwf
 
-theorem checkEquiv.WF {c : VContext} {s : VState} :
+theorem checkEquiv.WF [VEnv.Injective] {c : VContext} {s : VState} :
     RecM.WF c s (modifyGet (·.checkEquiv useHash e₁ e₂)) fun r _ =>
       ∀ l, r = some l → c.ceiling.all (l ≤ ·) → ∀ t' u', c.TrExprS e₁ t' → c.TrExprS e₂ u' →
         EquivManager.IsDefEqE c.venv c.lparams c.vlctx e₁ e₂ := by
@@ -169,7 +169,7 @@ theorem checkEquiv.WF {c : VContext} {s : VState} :
         exact (wf.pairs_wf.now wf.shape hv ‹_› hc u' t' hu ht).symm
       · cases hl
 
-theorem quickIsDefEq.WF {c : VContext} {s : VState}
+theorem quickIsDefEq.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (quickIsDefEq e₁ e₂ useHash) fun b _ => b = .true → c.IsDefEqU e₁' e₂' := by
   unfold quickIsDefEq
@@ -201,7 +201,7 @@ theorem quickIsDefEq.WF {c : VContext} {s : VState}
     · exact hJ
   · exact hJ
 
-theorem isDefEqArgs.WF {c : VContext} {s : VState}
+theorem isDefEqArgs.WF [VEnv.Injective] {c : VContext} {s : VState}
     (H : ∃ e₁', c.TrExprS e₁.getAppFn e₁' ∧ ∃ e₂', c.TrExprS e₂.getAppFn e₂' ∧ c.IsDefEqU e₁' e₂')
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (isDefEqArgs e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
@@ -221,7 +221,7 @@ theorem isDefEqArgs.WF {c : VContext} {s : VState}
     have a2 := he₂.uniq c.Ewf (.refl c.Ewf c.Δwf) h2
     exact a1.trans c.Ewf c.Δwf h3 |>.trans c.Ewf c.Δwf a2.symm
 
-theorem tryEtaExpansionCore.WF {c : VContext} {s : VState}
+theorem tryEtaExpansionCore.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (tryEtaExpansionCore e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
   unfold tryEtaExpansionCore; split <;> [skip; exact .pure nofun]
@@ -236,7 +236,7 @@ theorem tryEtaExpansionCore.WF {c : VContext} {s : VState}
       a2.weakBV c.Ewf (.skip (.vlam ty') .refl)) (.bvar rfl)))).mono fun _ _ _ h hb => ?_
   exact (h hb).trans c.Ewf c.Δwf ⟨_, .eta a4⟩
 
-theorem tryEtaExpansion.WF {c : VContext} {s : VState}
+theorem tryEtaExpansion.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (tryEtaExpansion e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
   simp [tryEtaExpansion, orM, toBool]
@@ -244,7 +244,7 @@ theorem tryEtaExpansion.WF {c : VContext} {s : VState}
   split <;> [exact .pure fun _ => h rfl; skip]
   exact (tryEtaExpansionCore.WF he₂ he₁).mono fun _ _ _ h hb => (h hb).symm
 
-theorem getSortLevel.WF
+theorem getSortLevel.WF [VEnv.Injective]
     (he : c.TrExprS e e') : (getSortLevel e).WF c s fun l _ =>
       ∃ u', VLevel.ofLevel c.lparams l = some u' ∧ c.HasType e' (.sort u') := by
   refine (inferType.WF he).bind fun ty _ le ⟨ty', _, _, h1, h2⟩ => ?_
@@ -253,7 +253,7 @@ theorem getSortLevel.WF
   let .sort hu := h3
   exact .pure ⟨_, hu, h2.defeqU_r c.Ewf c.Δwf h4.symm⟩
 
-theorem isProp.WF
+theorem isProp.WF [VEnv.Injective]
     (he : c.TrExprS e e') : (isProp e).WF c s fun b _ => b → c.HasType e' (.sort .zero) := by
   refine (getSortLevel.WF he).bind fun l _ le ⟨u', hu, h⟩ => .pure fun H => ?_
   exact h.defeqU_r c.Ewf c.Δwf
@@ -261,7 +261,7 @@ theorem isProp.WF
 
 /-- A complete application of a constructor of a non-recursive structure without indices: its
 block, its arguments as parameters and fields, and its type. -/
-theorem _root_.Lean4Lean.TypeChecker.VContext.structCtorApp (c : VContext) {e₂ : Expr}
+theorem _root_.Lean4Lean.TypeChecker.VContext.structCtorApp [VEnv.Injective] (c : VContext) {e₂ : Expr}
     {e₂' : VExpr} (he₂ : c.TrExprS e₂ e₂') {f : Name} {lsF : List Level}
     (hf : e₂.getAppFn = .const f lsF) {fInfo : ConstructorVal}
     (hci : c.env.find? f = some (.ctorInfo fInfo))
@@ -324,7 +324,7 @@ theorem _root_.Lean4Lean.TypeChecker.VContext.structCtorApp (c : VContext) {e₂
   rw [← hrsAF, ← Expr.getAppArgsRevList_reverse]
   exact (Lean4Lean.List.Forall₂.reverse (R := TrExprS c.venv c.lparams c.vlctx)).2 hrs
 
-theorem tryEtaStructCore.WF {c : VContext} {s : VState}
+theorem tryEtaStructCore.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (tryEtaStructCore e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
   unfold tryEtaStructCore
@@ -470,7 +470,7 @@ theorem tryEtaStructCore.WF {c : VContext} {s : VState}
         (fun j hj => hPA j hj fun j' hj' hm f hf => (hall j' (by omega)).1 hm f hf)
         (fun j hj => (hall j (by omega)).2 hj)⟩
 
-theorem tryEtaStruct.WF {c : VContext} {s : VState}
+theorem tryEtaStruct.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (tryEtaStruct e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
   simp [tryEtaStruct, orM, toBool]
@@ -478,7 +478,7 @@ theorem tryEtaStruct.WF {c : VContext} {s : VState}
   split <;> [exact .pure fun _ => h rfl; skip]
   exact (tryEtaStructCore.WF he₂ he₁).mono fun _ _ _ h hb => (h hb).symm
 
-theorem isDefEqApp.WF {c : VContext} {s : VState}
+theorem isDefEqApp.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (isDefEqApp e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
   unfold isDefEqApp; split <;> [skip; exact .pure nofun]
@@ -488,7 +488,7 @@ theorem isDefEqApp.WF {c : VContext} {s : VState}
   have ⟨_, he₂'⟩ := AppStack.build <| e₂.mkAppList_getAppArgsList ▸ he₂
   refine (isDefEq.WF he₁'.tr he₂'.tr).bind fun _ _ _ h => ?_
   split <;> [skip; exact .pure nofun]
-  let rec loop.WF {s args₁ args₂ f₁ f₂ f₁' f₂' eq i} (l₁ r₁ l₂ r₂)
+  let rec loop.WF [VEnv.Injective] {s args₁ args₂ f₁ f₂ f₁' f₂' eq i} (l₁ r₁ l₂ r₂)
       (h₁ : args₁.toList = l₁ ++ r₁) (hi₁ : l₁.length = i)
       (h₂ : args₂.toList = l₂ ++ r₂) (hi₂ : l₂.length = i)
       (he₁ : AppStack c.venv c.lparams c.vlctx (.mkAppList f₁ l₁) f₁' r₁)
@@ -523,7 +523,7 @@ theorem isDefEqApp.WF {c : VContext} {s : VState}
   simp [Expr.getAppArgs_toList, Expr.mkAppList_getAppArgsList] at h2
   exact h2 hb _ he₁ _ he₂
 
-theorem isDefEqProofIrrel.WF {c : VContext} {s : VState}
+theorem isDefEqProofIrrel.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (isDefEqProofIrrel e₁ e₂) fun b _ => b = .true → c.IsDefEqU e₁' e₂' := by
   unfold isDefEqProofIrrel
@@ -563,7 +563,7 @@ theorem _root_.Lean4Lean.TypeChecker.ReductionStatus.WF.bool
   | .false => ⟨H1, H2⟩
   | .true => H rfl
 
-theorem _root_.Lean4Lean.TypeChecker.ReductionStatus.WF.defeq
+theorem _root_.Lean4Lean.TypeChecker.ReductionStatus.WF.defeq [VEnv.Injective]
     (h1 : c.IsDefEqU e₁' e₁'') (h2 : c.IsDefEqU e₂' e₂'')
     (H : ReductionStatus.WF c e₁' e₂' ac r) : ReductionStatus.WF c e₁'' e₂'' ac r :=
   match r, H with
@@ -573,7 +573,7 @@ theorem _root_.Lean4Lean.TypeChecker.ReductionStatus.WF.defeq
     ⟨a2.defeq c.Ewf c.Δwf h1, a3.defeq c.Ewf c.Δwf h2⟩
   | .true, h => h1.symm.trans c.Ewf c.Δwf h |>.trans c.Ewf c.Δwf h2
 
-theorem lazyDeltaReductionStep.WF {c : VContext} {s : VState}
+theorem lazyDeltaReductionStep.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     (lazyDeltaReductionStep e₁ e₂).WF c s fun r _ => r.WF c e₁' e₂' true := by
   unfold lazyDeltaReductionStep
@@ -630,7 +630,7 @@ theorem lazyDeltaReductionStep.WF {c : VContext} {s : VState}
   split <;> [skip; exact cacheFailure.WF.lift.bind fun _ _ _ _ => hF1]
   exact .pure <| h ‹_›
 
-theorem isNatZero_wf {c : VContext} (H : isNatZero e) (h : c.TrExprS e e') : e' = .natZero := by
+theorem isNatZero_wf [VEnv.Injective] {c : VContext} (H : isNatZero e) (h : c.TrExprS e e') : e' = .natZero := by
   have h1 : c.TrExprS (.lit (.natVal 0)) e' := by
     simp [isNatZero] at H; obtain H|H := H
     · have := h.eqv H; exact .lit (this.nat_of_natZero c.Ewf c.hasPrimitives) this
@@ -651,7 +651,7 @@ theorem isNatSuccOf?_wf {c : VContext} (H : isNatSuccOf? e = some e₁)
     simp at b3; subst b3; simp at b2; subst b2
     exact ⟨_, a4, rfl⟩
 
-theorem isDefEqOffset.WF {c : VContext} {s : VState}
+theorem isDefEqOffset.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     (isDefEqOffset e₁ e₂).WF c s fun b _ => b = .true → c.IsDefEqU e₁' e₂' := by
   unfold isDefEqOffset; split
@@ -666,7 +666,7 @@ theorem isDefEqOffset.WF {c : VContext} {s : VState}
     let ⟨_, _, c1, c2⟩ := de'.hasType.1.app_inv c.Ewf c.Δwf
     exact ⟨_, c1.appDF <| (h hb).of_l c.Ewf c.Δwf c2⟩
 
-theorem lazyDeltaReduction.loop.WF {c : VContext} {s : VState}
+theorem lazyDeltaReduction.loop.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     (lazyDeltaReduction.loop e₁ e₂ n).WF c s fun r _ => r.WF c e₁' e₂' := by
   induction n generalizing s e₁ e₂ e₁' e₂' with | zero => exact .throw | succ n ih
@@ -726,7 +726,7 @@ theorem _root_.Lean4Lean.TrExprS.appConst_inv {env : VEnv} {Us : List Name} {Δ 
 
 /-- Any two terms of a type whose head is an inductive type of a block, with a single fieldless
 constructor, no indices and no recursion, are definitionally equal. -/
-theorem _root_.Lean4Lean.TypeChecker.VContext.unitLike (c : VContext) {tType : Expr} {tT' : VExpr} {I : Name} {lsI : List Level}
+theorem _root_.Lean4Lean.TypeChecker.VContext.unitLike [VEnv.Injective] (c : VContext) {tType : Expr} {tT' : VExpr} {I : Name} {lsI : List Level}
     (hT : c.TrExprS tType tT') (hI : tType.getAppFn = .const I lsI) {v : InductiveVal}
     (hci : c.env.find? I = some (.inductInfo v)) (hrec : v.isRec = false) {cn : Name}
     (hctors : v.ctors = [cn]) (hidx : v.numIndices = 0) {w : ConstructorVal}
@@ -757,7 +757,7 @@ theorem _root_.Lean4Lean.TypeChecker.VContext.unitLike (c : VContext) {tType : E
   have hlsw := VLevel.WF.of_mapM_ofLevel hls'
   exact ⟨_, c.Ewf.unitLike c.Δwf.toCtx hs ht hc'eq hi hrec' hfields hlsw hlen h₁ h₂⟩
 
-theorem isDefEqUnitLike.WF {c : VContext} {s : VState}
+theorem isDefEqUnitLike.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (isDefEqUnitLike e₁ e₂) fun b _ => b = .true → c.IsDefEqU e₁' e₂' := by
   unfold isDefEqUnitLike
@@ -773,7 +773,7 @@ theorem isDefEqUnitLike.WF {c : VContext} {s : VState}
   exact c.unitLike b2 hI hci rfl rfl rfl hcci rfl (a4.defeqU_r c.Ewf c.Δwf b3.symm)
     (d4.defeqU_r c.Ewf c.Δwf (h hb).symm)
 
-theorem lazyDeltaProjReduction.finish.WF {c : VContext} {s : VState}
+theorem lazyDeltaProjReduction.finish.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS (.proj n i e₁) e₁') (he₂ : c.TrExprS (.proj n i e₂) e₂') :
     (finish n i e₁ e₂).WF c s fun r _ => r → c.IsDefEqU e₁' e₂' := by
   unfold finish
@@ -788,7 +788,7 @@ theorem lazyDeltaProjReduction.finish.WF {c : VContext} {s : VState}
   exact (isDefEqCore.WF a2 b2).mono fun _ _ _ h hb =>
     a3.symm.trans c.Ewf c.Δwf <| (h hb).trans c.Ewf c.Δwf b3
 
-theorem lazyDeltaProjReduction.loop.WF {c : VContext} {s : VState}
+theorem lazyDeltaProjReduction.loop.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS (.proj sn i e₁) e₁') (he₂ : c.TrExprS (.proj sn i e₂) e₂') :
     (loop sn i e₁ e₂ n).WF c s fun r _ => r → c.IsDefEqU e₁' e₂' := by
   induction n generalizing s e₁ e₂ e₁' e₂' with | zero => exact .throw | succ n ih
@@ -811,7 +811,7 @@ theorem lazyDeltaProjReduction.loop.WF {c : VContext} {s : VState}
     exact VEnv.IsDefEqU.trans c.Ewf c.Δwf.toCtx ⟨_, f1⟩ <|
       VEnv.IsDefEqU.trans c.Ewf c.Δwf.toCtx (h hb) ⟨_, f2.symm⟩
 
-theorem isDefEqCore'.WF {c : VContext} {s : VState}
+theorem isDefEqCore'.WF [VEnv.Injective] {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (isDefEqCore' e₁ e₂) fun b _ => b = true → c.IsDefEqU e₁' e₂' := by
   unfold isDefEqCore'; extract_lets F1

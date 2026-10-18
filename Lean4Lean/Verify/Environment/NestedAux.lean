@@ -368,7 +368,7 @@ arguments `args`. `ys` translates those arguments over the parameters, and they 
 literal binders (`hargTy`, from the kernel's check of the occurrence). The auxiliary type `T` is the
 translation of what the elimination made, and its declared parameters agree with the block's
 (`hTag`, from the check of the translated block). -/
-theorem VInductiveType.AuxWF.of_created {safety : DefinitionSafety} {C : ConstMap} {Q : Bool}
+theorem VInductiveType.AuxWF.of_created [VEnv.Injective] {safety : DefinitionSafety} {C : ConstMap} {Q : Bool}
     {venv : VEnv} (hTr : TrEnv' safety C Q venv) {E : VEnv} (hE : E.WF) (hle : venv ≤ E)
     {d : VInductDecl} (hP : E.IsTele d.uvars [] d.params)
     {CL : Literal → Prop} (hCL : ∀ l, venv.ContainsLits l → CL l) {Us : List Name}

@@ -41,7 +41,7 @@ theorem _root_.Lean4Lean.VEnv.ReflectsNatNatNat.applyLit {env : VEnv} {fc : Name
   simp [VExpr.instL] at h
   exact ⟨_, h⟩
 
-theorem TypeChecker.VContext.natBinLit {c : VContext} {fc : Name} {f : Nat → Nat → Nat}
+theorem TypeChecker.VContext.natBinLit [VEnv.Injective] {c : VContext} {fc : Name} {f : Nat → Nat → Nat}
     (H : c.venv.ReflectsNatNatNat fc f) (hfc : c.venv.contains fc) (a b : Nat) :
     c.IsDefEqU (((VExpr.const fc []).app (.natLit a)).app (.natLit b)) (.natLit (f a b)) :=
   H.applyLit c.Ewf.ordered hfc a b
@@ -49,7 +49,7 @@ theorem TypeChecker.VContext.natBinLit {c : VContext} {fc : Name} {f : Nat → N
 /-- The `Bool`-valued counterpart, for the decision procedures a `Condition` runs on: a
 `reflectNatNat` condition decides by `Nat.ble` or `Nat.beq`, and `WF_ite`/`WF_dite` only fire
 once that decision is known to be a literal. -/
-theorem TypeChecker.VContext.natBinLitBool {c : VContext} {fc : Name} {f : Nat → Nat → Bool}
+theorem TypeChecker.VContext.natBinLitBool [VEnv.Injective] {c : VContext} {fc : Name} {f : Nat → Nat → Bool}
     (H : c.venv.ReflectsNatNatBool fc f) (hfc : c.venv.contains fc) (a b : Nat) :
     c.IsDefEqU (((VExpr.const fc []).app (.natLit a)).app (.natLit b)) (.boolLit (f a b)) := by
   obtain ⟨_, h⟩ := (H hfc).2 a b
@@ -60,7 +60,7 @@ theorem TypeChecker.VContext.natBinLitBool {c : VContext} {fc : Name} {f : Nat �
 
 /-- Introduce a `Nat`-typed probe variable. Every primitive branch does this once or twice, and
 its two side conditions -- `Nat`'s translation, and that it is a type -- are always the same. -/
-theorem TypeChecker.M.WF.withNatProbe {c : VContext} {m : MLCtx} [cwf : c.MLCWF m]
+theorem TypeChecker.M.WF.withNatProbe [VEnv.Injective] {c : VContext} {m : MLCtx} [cwf : c.MLCWF m]
     {s₀ s : VState} {α} {f : Expr → M α} {Q} {name : Name}
     (hprim : c.venv.HasPrimitives) (hnat : c.venv.contains ``Nat) (hs : s₀ ≤ s)
     (H : ∀ id, let m' := m.vlam id name q(Nat) .nat .default
@@ -75,7 +75,7 @@ theorem TypeChecker.M.WF.withNatProbe {c : VContext} {m : MLCtx} [cwf : c.MLCWF 
     (hprim.natIsType c.Ewf.ordered hnat (c.withMLC m).Δwf.toCtx) hs.1 H hQ
 
 /-- The `Bool` counterpart, for the operator the bitwise operations probe. -/
-theorem TypeChecker.M.WF.withBoolProbe {c : VContext} {m : MLCtx} [cwf : c.MLCWF m]
+theorem TypeChecker.M.WF.withBoolProbe [VEnv.Injective] {c : VContext} {m : MLCtx} [cwf : c.MLCWF m]
     {s₀ s : VState} {α} {f : Expr → M α} {Q} {name : Name}
     (hprim : c.venv.HasPrimitives) (hbool : c.venv.contains ``Bool) (hs : s₀ ≤ s)
     (H : ∀ id, let m' := m.vlam id name q(Bool) .bool .default
@@ -517,7 +517,7 @@ theorem TrExprS.appN {env : VEnv} {Us Δ} (henv : VEnv.Ordered env)
 /-- Congruence in an application's argument. The one place the packed argument has to be
 converted is here: the recognizer's checks are read at the binder, which closing sends to `P.arg`
 on the nose, while the value chain ends at `a₀`, and only the packer's beta equation joins them. -/
-theorem VEnv.IsDefEqU.app_arg {env : VEnv} {U Γ} (henv : VEnv.WF env)
+theorem VEnv.IsDefEqU.app_arg [VEnv.Injective] {env : VEnv} {U Γ} (henv : VEnv.WF env)
     (hΓ : OnCtx Γ (env.IsType U)) {f a a' A B}
     (hf : env.HasType U Γ f (.forallE A B)) (ha : env.HasType U Γ a A)
     (h : env.IsDefEqU U Γ a a') : env.IsDefEqU U Γ (f.app a) (f.app a') :=
@@ -540,7 +540,7 @@ substitution.
 `As` is in telescope order, so the context it opens is `As.reverse ++ Γ`; `OnCtx` there is what
 an `MLCtx.WF` supplies, and it is needed because `VEnv.Ctx.SubstEq` asks for each domain to be a
 type in *its own* context, which the closed-off application cannot say. -/
-theorem VExpr.lams_appN {env : VEnv} {U} {Γ₀ : List VExpr} (henv : VEnv.WF env)
+theorem VExpr.lams_appN [VEnv.Injective] {env : VEnv} {U} {Γ₀ : List VExpr} (henv : VEnv.WF env)
     (hΓ₀ : OnCtx Γ₀ (env.IsType U))
     {As : List VExpr} {Γ} (hctx : OnCtx (As.reverse ++ Γ) (env.IsType U))
     {σ} (hσ : VEnv.Ctx.SubstEq env U Γ₀ σ σ Γ)
@@ -576,7 +576,7 @@ theorem VExpr.lams_appN {env : VEnv} {U} {Γ₀ : List VExpr} (henv : VEnv.WF en
 than recovering it from the application's own well-typedness -- which is the obligation being
 avoided. `hσm` pays for that once, for the measure; every other term closed at the same recursion
 arguments (the packer above all) reuses the substitution and the argument typings it produced. -/
-theorem VExpr.lams_appN' {env : VEnv} {U} {Γ₀ : List VExpr} (henv : VEnv.WF env)
+theorem VExpr.lams_appN' [VEnv.Injective] {env : VEnv} {U} {Γ₀ : List VExpr} (henv : VEnv.WF env)
     (hΓ₀ : OnCtx Γ₀ (env.IsType U))
     {As : List VExpr} {Γ} (hctx : OnCtx (As.reverse ++ Γ) (env.IsType U))
     {σ} (hσ : VEnv.Ctx.SubstEq env U Γ₀ σ σ Γ)
@@ -636,7 +636,7 @@ structure TypeChecker.VContext.Ext (c : VContext) where
 /-- The checking environment itself, which is the extension every branch but `Nat.bitwise`
 takes. Reducible, so that a statement read at `c.self` is the one read at `c` on the nose and
 the branches that take it need no rewriting. -/
-@[reducible] def TypeChecker.VContext.self (c : VContext) : c.Ext := ⟨c.venv, .rfl, c.Ewf⟩
+@[reducible] def TypeChecker.VContext.self [VEnv.Injective] (c : VContext) : c.Ext := ⟨c.venv, .rfl, c.Ewf⟩
 
 /-- An extension is one of the environment, not of the context, so it transports along any change
 of context that keeps the environment: opening a binder, or the `withMLC_self` a recognizer opens
@@ -681,7 +681,7 @@ translates if it is in the environment, so a recurrence may name `Nat.add`, `Nat
 The arguments' values are asked for at *any* translation of them, so that nested applications
 compose without a uniqueness side condition -- the packer a recursive call is applied to has
 none. -/
-theorem TypeChecker.VContext.Ext.natBinLitTr {c : VContext} (E : c.Ext) {Δ : VLCtx}
+theorem TypeChecker.VContext.Ext.natBinLitTr [VEnv.Injective] {c : VContext} (E : c.Ext) {Δ : VLCtx}
     {σ : VExpr.Subst} {C : Name} {F : Nat → Nat → Nat} {A B : Expr} {r : VExpr} (a b : Nat)
     (hrefl : c.venv.ReflectsNatNatNat C F)
     (hA : ∀ {A' : VExpr}, Lean4Lean.TrExprS c.venv c.lparams Δ A A' → E.WF₀ (A'.subst σ) →
@@ -821,7 +821,7 @@ theorem MLCtx.mkLambda_natBinderTypes {env : VEnv} {Us : List Name} :
     have := MLCtx.dropN_toCtx_length (n := n) (hn := Nat.le_of_succ_le_succ hn)
     rw [hctx] at this; simp [hlen] at this; omega
 
-theorem lambdaTelescope.loop.WF {c : VContext} {α} {k : Array Expr → Expr → M α}
+theorem lambdaTelescope.loop.WF [VEnv.Injective] {c : VContext} {α} {k : Array Expr → Expr → M α}
     {Q : α → VState → Prop} {s₀ : VState} {m₀ : MLCtx} [c.MLCWF m₀] {e₀ : Expr} {e₀' : VExpr}
     (H : ∀ (fvs : Array Expr) {m' : MLCtx} [c.MLCWF m'] {s' : VState} {body} body'
       {n} (hn : n ≤ m'.length) {As}, s₀.ngen ≤ s'.ngen → m'.dropN n hn = m₀ →
@@ -896,7 +896,7 @@ them, and the re-abstraction because `unfoldNatWellFounded` returns
 
 `lambdaTelescope.Inv` adds the translation side, which is what a caller that closes the
 telescope off again needs: the domains, the lift over them, and the variables' translations. -/
-theorem lambdaTelescope.WF {c : VContext} {α} {k : Array Expr → Expr → M α}
+theorem lambdaTelescope.WF [VEnv.Injective] {c : VContext} {α} {k : Array Expr → Expr → M α}
     {Q : α → VState → Prop} {m : MLCtx} [c.MLCWF m] {s : VState} {e : Expr} {e' : VExpr}
     (he : (c.withMLC m).TrExprS e e')
     (H : ∀ (fvs : Array Expr) {m'} [c.MLCWF m'] {s' body} body' {n} (hn : n ≤ m'.length) {As},
@@ -923,7 +923,7 @@ namespace Primitive
 /-- Peel one argument off an application whose head has a known `forallE` type. `app_inv` only
 returns the domain up to defeq, so this is where `forallE_inv` moves the argument's typing onto
 the head's recorded domain -- which is what makes the argument usable in a substitution. -/
-theorem _root_.Lean4Lean.VExpr.WF.app_inv' {env : VEnv} {U Γ} (henv : env.WF)
+theorem _root_.Lean4Lean.VExpr.WF.app_inv' [VEnv.Injective] {env : VEnv} {U Γ} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {f a A B : VExpr}
     (hf : env.HasType U Γ f (.forallE A B)) (H : VExpr.WF env U Γ (.app f a)) :
     env.HasType U Γ a A ∧ env.HasType U Γ (.app f a) (B.inst a) := by
@@ -943,7 +943,7 @@ theorem _root_.Lean4Lean.VExpr.WF.lam_inv' {env : VEnv} (henv : env.Ordered)
 back from `app_inv` only up to defeq, so `forallE_inv` is what lets it be used at the binder's
 own type. Fuel recursions need this after a conditional has been evaluated to one of its
 branches, which is a lambda applied to the guard's proof. -/
-theorem _root_.Lean4Lean.VExpr.WF.betaU {env : VEnv} (henv : env.WF)
+theorem _root_.Lean4Lean.VExpr.WF.betaU [VEnv.Injective] {env : VEnv} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {A body v : VExpr}
     (H : VExpr.WF env U Γ ((VExpr.lam A body).app v)) :
     env.HasType U Γ v A ∧ env.IsDefEqU U Γ ((VExpr.lam A body).app v) (body.inst v) := by
@@ -1008,63 +1008,63 @@ def boolb (h : c.venv.contains ``Bool) (b : Bool) :
     TrTerm c.venv c.lparams Δ (Lean.toExpr b) .bool := .boolLit c.hasPrimitives h b
 
 /-- `Nat` as a type bundle at whatever depth the caller is at, and the `IsType` behind it. -/
-theorem hNatT (h : c.venv.contains ``Nat) {{Δ : VLCtx}}
+theorem hNatT [VEnv.Injective] (h : c.venv.contains ``Nat) {{Δ : VLCtx}}
     (hΔ : OnCtx Δ.toCtx (c.venv.IsType c.lparams.length)) :
     c.venv.IsType c.lparams.length Δ.toCtx VExpr.nat :=
   c.hasPrimitives.natIsType c.Ewf.ordered h hΔ
 
-def trNat (hΔ : OnCtx Δ.toCtx (c.venv.IsType c.lparams.length))
+def trNat [VEnv.Injective] (hΔ : OnCtx Δ.toCtx (c.venv.IsType c.lparams.length))
     (h : c.venv.contains ``Nat) : TrTy c.venv c.lparams Δ q(Nat) :=
   .of (c.hasPrimitives.trNat c.Ewf.ordered h) (hNatT h hΔ)
 
 /-- The primitives that appear as *operators* in someone else's recurrence: `Nat.pred` in
 `Nat.sub`'s, `Nat.add` in `Nat.mul`'s, and so on. Their typings come from the reflection
 `HasPrimitives` records, since they are not constructors. -/
-def predb (h : c.venv.contains ``Nat.pred) :
+def predb [VEnv.Injective] (h : c.venv.contains ``Nat.pred) :
     TrTerm c.venv c.lparams Δ q(Nat.pred) vexpr(Nat → Nat) :=
   .ofConst c.Ewf.ordered (c.hasPrimitives.natPred h).1
 
-def addb (h : c.venv.contains ``Nat.add) :
+def addb [VEnv.Injective] (h : c.venv.contains ``Nat.add) :
     TrTerm c.venv c.lparams Δ q(Nat.add) vexpr(Nat → Nat → Nat) :=
   .ofConst c.Ewf.ordered (c.hasPrimitives.natAdd h).1
 
-def divb (h : c.venv.contains ``Nat.div) :
+def divb [VEnv.Injective] (h : c.venv.contains ``Nat.div) :
     TrTerm c.venv c.lparams Δ q(Nat.div) vexpr(Nat → Nat → Nat) :=
   .ofConst c.Ewf.ordered (c.hasPrimitives.natDiv h).1
 
-def modb (h : c.venv.contains ``Nat.mod) :
+def modb [VEnv.Injective] (h : c.venv.contains ``Nat.mod) :
     TrTerm c.venv c.lparams Δ q(Nat.mod) vexpr(Nat → Nat → Nat) :=
   .ofConst c.Ewf.ordered (c.hasPrimitives.natMod h).1
 
-def mulb (h : c.venv.contains ``Nat.mul) :
+def mulb [VEnv.Injective] (h : c.venv.contains ``Nat.mul) :
     TrTerm c.venv c.lparams Δ q(Nat.mul) vexpr(Nat → Nat → Nat) :=
   .ofConst c.Ewf.ordered (c.hasPrimitives.natMul h).1
 
 /-- The codomain bundles, at the depth an arrow's body sits: two binders for the binary
 primitives, one for `Nat.pred`. -/
-def natCod (h : c.venv.contains ``Nat) :
+def natCod [VEnv.Injective] (h : c.venv.contains ``Nat) :
     TrTy c.venv c.lparams [(none, .vlam .nat), (none, .vlam .nat)] q(Nat) :=
   .of (c.hasPrimitives.trNat c.Ewf.ordered h)
     (have := ⟨trivial, hNatT h trivial⟩; hNatT h ⟨this, hNatT h this⟩)
 
-def natCod1 (h : c.venv.contains ``Nat) :
+def natCod1 [VEnv.Injective] (h : c.venv.contains ``Nat) :
     TrTy c.venv c.lparams [(none, .vlam .nat)] q(Nat) :=
   .of (c.hasPrimitives.trNat c.Ewf.ordered h) (hNatT h ⟨trivial, hNatT h trivial⟩)
 
-def boolCod (h : c.venv.contains ``Nat) (hb : c.venv.contains ``Bool) :
+def boolCod [VEnv.Injective] (h : c.venv.contains ``Nat) (hb : c.venv.contains ``Bool) :
     TrTy c.venv c.lparams [(none, .vlam .nat), (none, .vlam .nat)] q(Bool) :=
   .of (c.hasPrimitives.trBool c.Ewf.ordered hb)
     (have := ⟨trivial, hNatT h trivial⟩;
       c.hasPrimitives.boolIsType c.Ewf.ordered hb ⟨this, hNatT h this⟩)
 
 /-- `Bool` as a type bundle, the counterpart of `trNat`. -/
-def trBool (hΔ : OnCtx Δ.toCtx (c.venv.IsType c.lparams.length))
+def trBool [VEnv.Injective] (hΔ : OnCtx Δ.toCtx (c.venv.IsType c.lparams.length))
     (hb : c.venv.contains ``Bool) : TrTy c.venv c.lparams Δ q(Bool) :=
   .of (c.hasPrimitives.trBool c.Ewf.ordered hb)
     (c.hasPrimitives.boolIsType c.Ewf.ordered hb hΔ)
 
 /-- `Bool → Bool → Bool`, the type of `Nat.bitwise`'s operator argument. -/
-def boolOp2Ty (hb : c.venv.contains ``Bool) :
+def boolOp2Ty [VEnv.Injective] (hb : c.venv.contains ``Bool) :
     TrTy c.venv c.lparams [] q(Bool → Bool → Bool) :=
   let B0 : TrTy c.venv c.lparams [] q(Bool) := trBool (Δ := []) trivial hb
   let B1 : TrTy c.venv c.lparams [(none, .vlam .bool)] q(Bool) :=
@@ -1076,13 +1076,13 @@ def boolOp2Ty (hb : c.venv.contains ``Bool) :
   -- own typing is read off the binder, and every consumer wants it in that form
   ⟨VExpr.boolOp2, OP.trS, OP.isType⟩
 
-@[simp] theorem boolOp2Ty_tgt (hb : c.venv.contains ``Bool) :
+@[simp] theorem boolOp2Ty_tgt [VEnv.Injective] (hb : c.venv.contains ``Bool) :
     (boolOp2Ty hb).tgt = VExpr.boolOp2 := rfl
 
 /-- `Nat.bitwise`'s type. It is the one primitive whose type is not an arrow of `Nat`s: the
 operator it folds is an argument, which is exactly why its spec has to speak about every operator
 a later environment might supply. -/
-def bitwiseTy (hnat : c.venv.contains ``Nat) (hb : c.venv.contains ``Bool) :
+def bitwiseTy [VEnv.Injective] (hnat : c.venv.contains ``Nat) (hb : c.venv.contains ``Bool) :
     TrTy c.venv c.lparams [] q((Bool → Bool → Bool) → Nat → Nat → Nat) :=
   let B0 : TrTy c.venv c.lparams [] q(Bool) := trBool (Δ := []) trivial hb
   let B1 : TrTy c.venv c.lparams [(none, .vlam .bool)] q(Bool) :=
@@ -1100,21 +1100,21 @@ def bitwiseTy (hnat : c.venv.contains ``Nat) (hb : c.venv.contains ``Bool) :
   .forallE OP (.forallE N0 (.forallE N1 N2))
 
 /-- The checked type pins `ci'.type` for `Nat.bitwise`, as `mkTyEq` does for the arrows. -/
-theorem Data.mkTyEqBitwise (P : Data v ci' c) (hnat : c.venv.contains ``Nat)
+theorem Data.mkTyEqBitwise [VEnv.Injective] (P : Data v ci' c) (hnat : c.venv.contains ``Nat)
     (hb : c.venv.contains ``Bool)
     (h2 : eraseMData v.type == q((Bool → Bool → Bool) → Nat → Nat → Nat)) :
     ci'.type = .forallE .boolOp2 .natOp2 :=
   (P.htype.eraseMData.eqv h2).unique (by simp [TrExprS.IsUnique]) (bitwiseTy hnat hb).trS
 
 /-- The definition's value as a bundle, at whatever local context the probes have built up. -/
-def Data.hv (P : Data v ci' c) {T} (eq : ci'.type = T) (m : MLCtx) [cwf : c.MLCWF m] :
+def Data.hv [VEnv.Injective] (P : Data v ci' c) {T} (eq : ci'.type = T) (m : MLCtx) [cwf : c.MLCWF m] :
     TrTerm c.venv c.lparams m.vlctx v.value T :=
   TrTerm.of_nil' c.Ewf m.noBV cwf.wf.tr.wf P.hvalue (P.hu ▸ eq ▸ P.hci)
 
 /-- The checked type pins `ci'.type`: `TrExprS.eqv` moves the translation onto the shape the
 checker compared against, and `unique` quotes determinism against the arrow `natArrow2` builds.
 Generic in the codomain, so `Nat.beq`/`Nat.ble` pass a `Bool` bundle instead. -/
-theorem Data.mkTyEq (P : Data v ci' c) (hnat : c.venv.contains ``Nat) {codSrc : Expr}
+theorem Data.mkTyEq [VEnv.Injective] (P : Data v ci' c) (hnat : c.venv.contains ``Nat) {codSrc : Expr}
     (hcodU : TrExprS.IsUnique codSrc)
     (hcod : TrTy c.venv c.lparams [(none, .vlam .nat), (none, .vlam .nat)] codSrc)
     {n₁ n₂ : Name} {bi₁ bi₂ : BinderInfo}
@@ -1125,7 +1125,7 @@ theorem Data.mkTyEq (P : Data v ci' c) (hnat : c.venv.contains ``Nat) {codSrc : 
     (.natArrow2 c.Ewf.ordered c.hasPrimitives hnat hcod)
 
 /-- The unary version, for `Nat.pred`. -/
-theorem Data.mkTyEq1 (P : Data v ci' c) (hnat : c.venv.contains ``Nat) {codSrc : Expr}
+theorem Data.mkTyEq1 [VEnv.Injective] (P : Data v ci' c) (hnat : c.venv.contains ``Nat) {codSrc : Expr}
     (hcodU : TrExprS.IsUnique codSrc)
     (hcod : TrTy c.venv c.lparams [(none, .vlam .nat)] codSrc)
     {n₁ : Name} {bi₁ : BinderInfo}
@@ -1153,7 +1153,7 @@ structure PrimitiveResult (checked : VEnv) (v : DefinitionVal) (ci' : VDefVal) :
 /-- What every `ReflectsNatNatNat` branch has to produce, once the guards have fired: its spec's
 entry, the type it checked, and the reflection of the *value* in the checked environment.
 `preserves`' quantification over extensions is discharged here, so a branch never sees it. -/
-theorem Data.mkResult (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.levelParams = [])
+theorem Data.mkResult [VEnv.Injective] (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.levelParams = [])
     (hnat : c.venv.contains ``Nat)
     (hmem : (v.name, .reflectsNatNatNat F) ∈ primSpecs)
     (tyeq : ci'.type = vexpr(Nat → Nat → Nat))
@@ -1167,7 +1167,7 @@ theorem Data.mkResult (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.leve
     hnm ▸ VEnv.ReflectsNatNatNat'.toConst hle c.Ewf hwf c.hasPrimitives hnat huv hciv
       (hnm ▸ hadd) (href (P.hu ▸ tyeq ▸ P.hci))
 
-theorem Data.mkResult1 (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.levelParams = [])
+theorem Data.mkResult1 [VEnv.Injective] (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.levelParams = [])
     (hnat : c.venv.contains ``Nat)
     (hmem : (v.name, .reflectsNatNat F) ∈ primSpecs)
     (tyeq : ci'.type = vexpr(Nat → Nat))
@@ -1181,7 +1181,7 @@ theorem Data.mkResult1 (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.lev
     hnm ▸ VEnv.ReflectsNatNat'.toConst hle c.Ewf hwf c.hasPrimitives hnat huv hciv
       (hnm ▸ hadd) (href (P.hu ▸ tyeq ▸ P.hci))
 
-theorem Data.mkResultBool (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.levelParams = [])
+theorem Data.mkResultBool [VEnv.Injective] (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.levelParams = [])
     (hnat : c.venv.contains ``Nat)
     (hmem : (v.name, .reflectsNatNatBool F) ∈ primSpecs)
     (tyeq : ci'.type = vexpr(Nat → Nat → Bool))
@@ -1199,7 +1199,7 @@ theorem Data.mkResultBool (P : Data v ci' c) {F} (hok' : v.safety = .safe ∧ v.
 well-formed extension might supply. The second half is what forced the recognizer's ground layer
 to be read in an extension rather than in `c.venv`; here it is handed on unchanged, with the
 constant swapped for the value by the equation `addDefEq` adds. -/
-theorem Data.mkResultBitwise (P : Data v ci' c) (hok' : v.safety = .safe ∧ v.levelParams = [])
+theorem Data.mkResultBitwise [VEnv.Injective] (P : Data v ci' c) (hok' : v.safety = .safe ∧ v.levelParams = [])
     (hnat : c.venv.contains ``Nat)
     (hmem : (v.name, PrimSpec.reflectsBitwise) ∈ primSpecs)
     (tyeq : ci'.type = .forallE .boolOp2 .natOp2)
@@ -1262,7 +1262,7 @@ abbrev natGoType (le' : VExpr) : VExpr :=
 /-- What `go`'s recorded type says about the arguments of a well formed call. `app_inv` alone
 gives them types only up to defeq, so each is moved onto the recorded domain in turn -- which is
 what makes them usable in a substitution, and what types the call itself. -/
-theorem goArgs {c : VContext} {go' le' : VExpr}
+theorem goArgs [VEnv.Injective] {c : VContext} {go' le' : VExpr}
     (hgoT : ∀ {Γ : List VExpr}, c.venv.HasType c.lparams.length Γ go' (natGoType le'))
     (hleC : le'.ClosedN) {bb pf f x pf' : VExpr}
     (hwf : c.WF₀ (natGoCall go' bb pf f x pf')) :
@@ -1297,7 +1297,7 @@ theorem goArgs {c : VContext} {go' le' : VExpr}
 lemma. `hstep` is the branch's own equation, already closed at literals and evaluated; everything
 above it (the conditional, the beta, the `Nat.sub` reflection) is the branch's business, and
 everything below it -- the induction, and that the arithmetic matches -- is this. -/
-theorem natFuelRec {c : VContext} {go' le' : VExpr} {F : Nat → Nat → Nat} {h : Nat → Nat}
+theorem natFuelRec [VEnv.Injective] {c : VContext} {go' le' : VExpr} {F : Nat → Nat → Nat} {h : Nat → Nat}
     {H : VExpr → VExpr} {E : Nat → Nat}
     (hgoT : ∀ {Γ : List VExpr}, c.venv.HasType c.lparams.length Γ go' (natGoType le'))
     (hleC : le'.ClosedN)

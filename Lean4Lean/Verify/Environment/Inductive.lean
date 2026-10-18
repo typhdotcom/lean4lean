@@ -161,7 +161,7 @@ theorem AddInduct.hasPrimitives {decl : VInductDecl}
 abbrev inductSafety (isUnsafe : Bool) : DefinitionSafety := if isUnsafe then .unsafe else .safe
 
 /-- An `AddInduct` step at the level the block is checked at gives one at every level. -/
-theorem addInductBlock.WF {env env' : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem addInductBlock.WF [VEnv.Injective] {env env' : Environment} {ves : VEnvs} (wf : ves.WF env)
     {decl : VInductDecl} {venv' : VEnv}
     (hdecl : decl.WF (ves.venv (inductSafety decl.isUnsafe)))
     (H : AddInduct (inductSafety decl.isUnsafe) env.constants

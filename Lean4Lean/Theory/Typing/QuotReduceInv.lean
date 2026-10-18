@@ -10,7 +10,7 @@ end QuotRed
 
 /-- A term of `Quot α r` definitionally equal to `Quot.mk` at an equal quotient is `Quot.mk`
 at `α` and `r`, applied to a term of `α`. -/
-theorem VEnv.WF.quotMk_at {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.quotMk_at [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) (hmk : env.constants ``Quot.mk = some quotMkConst)
     {u : VLevel} {lsm : List VLevel} {α r q α' r' a : VExpr} (hu : u.WF U)
     (hαT : env.HasType U Γ α (.sort u))
@@ -54,7 +54,7 @@ theorem VEnv.WF.quotMk_at {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.W
     (.cons hα (.cons hr (.cons ⟨_, haT⟩ .nil))) ⟨_, hmkT⟩)⟩
 
 /-- `Quot.lift` at `Quot.mk` of the same quotient reduces to the lifted function. -/
-theorem VEnv.WF.quotLift {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.quotLift [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) (hlift : env.constants ``Quot.lift = some quotLiftConst)
     (hmk : env.constants ``Quot.mk = some quotMkConst) (hdf : env.defeqs quotDefEq)
     {ls lsm : List VLevel} {α r β f h q α' r' a : VExpr}
@@ -166,7 +166,7 @@ theorem VEnv.WF.quotLift {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF
 
 /-- `Quot.ind` at `Quot.mk` of the same quotient is the induction step at its argument: both
 are proofs of the same proposition. -/
-theorem VEnv.WF.quotInd {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.quotInd [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) (hind : env.constants ``Quot.ind = some quotIndConst)
     (hmk : env.constants ``Quot.mk = some quotMkConst)
     {ls lsm : List VLevel} {α r β p q α' r' a : VExpr}

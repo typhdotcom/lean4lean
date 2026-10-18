@@ -13,7 +13,7 @@ application is a `Bool`, and it is worth `g` at those literals.
 `Nat.bitwise`'s operator is a *variable* of the recognizer's context, so a reflection is the only
 thing its equation body knows about it -- and the equation body applies it to decisions, which
 are worth literals rather than being them. -/
-theorem boolOp2_apply (henv : env.WF) {g : Bool → Bool → Bool}
+theorem boolOp2_apply [VEnv.Injective] (henv : env.WF) {g : Bool → Bool → Bool}
     (hfT : env.HasType U [] f .boolOp2)
     (hfg : ∀ p q, env.IsDefEqU U [] ((f.app (.boolLit p)).app (.boolLit q)) (.boolLit (g p q)))
     (ha : env.IsDefEqU U [] a (.boolLit ba))
@@ -28,7 +28,7 @@ theorem boolOp2_apply (henv : env.WF) {g : Bool → Bool → Bool}
   exact (VEnv.IsDefEqU.appN' henv trivial (xs := [a, b]) (ys := [VExpr.boolLit ba, .boolLit bb])
     ⟨_, hfT⟩ (.cons ha (.cons hb .nil)) (by simpa [VExpr.appN] using hwf) :)
 
-theorem checkNatBitwise.WF {ves : VEnvs} (wf : ves.WF env)
+theorem checkNatBitwise.WF [VEnv.Injective] {ves : VEnvs} (wf : ves.WF env)
     (hname : v.name = ``Nat.bitwise) :
     let c := .mk' wf .safe v.levelParams; Data v ci' c →
     (checkNatBitwise v).WF c state fun _ _ => PrimitiveResult (ves.venv .safe) v ci' := by

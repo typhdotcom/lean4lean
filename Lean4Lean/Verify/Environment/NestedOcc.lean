@@ -177,14 +177,14 @@ def TypeChecker.VContext.ofMLCtx {env : Environment} {safety : DefinitionSafety}
   mlctx_wf := hM
   lctx_eq := rfl
 
-theorem TypeChecker.VState.WF.ofMLCtx {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
+theorem TypeChecker.VState.WF.ofMLCtx [VEnv.Injective] {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
     {wf : VEnvAt env safety venv} {lparams : List Name} {fuel : FuelConfig} {M : MLCtx}
     {hM : M.WF venv lparams} : VState.WF (.ofMLCtx wf lparams fuel M hM) {} :=
   .emptyOf _ wf.envClosed rfl
 
 /-- Running the type checker in a local context it models: what holds of the result, holds at
 the final state. -/
-theorem TypeChecker.M.WF.runMLCtx {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
+theorem TypeChecker.M.WF.runMLCtx [VEnv.Injective] {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
     (wf : VEnvAt env safety venv) {lparams : List Name} {fuel : FuelConfig} {M : MLCtx}
     (hM : M.WF venv lparams)
     {x : TypeChecker.M α} {Q} (H : x.WF (.ofMLCtx wf lparams fuel M hM) {} Q) {a : α}
@@ -291,7 +291,7 @@ context `res.lctx` that opens the first type's leading binders `xsP`, whose tran
 The occurrence `K` was recorded for the earlier constant `J` at the levels `Ls` and the arguments
 `args`, over the constructor's parameters `xs`; `ys` translates those arguments over the
 parameters as bound variables. -/
-theorem occ_argTypes {envT : Environment} {safety : DefinitionSafety} {venvT : VEnv}
+theorem occ_argTypes [VEnv.Injective] {envT : Environment} {safety : DefinitionSafety} {venvT : VEnv}
     (wfT : VEnvAt envT safety venvT) {lparams : List Name} {fuel : FuelConfig}
     {res : ElimNestedInductive.Result}
     (hocc : TypeChecker.M.run envT safety res.lctx lparams fuel
@@ -393,7 +393,7 @@ theorem occ_argTypes {envT : Environment} {safety : DefinitionSafety} {venvT : V
 
 /-- The head of a nested occurrence the final phase checked is a constant of `venvT`, at as many
 levels as it has parameters. -/
-theorem occ_head {envT : Environment} {safety : DefinitionSafety} {venvT : VEnv}
+theorem occ_head [VEnv.Injective] {envT : Environment} {safety : DefinitionSafety} {venvT : VEnv}
     (wfT : VEnvAt envT safety venvT) {lparams : List Name} {fuel : FuelConfig}
     {res : ElimNestedInductive.Result}
     (hocc : TypeChecker.M.run envT safety res.lctx lparams fuel

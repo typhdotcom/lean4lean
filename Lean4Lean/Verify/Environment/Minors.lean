@@ -35,7 +35,7 @@ theorem TypeChecker.Inner.inferType'_fvar {m : TypeChecker.Methods} {ctx : TypeC
 
 namespace AddInductive
 
-theorem isRecArg.loop.WF {X : Name → Prop} {pre : List Name} {stats : InductiveStats} :
+theorem isRecArg.loop.WF [VEnv.Injective] {X : Name → Prop} {pre : List Name} {stats : InductiveStats} :
     ∀ fuel (cs : TypeChecker.VContext) (cb : VContext) ρ (t : Expr) (T : VExpr),
       Sub X pre ρ cs cb → cs.TrExprS t T →
       WF cb (isRecArg.loop stats t fuel) fun _ => True := by
@@ -247,7 +247,7 @@ theorem _root_.Lean.Expr.SuppIn.consumeTypeAnnotations' {S : Supp} {e : Expr} (h
     unfold Lean.Expr.consumeTypeAnnotations'
     split <;> first | exact h | (exfalso; simp_all)
 
-theorem Sub.suppB_closed {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {B : Name → Prop}
+theorem Sub.suppB_closed [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {B : Name → Prop}
     (hctx : ∀ fv d, cs.lctx.find? fv = some d →
       d.type.SuppIn (BFree B) ∧ d.value'.SuppIn (BFree B))
     (henvB : ∀ n ci, cs.env.find? n = some ci → ¬B n → ci.SuppIn fun m => ¬B m)
@@ -281,7 +281,7 @@ theorem Sub.suppB_closed {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {B : Name →
 
 /-- `whnf` of an expression free of the names `B`, in a context whose declarations are too, is
 free of them. -/
-theorem Sub.whnfB {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {B : Name → Prop}
+theorem Sub.whnfB [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {B : Name → Prop}
     (hcl : (Sub.suppB X cs B).Closed cb.tc.toContext) {e : Expr} {E : VExpr}
     (he : cs.TrExprS e E) (hB : e.SuppIn (BFree B)) :
     WF cb (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
@@ -315,7 +315,7 @@ theorem spineIn_inst1 {S : Supp} {x : FVarId} (hx : S.fv x) {e : Expr} (h : spin
 /-- `isRecArg` finds no type of the block in a type that mentions none, in a context whose
 declarations mention none either: normalization does not introduce them, since no declaration
 that could unfold mentions them. -/
-theorem isRecArg.loop.noOcc {X : Name → Prop} {pre : List Name} {stats : InductiveStats}
+theorem isRecArg.loop.noOcc [VEnv.Injective] {X : Name → Prop} {pre : List Name} {stats : InductiveStats}
     {B : Name → Prop}
     (hB : ∀ j, j < stats.indConsts.size → ∃ n us, stats.indConsts[j]! = .const n us ∧ B n)
     (hprim : ∀ n, B n → Environment.primitives.contains n = false)
@@ -388,7 +388,7 @@ theorem isRecArg.loop.noOcc {X : Name → Prop} {pre : List Name} {stats : Induc
       exact hf.1.2 hBn
 
 /-- Instantiating a binder with a variable declared at a definitionally equal type. -/
-theorem TrExprS.inst_fvar_defeq {env : VEnv} {Us : List Name} {Δ : VLCtx} {a : FVarId}
+theorem TrExprS.inst_fvar_defeq [VEnv.Injective] {env : VEnv} {Us : List Name} {Δ : VLCtx} {a : FVarId}
     {deps : List FVarId} {A A' : VExpr} {e : Expr} {e' : VExpr} {u : VLevel} (henv : env.WF)
     (hΔ : VLCtx.WF env Us.length ((some (a, deps), .vlam A') :: Δ))
     (hAA : env.IsDefEq Us.length Δ.toCtx A A' (.sort u))
@@ -411,7 +411,7 @@ theorem recFvs_snoc {fvs : List FVarId} {rs : List Bool} (h : rs.length = fvs.le
   cases r <;> simp
 
 /-- A translation in the small context, in a view of the kernel's context that extends it. -/
-theorem Sub.trExprS_to {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx} {ρ' : Lift}
+theorem Sub.trExprS_to [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx} {ρ' : Lift}
     (W : VLCtx.FVLift' (cs.mlctx.instL (VLevel.shift pre.length cs.lparams.length)).vlctx
       N.vlctx 0 ρ' 0) (hN : N.vlctx.WF cb.venv cb.lparams.length) {e : Expr} {E : VExpr}
     (he : cs.TrExprS e E) :
@@ -421,7 +421,7 @@ theorem Sub.trExprS_to {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecke
   rw [← TypeChecker.MLCtx.vlctx_instL, ← H.lparams] at h1
   exact (h1.mono H.venv).weakFV' cb.tc.Ewf.ordered W hN
 
-theorem Sub.isDefEq_to {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx} {ρ' : Lift}
+theorem Sub.isDefEq_to [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx} {ρ' : Lift}
     (W : VLCtx.FVLift' (cs.mlctx.instL (VLevel.shift pre.length cs.lparams.length)).vlctx
       N.vlctx 0 ρ' 0) {e₁ e₂ A : VExpr}
     (h : cs.venv.IsDefEq cs.lparams.length cs.vlctx.toCtx e₁ e₂ A) :
@@ -436,7 +436,7 @@ theorem Sub.isDefEq_to {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecke
   rw [TypeChecker.MLCtx.vlctx_instL, VLCtx.instL_toCtx] at W'
   exact h1.weak' cb.tc.Ewf.ordered W'
 
-theorem Sub.isType_to {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx} {ρ' : Lift}
+theorem Sub.isType_to [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx} {ρ' : Lift}
     (W : VLCtx.FVLift' (cs.mlctx.instL (VLevel.shift pre.length cs.lparams.length)).vlctx
       N.vlctx 0 ρ' 0) {A : VExpr} (h : cs.IsType A) :
     cb.venv.IsType cb.lparams.length N.vlctx.toCtx
@@ -449,7 +449,7 @@ theorem VContext.push_congr {c : VContext} {name : Name} {ty : Expr} {ty₁ ty�
 
 /-- Pushing a variable onto the small context, the kernel's, and a view `N` of the kernel's that
 extends the small one. -/
-theorem Sub.push_ext {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx}
+theorem Sub.push_ext [VEnv.Injective] {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {N : TypeChecker.MLCtx}
     {ρN ρ' : Lift} (E : Ext N cb ρN)
     (W : VLCtx.FVLift' (cs.mlctx.instL (VLevel.shift pre.length cs.lparams.length)).vlctx
       N.vlctx 0 ρ' 0) {name : Name} {ty : Expr} {Ty : VExpr} {bi : BinderInfo}
@@ -534,7 +534,7 @@ structure CtorArgsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
   views : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty →
     fty = D.stripN ((t₀.domStrips.drop params.length)[j]?.getD 0)
 
-theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopCtorArgs.loop.WF [VEnv.Injective] {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {pfvs : List FVarId} {params : List VExpr}
     (hMpT : Mp.IsTele pfvs params) {stats : InductiveStats}
     (hpar : stats.params.toList = pfvs.map .fvar) {ps Ds : List VExpr} {R : VExpr}
@@ -954,7 +954,7 @@ structure UArgsInv (cT : VContext) (X : Name → Prop) (pre : List Name) (Mk : T
   /-- When `Z`, the normalized type opened no binder: it is not a pi. -/
   stop : Z → xfvs = [] ∧ ∀ name dom body bi, uiTy ≠ .forallE name dom body bi
 
-theorem loopUArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopUArgs.loop.WF [VEnv.Injective] {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mk : TypeChecker.MLCtx} {kfvs : List FVarId} {ktys : List VExpr} {fty : VExpr}
     {N₀ : TypeChecker.MLCtx} {N₀fvs : List FVarId} {N₀tys : List VExpr} {ρ₀ : Lift}
     {F₀ : List FVarId} {P : VContext → Prop} {Z : Prop}
@@ -1590,7 +1590,7 @@ structure IHPieces (env : VEnv) (Us : List Name) (Mk : TypeChecker.MLCtx) (fvk :
 context is viewed as `E`: the parameters, motives, earlier minor premises, the fields, and the
 inductive hypotheses so far. It reads the field's type in the small context `Mf` of the
 parameters and fields. -/
-theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem ihInfo.WF [VEnv.Injective] {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {pfvs : List FVarId} {params : List VExpr}
     (hMpT : Mp.IsTele pfvs params) {stats : InductiveStats}
     (hpar : stats.params.toList = pfvs.map .fvar) (hlev : stats.levels = cT.lparams.map .param)
@@ -2177,7 +2177,7 @@ structure UInv (cT : VContext) (X : Name → Prop) (pre : List Name) (pfvs : Lis
   head : c.name = c₀.name ∧ c.type = c₀.type ∧ c.indices = c₀.indices ∧
     c.fields.map (·.level) = c₀.fields.map (·.level)
 
-theorem loopU.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopU.WF [VEnv.Injective] {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {pfvs : List FVarId} {params : List VExpr}
     (hMpT : Mp.IsTele pfvs params) {stats : InductiveStats}
     (hpar : stats.params.toList = pfvs.map .fvar) (hlev : stats.levels = cT.lparams.map .param)
@@ -2599,7 +2599,7 @@ theorem MinorKDOK.extend {cT Mp pfvs params cb k c} (H : MinorKDOK cT Mp pfvs pa
     cases h : cb.lctx.find? fv <;> rw [h] at this <;> simp_all
   rw [hext _ _ hd', hd]; rw [hd'] at this; exact this
 
-theorem ctorMinor.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem ctorMinor.WF [VEnv.Injective] {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
     (hNM : NotMentionsOK cT.venv cT.lparams stats types)
@@ -3248,7 +3248,7 @@ structure CtorsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
   infoCount : ∀ t (ht : t < recInfos.size),
     recInfos[t].minorInfos.size = (cds.filter (·.1 = t)).length
 
-theorem loopCtors.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopCtors.WF [VEnv.Injective] {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
     (hNM : NotMentionsOK cT.venv cT.lparams stats types)
@@ -3471,7 +3471,7 @@ theorem CtorsInv.weaken {cT X pre Mp hMp pfvs params stats types d₀ motfvs hea
     later := fun t ht h' => H.later t ht (by omega)
     laterInfos := fun t ht h' => H.laterInfos t ht (by omega) }
 
-theorem loopInd2.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopInd2.WF [VEnv.Injective] {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
     (hNM : NotMentionsOK cT.venv cT.lparams stats types)

@@ -50,7 +50,7 @@ namespace Lean4Lean.TypeChecker.Inner
 open Lean hiding Environment Exception
 open Kernel
 
-theorem ensureForallCore.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem ensureForallCore.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (ensureForallCore e e₀) fun e1 _ => c.FVarsBelow e e1 ∧
       c.TrExpr e1 e' ∧ ∃ name ty body bi, e1 = .forallE name ty body bi := by
   simp [ensureForallCore]; split
@@ -61,7 +61,7 @@ theorem ensureForallCore.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     exact .pure ⟨hb, he, _, _, _, _, rfl⟩
   exact .getEnv <| .getLCtx .throw
 
-theorem ensureForallCore.WF' {c : VContext} {s : VState} (he : c.TrExpr e e') :
+theorem ensureForallCore.WF' [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExpr e e') :
     RecM.WF c s (ensureForallCore e e₀) fun e1 _ => c.FVarsBelow e e1 ∧
       c.TrExpr e1 e' ∧ ∃ name ty body bi, e1 = .forallE name ty body bi :=
   let ⟨_, he, eq⟩ := he
@@ -73,7 +73,7 @@ theorem checkLevel.WF {c : VContext} (H : l.hasMVar' = false) :
   simp [checkLevel]; split <;> [exact .throw; refine .pure ?_]
   exact Level.getUndefParam_none H (by rename_i h; simpa using h)
 
-theorem inferFVar.WF {c : VContext} :
+theorem inferFVar.WF [VEnv.Injective] {c : VContext} :
     (inferFVar c.toContext name).WF fun ty => ∃ e' ty', c.TrTyping (.fvar name) ty e' ty' := by
   simp [inferFVar, ← c.lctx_eq]; split <;> [refine .pure ?_; exact .throw]
   rename_i decl h
@@ -83,7 +83,7 @@ theorem inferFVar.WF {c : VContext} :
     c.trlctx.find?_of_mem c.Ewf (List.mem_of_find?_eq_some h)
   exact ⟨_, _, h2, .fvar h1, h3, c.Δwf.find?_wf c.Ewf h1⟩
 
-theorem inferConstant.WF {c : VContext}
+theorem inferConstant.WF [VEnv.Injective] {c : VContext}
     (H : ∀ l ∈ ls, l.hasMVar' = false)
     (hinf : inferOnly = true → ∃ e', c.TrExprS (.const name ls) e') :
     (inferConstant c.toContext name ls inferOnly).WF fun ty =>
@@ -135,7 +135,7 @@ theorem inferConstant.WF {c : VContext}
     exact main (.const h4 (List.mapM_eq_some.2 H) eq)
   · simp_all; let ⟨_, h⟩ := hinf; refine .pure ⟨main h, rfl⟩
 
-theorem inferLambda.loop.WF {c : VContext} {e₀ : Expr}
+theorem inferLambda.loop.WF [VEnv.Injective] {c : VContext} {e₀ : Expr}
     {m} [mwf : c.MLCWF m] {n} (hn : n ≤ m.length)
     (hdrop : m.dropN n hn = c.mlctx)
     (harr : arr.toList.reverse = (m.fvarRevList n hn).map .fvar)
@@ -212,7 +212,7 @@ theorem inferLambda.loop.WF {c : VContext} {e₀ : Expr}
     have := c3 _ <| FVarsBelow.cheapBetaReduce (m.noBV ▸ h2.closed) _ c1 <| hb _ c1 c2
     exact this.mp (fun _ => id) h3'.fvarsIn
 
-theorem inferLambda.WF
+theorem inferLambda.WF [VEnv.Injective]
     (h1 : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     (inferLambda e inferOnly).WF c s fun ty _ => ∃ e' ty', c.TrTyping e ty e' ty' := by
@@ -220,7 +220,7 @@ theorem inferLambda.WF
   refine (c.withMLC_self ▸ inferLambda.loop.WF (Nat.zero_le _) rfl rfl rfl rfl ?_ h1) hinf
   exact fun P hP he => ⟨(AllAbove.wf wf.trctx.wf.fvwf).2 hP, he.mono fun _ h _ => h, fun _ => id⟩
 
-theorem inferForall.loop.WF {c : VContext} {e₀ : Expr}
+theorem inferForall.loop.WF [VEnv.Injective] {c : VContext} {e₀ : Expr}
     {m} [mwf : c.MLCWF m] {n} (hn : n ≤ m.length)
     (hdrop : m.dropN n hn = c.mlctx)
     (harr : arr.toList.reverse = (m.fvarRevList n hn).map .fvar)
@@ -274,13 +274,13 @@ theorem inferForall.loop.WF {c : VContext} {e₀ : Expr}
     simp [hdrop] at h1' h2' h4'
     refine have h := .sort h3'; .pure ⟨_, _, fun _ _ _ => h.fvarsIn, he₀ ▸ h1', h, h4'⟩
 
-theorem inferForall.WF
+theorem inferForall.WF [VEnv.Injective]
     (hr : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     (inferForall e inferOnly).WF c s fun ty _ => ∃ e' u, c.TrTyping e ty e' (.sort u) :=
   (c.withMLC_self ▸ inferForall.loop.WF (Nat.zero_le _) rfl rfl rfl rfl hr .nil .nil rfl) hinf
 
-theorem inferApp.loop.WF {c : VContext} {s : VState}
+theorem inferApp.loop.WF [VEnv.Injective] {c : VContext} {s : VState}
     {ll lm lr : List _}
     (stk : AppStack c.venv c.lparams c.vlctx (.mkAppRevList e lm) e' lr)
     (hbelow : FVarsBelow c.vlctx e fType)
@@ -328,7 +328,7 @@ theorem inferApp.loop.WF {c : VContext} {s : VState}
     have ⟨he, hlm⟩ := FVarsIn.appRevList.1 he
     exact (hbelow _ hP he).instantiateList hlm
 
-theorem inferApp.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem inferApp.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (inferApp e) fun ty _ => ∃ ty', c.TrTyping e ty e' ty' := by
   rw [inferApp, Expr.withApp_eq, Expr.getAppArgs_eq]
   have ⟨_, he'⟩ := AppStack.build <| e.mkAppList_getAppArgsList ▸ he
@@ -340,7 +340,7 @@ theorem inferApp.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
   have := (e.mkAppList_getAppArgsList ▸ h1).uniq henv (.refl henv hΔ) he
   exact ⟨_, e.mkAppList_getAppArgsList ▸ hb, he, h2, h3.defeqU_l henv hΔ this⟩
 
-theorem inferLet.loop.WF {c : VContext} {e₀ : Expr}
+theorem inferLet.loop.WF [VEnv.Injective] {c : VContext} {e₀ : Expr}
     {m} [mwf : c.MLCWF m] {n} (hn : n ≤ m.length) (nds hnds)
     (hdrop : m.dropN n hn = c.mlctx)
     (harr : arr.toList.reverse = (m.fvarRevList n hn).map .fvar)
@@ -430,7 +430,7 @@ theorem inferLet.loop.WF {c : VContext} {e₀ : Expr}
     refine this.mp (fun _ => id) h3'.fvarsIn
 termination_by e
 
-theorem inferLet.WF
+theorem inferLet.WF [VEnv.Injective]
     (hr : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     (inferLet e inferOnly).WF c s fun ty _ =>
@@ -444,7 +444,7 @@ theorem literal_is_primitive (H : n = ``Nat ∨ n = ``Char.ofNat ∨ n = ``Strin
   simp [Environment.primitives, NameSet.ofList]
   obtain rfl|rfl|rfl := H <;> simp +decide [NameSet.contains]
 
-theorem infer_literal {c : VContext} (H : c.venv.ContainsLits l) :
+theorem infer_literal [VEnv.Injective] {c : VContext} (H : c.venv.ContainsLits l) :
     c.TrTyping (.lit l) l.type (.trLiteral l) (.const l.typeName []) := by
   refine
     have := TrExprS.trLiteral c.Ewf c.hasPrimitives l H
@@ -510,7 +510,7 @@ theorem _root_.Lean4Lean.TypeChecker.LitApp.of_ne {e : Expr} (hA : ∀ f a, e �
   · cases hA _ _ rfl
 
 
-theorem ensureForallCore.WF₂ {c : VContext} {s : VState} (he : c.TrExprS e e') :
+theorem ensureForallCore.WF₂ [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (ensureForallCore e e₀) fun e1 _ => (c.FVarsBelow e e1 ∧
       c.TrExpr e1 e' ∧ ∃ name ty body bi, e1 = .forallE name ty body bi) ∧
       (e.isForall = true → e1 = e) := by
@@ -533,7 +533,7 @@ theorem _root_.Lean4Lean.TypeChecker.LitApp.const {C : Environment} {P} {n ls ci
 
 mutual
 /-- `inferType'` on a term not in the cache. -/
-theorem inferTypeCore.WF_lit (hb : e.hasLooseBVars = false)
+theorem inferTypeCore.WF_lit [VEnv.Injective] (hb : e.hasLooseBVars = false)
     (h1 : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     (inferTypeCore e inferOnly).WF c s fun ty s' => (∃ e' ty', c.TrTyping e ty e' ty') ∧
@@ -660,7 +660,7 @@ theorem inferTypeCore.WF_lit (hb : e.hasLooseBVars = false)
 
 /-- `inferType'`, and in check mode what it establishes about a constant applied within its
 type's literal binders (`LitApp`), which the cache of checked types keeps. -/
-theorem inferType'.WF_lit
+theorem inferType'.WF_lit [VEnv.Injective]
     (h1 : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     (inferType' e inferOnly).WF c s fun ty s' => (∃ e' ty', c.TrTyping e ty e' ty') ∧
@@ -746,7 +746,7 @@ theorem inferType'.WF_lit
 
 end
 
-theorem inferType'.WF
+theorem inferType'.WF [VEnv.Injective]
     (h1 : e.FVarsIn (· ∈ c.vlctx.fvars))
     (hinf : inferOnly = true → ∃ e', c.TrExprS e e') :
     (inferType' e inferOnly).WF c s fun ty _ => ∃ e' ty', c.TrTyping e ty e' ty' :=

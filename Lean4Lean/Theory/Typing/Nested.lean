@@ -589,7 +589,7 @@ theorem Ctx.SubstEq.defeqCtx {E : VEnv} {U : Nat} (henv : E.Ordered) {Γ₀ Γ�
 
 /-- The identity instantiates a telescope over parameters agreeing with it: the form
 `replaceConst_restore` takes the auxiliary constants' binders in. -/
-theorem Ctx.SubstEq.id_teleDefEq {E : VEnv} {U : Nat} (henv : E.WF) {Qs Ps : List VExpr}
+theorem Ctx.SubstEq.id_teleDefEq [VEnv.Injective] {E : VEnv} {U : Nat} (henv : E.WF) {Qs Ps : List VExpr}
     (hT : E.TeleDefEq U [] Qs Ps) (hP : E.IsTele U [] Ps) :
     Ctx.SubstEq E U Qs.reverse .id .id Ps.reverse := by
   have hc := hT.defeqCtx henv (Γ' := []) .zero trivial hP
@@ -601,7 +601,7 @@ theorem Ctx.SubstEq.id_teleDefEq {E : VEnv} {U : Nat} (henv : E.WF) {Qs Ps : Lis
 restoring it, agree on a term whose auxiliary constants are applied to the parameters: they
 differ by beta reduction. `Γ₀` ends the context with the parameters, which the identity
 instantiates each auxiliary constant's binders with. -/
-theorem replaceConst_restore {E₀ : VEnv} (henv : E₀.WF) {U : Nat} {R : Name → Option VAuxHead}
+theorem replaceConst_restore [VEnv.Injective] {E₀ : VEnv} (henv : E₀.WF) {U : Nat} {R : Name → Option VAuxHead}
     {F : Name → Option VExpr} {ls₀ : List VLevel} {Γ₀ : List VExpr}
     (hFR : ∀ c, R c = none → F c = none)
     (hR : ∀ c h, R c = some h → ∃ Ps, F c = some (h.lam Ps) ∧ Ps.length = h.n ∧

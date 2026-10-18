@@ -218,7 +218,7 @@ theorem PTr.abstract'_params {Us : List Name} {CL : Literal → Prop} {Δ : VLCt
 /-- The environment the final phase checks the occurrences in, the block's own types added as
 axioms, has a model: `venv` with the translated block's first types. Its literals are `venv`'s,
 since the block names no primitive. -/
-theorem nested_envT {env : Environment} {ves : VEnvs} (wf : ves.WF env) {lparams : List Name}
+theorem nested_envT [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) {lparams : List Name}
     {isUnsafe : Bool} {nn : Nat} {d : VInductDecl} {env' : Environment} {venv' : VEnv}
     (hflat : AddInductN nn (inductSafety isUnsafe) env.constants (ves.venv (inductSafety isUnsafe))
       d env'.constants venv')
@@ -374,7 +374,7 @@ theorem List.exists_forall₂_of_forall {R : α → β → Prop} :
 /-- The occurrences the final phase checked translate: they are what the auxiliary types stand
 for. The check runs in `envT`, the environment with the block's types as axioms, modelled by
 `venvT`, whose literals are the environment's. -/
-theorem nested_occs {env : Environment} {ves : VEnvs} (wf : ves.WF env) {lparams : List Name}
+theorem nested_occs [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) {lparams : List Name}
     {nparams : Nat} {isUnsafe ap : Bool} {fuel : FuelConfig} {I : InductiveType}
     {rest : List InductiveType} (hcl : ∀ T ∈ I :: rest, ElimNestedInductive.TypeClosed T)
     {res : ElimNestedInductive.Result}

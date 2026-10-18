@@ -21,7 +21,7 @@ variable {d : VInductDecl}
 
 /-- The indices of a well-formed application of a type the recursors range over instantiate its
 index telescope. -/
-theorem RecFacts.typeApp_inv {env : VEnv} {U : Nat} {ls : List VLevel} (hF : d.RecFacts env U ls)
+theorem RecFacts.typeApp_inv [VEnv.Injective] {env : VEnv} {U : Nat} {ls : List VLevel} (hF : d.RecFacts env U ls)
     {t : Nat} {T : VInductiveType} (ht : d.allTypes[t]? = some T) {Γ : List VExpr} {τ : Subst}
     {idx : List VExpr} (hΓ : OnCtx Γ (env.IsType U))
     (W : VEnv.Ctx.SubstEq env U Γ τ τ (d.params.map (·.instL ls)).reverse)
@@ -51,7 +51,7 @@ local notation "𝐮" => c.recFields.length
 
 /-- A constructor applied to the parameters and its fields, as variables below `IHs`: its type at
 its indices, which instantiate the index telescope of its type. -/
-theorem ctor_typing {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
+theorem ctor_typing [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
     {Tj : VInductiveType} (hc : (j, c) ∈ d.allCtors) (hj : d.allTypes[j]? = some Tj) {q : Nat}
     (Qs' IHs : List VExpr) (hq : Qs'.length = q) :
     c.indices.length = Tj.indices.length ∧
@@ -117,7 +117,7 @@ theorem ctor_typing {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : 
   exact ⟨hidxlen, hx, hidx⟩
 
 /-- The conclusion of a minor premise: the motive at the constructor applied to its fields. -/
-theorem minor_concl {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
+theorem minor_concl [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
     {Tj : VInductiveType} (hc : (j, c) ∈ d.allCtors) (hj : d.allTypes[j]? = some Tj) {q : Nat}
     (Qs' IHs : List VExpr) (hq : Qs'.length = q) (hu : IHs.length = 𝐮) :
     env.HasType 𝐔 (IHs.reverse ++ (liftTele (𝐓 + q) 𝐅).reverse ++ Qs'.reverse ++ 𝐌.reverse ++ 𝐏.reverse)
@@ -145,7 +145,7 @@ local notation "ρk" => (Lift.skipN (.consN (.skipN .refl (d.allTypes.length + q
 /-- A recursive field, over its own binders in the context of a minor premise's inductive
 hypotheses: its binders form a telescope, the field applied to them has the type of its view, and
 that view's indices instantiate the index telescope of its type. -/
-theorem recField_typing {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
+theorem recField_typing [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
     (hc : (j, c) ∈ d.allCtors) {k : Nat} {f : VField} {ra : VRecArg}
     (hk : c.fields[k]? = some f) (hra : f.recArg = some ra) {q r : Nat}
     (Qs' IHs : List VExpr) (hq : Qs'.length = q) (hr : IHs.length = r) :
@@ -259,7 +259,7 @@ theorem recField_typing {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {
 
 /-- An inductive hypothesis of a minor premise: over the recursive field's own binders, the motive
 at its type, applied to its indices and to the field applied to the binders. -/
-theorem minor_ih {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
+theorem minor_ih [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
     (hc : (j, c) ∈ d.allCtors) {k : Nat} {f : VField} {ra : VRecArg}
     (hk : c.fields[k]? = some f) (hra : f.recArg = some ra) {q r : Nat}
     (Qs' IHs : List VExpr) (hq : Qs'.length = q) (hr : IHs.length = r) :
@@ -276,7 +276,7 @@ theorem minor_ih {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VCo
   rw [show 𝐛 + (r + (𝐦 + q)) = 𝐛 + r + 𝐦 + q by omega] at this
   simpa only [List.append_assoc] using this
 
-theorem minorType_isType {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
+theorem minorType_isType [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} {c : VConstructor}
     {Tj : VInductiveType} (hc : (j, c) ∈ d.allCtors) (hj : d.allTypes[j]? = some Tj) {q : Nat}
     (Qs' : List VExpr) (hq : Qs'.length = q) :
     env.IsType 𝐔 (Qs'.reverse ++ 𝐌.reverse ++ 𝐏.reverse) (d.minorType 𝐥 q j c) := by
@@ -299,7 +299,7 @@ theorem minorType_isType {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) {j : Nat} 
     refine minor_concl (v := 𝐯) hF hc hj Qs' _ hq ?_
     simp
 
-theorem minors_isTele {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) :
+theorem minors_isTele [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) :
     env.IsTele 𝐔 (𝐌.reverse ++ 𝐏.reverse) (d.minorTypes 𝐥) := by
   apply VEnv.IsTele.of_getElem
   intro q hq
@@ -313,7 +313,7 @@ theorem minors_isTele {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) :
     (List.length_take_of_le (Nat.le_of_lt hq))
   simpa only [List.append_assoc, minorTypes] using this
 
-theorem recType_isType {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {i : Nat}
+theorem recType_isType [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {i : Nat}
     {Ti : VInductiveType} (hi : d.allTypes[i]? = some Ti) : env.IsType 𝐔 [] (d.recType 𝐥 𝐯 i Ti) := by
   have henv := hF.wf.ordered
   have hPP : OnCtx 𝐏.reverse (env.IsType 𝐔) := by simpa using hF.params.onCtx trivial
@@ -392,7 +392,7 @@ theorem recType_isType {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.W
 
 /-- A recursor applied to the parameters, motives and minor premises as variables below `Δ`, to
 indices, and to a major premise at those indices: the motive at them. -/
-theorem rec_app {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {rc : Nat → VExpr}
+theorem rec_app [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {rc : Nat → VExpr}
     (hrec : d.RecTyped env 𝐔 𝐥 𝐯 rc) {t : Nat}
     {T : VInductiveType} (ht : d.allTypes[t]? = some T) (Δ : List VExpr) {idx : List VExpr}
     {x : VExpr}
@@ -475,14 +475,14 @@ theorem rec_app {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔)
   rw [e1, bvars_subst_cons, ← hlen, subst_bvars_consList] at h
   exact h
 
-theorem recBinders_isTele {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) :
+theorem recBinders_isTele [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) :
     env.IsTele 𝐔 [] (𝐏 ++ 𝐌 ++ d.minorTypes 𝐥) :=
   (hF.params.append (by simpa using motives_isTele hF hv)).append
     (by simpa using minors_isTele (v := 𝐯) hF)
 
 /-- The left side of an iota rule: the recursor at a constructor, over the recursor's binders and
 the constructor's fields. -/
-theorem iota_lhs {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
+theorem iota_lhs [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
     (hrec : d.RecTyped env 𝐔 𝐥 𝐯 (d.recConst recLs)) {j : Nat}
     {c : VConstructor} {Tj : VInductiveType} (hc : (j, c) ∈ d.allCtors) (hj : d.allTypes[j]? = some Tj) :
     env.HasType 𝐔 ((liftTele (𝐓 + 𝐂) 𝐅).reverse ++ (d.minorTypes 𝐥).reverse ++ 𝐌.reverse ++
@@ -508,7 +508,7 @@ theorem iota_lhs {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔
 
 /-- The argument an iota rule gives a minor premise for a recursive field: the recursor at the
 field, over the field's own binders. -/
-theorem iota_ih {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
+theorem iota_ih [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
     (hrec : d.RecTyped env 𝐔 𝐥 𝐯 (d.recConst recLs)) {j : Nat}
     {c : VConstructor} (hc : (j, c) ∈ d.allCtors) {k : Nat} {f : VField} {ra : VRecArg}
     (hk : c.fields[k]? = some f) (hra : f.recArg = some ra) :
@@ -550,7 +550,7 @@ theorem iota_ih {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔)
 
 /-- The right side of an iota rule: the minor premise applied to the fields and to the recursor
 at each recursive field. -/
-theorem iota_rhs {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
+theorem iota_rhs [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
     (hrec : d.RecTyped env 𝐔 𝐥 𝐯 (d.recConst recLs)) {q j : Nat}
     {c : VConstructor} (hq : d.allCtors[q]? = some (j, c)) :
     env.HasType 𝐔 ((liftTele (𝐓 + 𝐂) 𝐅).reverse ++ (d.minorTypes 𝐥).reverse ++ 𝐌.reverse ++
@@ -728,7 +728,7 @@ theorem iota_rhs {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔
 
 /-- An iota rule's two sides and type, as bodies over the recursor's binders and the
 constructor's fields: each side is typed there. -/
-theorem iotaRule_bodies {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔)
+theorem iotaRule_bodies [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔)
     {recLs : List VLevel} (hrec : d.RecTyped env 𝐔 𝐥 𝐯 (d.recConst recLs)) {q j : Nat}
     {c : VConstructor} (hq : d.allCtors[q]? = some (j, c)) :
     ∃ L R T, (d.iotaRule 𝐥 𝐯 recLs q j c).lhs = .lams (d.recBinders 𝐥 𝐯 ++ liftTele (𝐓 + 𝐂) 𝐅) L ∧
@@ -751,7 +751,7 @@ theorem iotaRule_bodies {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.
   · simpa only [recBinders, List.reverse_append, List.append_nil, List.append_assoc] using
       iota_rhs hF hv hrec hq
 
-theorem iotaRule_WF {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
+theorem iotaRule_WF [VEnv.Injective] {env : VEnv} (hF : d.RecFacts env 𝐔 𝐥) (hv : 𝐯.WF 𝐔) {recLs : List VLevel}
     (hrec : d.RecTyped env 𝐔 𝐥 𝐯 (d.recConst recLs)) {q j : Nat}
     {c : VConstructor} (hq : d.allCtors[q]? = some (j, c)) (hrl : recLs.length = 𝐔) :
     (d.iotaRule 𝐥 𝐯 recLs q j c).WF env := by
@@ -769,7 +769,7 @@ namespace Lean4Lean
 open VExpr
 
 /-- A type that is syntactically a telescope agreeing with `Bs`, as a telescope of `Bs`. -/
-theorem VEnv.IsType.foralls_teleDefEq {env : VEnv} {U : Nat} (henv : env.WF) {Γ As Bs : List VExpr}
+theorem VEnv.IsType.foralls_teleDefEq [VEnv.Injective] {env : VEnv} {U : Nat} (henv : env.WF) {Γ As Bs : List VExpr}
     {R : VExpr} (hΓ : OnCtx Γ (env.IsType U)) (hty : env.IsType U Γ (.foralls As R))
     (hTD : env.TeleDefEq U Γ As Bs) (hBs : env.IsTele U Γ Bs) :
     env.IsDefEqU U Γ (.foralls As R) (.foralls Bs R) := by
@@ -784,7 +784,7 @@ variable {d : VInductDecl}
 /-- An auxiliary type and its constructors, at the block's levels and at the parameters as
 variables: the occurrence it stands for is typed as `T` would be, and the earlier type's
 constructors at the occurrence's parameters as `T`'s constructors would be. -/
-theorem auxHeads {env envT : VEnv} (hdecl : d.WF env)
+theorem auxHeads [VEnv.Injective] {env envT : VEnv} (hdecl : d.WF env)
     (hT : env.addConstList d.typeConsts = some envT) (henvT : envT.WF) {T : VInductiveType}
     (hTa : T ∈ d.aux) :
     ∃ o, T.nested = some o ∧ (∀ a ∈ o.args, a.ClosedN d.params.length) ∧
@@ -915,7 +915,7 @@ theorem auxHeads {env envT : VEnv} (hdecl : d.WF env)
     exact hH.defeqU_r henvT hPP
       (VEnv.IsType.foralls_teleDefEq henvT hPP hR' hDF hFs)
 
-theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
+theorem recFacts [VEnv.Injective] {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
     (hT : env.addConstList d.typeConsts = some envT)
     (hC : envT.addConstList d.ctorConsts = some envC) {U : Nat} {ls : List VLevel}
     (hls : ∀ l ∈ ls, l.WF U) (hlen : ls.length = d.uvars) : d.RecFacts envC U ls := by
@@ -1076,7 +1076,7 @@ open VExpr
 
 /-- The parameters and indices of a term's type at a type of a recorded block instantiate the
 type's telescope. -/
-theorem VEnv.WF.projArgs {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.projArgs [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U) (hlen : ls.length = d.uvars)
@@ -1105,7 +1105,7 @@ theorem VEnv.WF.projArgs {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF
 
 /-- A projection of a term, when typed, is definitionally equal to the projection of a term
 definitionally equal to it. -/
-theorem VExpr.WF.proj_congr {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VExpr.WF.proj_congr [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {k : Nat} {e e' : VExpr}
     (H : VExpr.WF env U Γ (.proj s k e)) (he : env.IsDefEqU U Γ e e') :
     env.IsDefEqU U Γ (.proj s k e) (.proj s k e') := by
@@ -1120,7 +1120,7 @@ theorem VExpr.WF.proj_congr {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env
 
 /-- A term whose type is a pi telescope ending in a sort, applied to arguments to a sort, takes
 exactly as many arguments as the telescope has binders. -/
-theorem VEnv.HasType.appN_sort_length {env : VEnv} {U : Nat} (henv : env.WF) {Γ : List VExpr}
+theorem VEnv.HasType.appN_sort_length [VEnv.Injective] {env : VEnv} {U : Nat} (henv : env.WF) {Γ : List VExpr}
     (hΓ : OnCtx Γ (env.IsType U)) :
     ∀ {As : List VExpr} {τ : Subst} {f : VExpr} {as : List VExpr} {l u : VLevel},
     env.HasType U Γ f ((VExpr.foralls As (.sort l)).subst τ) →
@@ -1141,7 +1141,7 @@ theorem VEnv.HasType.appN_sort_length {env : VEnv} {U : Nat} (henv : env.WF) {Γ
       exact congrArg (· + 1) (appN_sort_length henv hΓ hfa h)
 
 /-- The facts the recursor is built from hold of any block a well-formed environment records. -/
-theorem VEnv.WF.recFacts {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDecl} {t : Nat}
+theorem VEnv.WF.recFacts [VEnv.Injective] {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDecl} {t : Nat}
     (hs : env.inducts s = some (d, t)) {U : Nat} {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U)
     (hlen : ls.length = d.uvars) : d.RecFacts env U ls := by
   obtain ⟨env₀, env₂, h₀, hd, hadd, hle, -⟩ := henv.inducts_block hs
@@ -1153,7 +1153,7 @@ theorem VEnv.WF.recFacts {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDec
 
 /-- Two terms of a type of a recorded block with a single fieldless constructor and no indices,
 not recursive, are definitionally equal: each is, by structure eta, the constructor. -/
-theorem VEnv.WF.unitLike {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.unitLike [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hc : T.ctors = [c]) (hi : T.indices = []) (hrec : d.isRec = false) (hf : c.fields = [])
@@ -1198,7 +1198,7 @@ theorem VEnv.WF.unitLike {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF
 /-- A well-formed application of a recorded block's constructor to as many arguments as it has
 parameters and fields: its levels, the arguments as parameters and fields instantiating the
 constructor's telescope, and its type. -/
-theorem VEnv.WF.ctorApp {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.ctorApp [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hcm : c ∈ T.ctors) {ls : List VLevel} {args : List VExpr}
@@ -1240,7 +1240,7 @@ theorem VEnv.WF.ctorApp {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
 
 /-- A typed projection of a recorded block's constructor applied to the parameters and all of its
 fields is the field. -/
-theorem VEnv.WF.proj_ctorApp {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.proj_ctorApp [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hcm : c ∈ T.ctors) {ls : List VLevel} {args : List VExpr} {k : Nat} {a : VExpr}
@@ -1280,7 +1280,7 @@ theorem VEnv.WF.proj_ctorApp {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : en
 /-- Structure eta, from the projections: a term of a non-recursive structure type without indices
 is definitionally equal to the constructor applied to the parameters and to arguments its
 projections are definitionally equal to. -/
-theorem VEnv.WF.structEta {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+theorem VEnv.WF.structEta [VEnv.Injective] {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
     {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
     (hc : T.ctors = [c]) (hi : T.indices = []) (hrec : d.isRec = false)
@@ -1336,7 +1336,7 @@ theorem VEnv.WF.structEta {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.W
 
 /-- Congruence for `appN`: the arguments' typings come from the application being well formed, so
 no separate hypothesis about them is needed. -/
-theorem VEnv.IsDefEqU.appN {env : VEnv} (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U)) :
+theorem VEnv.IsDefEqU.appN [VEnv.Injective] {env : VEnv} (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U)) :
     ∀ {vs : List VExpr} {f g}, env.IsDefEqU U Γ f g → VExpr.WF env U Γ (f.appN vs) →
       env.IsDefEqU U Γ (f.appN vs) (g.appN vs) := by
   intro vs
@@ -1351,7 +1351,7 @@ theorem VEnv.IsDefEqU.appN {env : VEnv} (henv : VEnv.WF env) (hΓ : OnCtx Γ (en
 /-- Congruence for a whole application spine, arguments included. `IsDefEqU.appN` covers only the
 function; the typings each step needs come from the application's own well-typedness, the same
 way `TrExprS.appN` gets them. -/
-theorem VEnv.IsDefEqU.appN' {env : VEnv} {U Γ} (henv : VEnv.WF env)
+theorem VEnv.IsDefEqU.appN' [VEnv.Injective] {env : VEnv} {U Γ} (henv : VEnv.WF env)
     (hΓ : OnCtx Γ (env.IsType U)) :
     ∀ {xs ys : List VExpr} {f f'}, env.IsDefEqU U Γ f f' →
       List.Forall₂ (env.IsDefEqU U Γ) xs ys →

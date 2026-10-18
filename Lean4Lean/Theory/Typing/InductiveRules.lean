@@ -12,7 +12,7 @@ namespace Lean4Lean
 /-! The typing of what `VEnv.addInduct` generates, in the environments it adds it to. -/
 
 /-- The recursors are well-typed, given the types and constructors. -/
-theorem VInductDecl.recConsts_WF {decl : VInductDecl} {env envT envC : VEnv} (henv : env.WF)
+theorem VInductDecl.recConsts_WF [VEnv.Injective] {decl : VInductDecl} {env envT envC : VEnv} (henv : env.WF)
     (hdecl : decl.WF env) (hT : env.addConstList decl.typeConsts = some envT)
     (hC : envT.addConstList decl.ctorConsts = some envC) :
     ∀ p ∈ decl.recConsts, p.2.WF envC := by
@@ -24,7 +24,7 @@ theorem VInductDecl.recConsts_WF {decl : VInductDecl} {env envT envC : VEnv} (he
   exact VInductDecl.recType_isType hF VInductDecl.motiveLevel_WF (List.mem_zipIdx_iff_getElem?.1 hm)
 
 /-- The iota rules are well-typed, given the recursors. -/
-theorem VInductDecl.iotaRules_WF {decl : VInductDecl} {env envT envC envR : VEnv}
+theorem VInductDecl.iotaRules_WF [VEnv.Injective] {decl : VInductDecl} {env envT envC envR : VEnv}
     (henv : env.WF) (hdecl : decl.WF env) (hT : env.addConstList decl.typeConsts = some envT)
     (hC : envT.addConstList decl.ctorConsts = some envC)
     (hR : envC.addConstList decl.recConsts = some envR) :
@@ -88,7 +88,7 @@ theorem VInductDecl.FieldsWF.getElem {d : VInductDecl} {env : VEnv} {Γ k Ds fs}
       have := ih i f (by simpa using hf)
       simpa [List.take_succ_cons] using this
 
-theorem VInductDecl.generatedWF {decl : VInductDecl} {env : VEnv} (henv : env.WF)
+theorem VInductDecl.generatedWF [VEnv.Injective] {decl : VInductDecl} {env : VEnv} (henv : env.WF)
     (hdecl : decl.WF env) : decl.GeneratedWF env := fun _ _ _ hT hC hR =>
   ⟨recConsts_WF henv hdecl hT hC, iotaRules_WF henv hdecl hT hC hR⟩
 

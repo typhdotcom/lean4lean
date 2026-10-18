@@ -189,7 +189,7 @@ theorem TrExprS.abstract'_params {env : VEnv} {Us : List Name} {Δ : VLCtx}
     exact .proj (ih hΓ rfl) (hctx Γ ▸ h2)
 
 /-- Telescopes that agree entry by entry give parameter contexts that do. -/
-theorem paramVLCtx_isDefEq {E : VEnv} {U : Nat} (henv : E.WF) :
+theorem paramVLCtx_isDefEq [VEnv.Injective] {E : VEnv} {U : Nat} (henv : E.WF) :
     ∀ {Γ As Bs}, E.TeleDefEq U Γ As Bs → E.IsTele U Γ Bs → OnCtx Γ (E.IsType U) →
       ∀ {Δ₁ Δ₂ : VLCtx}, Δ₁.toCtx = Γ → VLCtx.IsDefEq E U Δ₁ Δ₂ →
       VLCtx.IsDefEq E U (paramVLCtx Bs ++ Δ₁) (paramVLCtx As ++ Δ₂)
@@ -380,7 +380,7 @@ theorem ptr_bvs {Us : List Name} {CL : Literal → Prop} {Δ : VLCtx} :
 
 /-- The arguments of the occurrences the final phase checks translate over the first type's
 leading binders as parameters, in a model of the environment it checks them in. -/
-theorem nested_occs_tr {env : Environment} {ves : VEnvs} (wf : ves.WF env) {lparams : List Name}
+theorem nested_occs_tr [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env) {lparams : List Name}
     {nparams : Nat} {isUnsafe ap : Bool} {fuel : FuelConfig} {I : InductiveType}
     {rest : List InductiveType} (hcl : ∀ T ∈ I :: rest, ElimNestedInductive.TypeClosed T)
     {res : ElimNestedInductive.Result}

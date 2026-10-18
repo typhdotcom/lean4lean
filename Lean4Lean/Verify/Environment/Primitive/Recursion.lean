@@ -77,7 +77,7 @@ the recognizer's by whatever variables the pattern binds.
 The argument is abstract. A probe applies `F` and `dom` to `mkAppN pack sub`, but nothing here
 depends on its being *that*; what is needed is its translation and that it is an `Aty`, and both
 of those are the caller's, since only the caller knows the pattern it packed. -/
-theorem ProbeBundle.applied (P : ProbeBundle c)
+theorem ProbeBundle.applied [VEnv.Injective] (P : ProbeBundle c)
     (W : VLCtx.FVLift c.vlctx Δ dk n k) (hΔ : Δ.WF c.venv c.lparams.length)
     (harg : TrExprS c.venv c.lparams Δ arg A)
     (hargT : c.venv.HasType c.lparams.length Δ.toCtx A (P.Aty.liftN n k)) :
@@ -107,7 +107,7 @@ a telescope of `Nat`s over a body of type `Aty` -- exists for this step: a calle
 that its own arguments are naturals gets the typing `applied` asks for, instead of having to type
 the packed application itself, which it cannot do (nothing relates `pack`'s result type to `F`'s
 domain except the recognizer's `ty ≡ A` check, and that is what `hpackBodyT` records). -/
-theorem ProbeBundle.packAty (P : ProbeBundle c)
+theorem ProbeBundle.packAty [VEnv.Injective] (P : ProbeBundle c)
     (hnatT : ∀ Γ, OnCtx Γ (c.venv.IsType c.lparams.length) →
       c.venv.IsType c.lparams.length Γ .nat)
     (W : VLCtx.FVLift c.vlctx Δ dk n k) (hΔ : OnCtx Δ.toCtx (c.venv.IsType c.lparams.length))
@@ -256,7 +256,7 @@ variable {c : VContext} {P : ProbeBundle c} {E : c.Ext} {γ : VExpr.Subst} {α}
 /-- One unit of fuel. `Done` supplies the call to `F`; the induction hypothesis discharges the
 recursive calls inside it, which is legitimate because `Done` only ever asks about arguments of
 smaller measure and the fuel is one ahead of the measure. -/
-theorem ProbeBundle.GoConverges.succ
+theorem ProbeBundle.GoConverges.succ [VEnv.Injective]
     (hu : P.NatFixUnfold E γ σ σm ev) (hdone : P.Done E γ σ σm R) {b} {t : Nat}
     (IH : P.GoConverges E γ (hu.goFn b) σ σm R t) :
     P.GoConverges E γ (hu.goFn b) σ σm R (t+1) := by
@@ -269,14 +269,14 @@ theorem ProbeBundle.GoConverges.succ
     (IH y arg' pf' (Nat.lt_of_lt_of_le hlt' (Nat.lt_succ_iff.1 hlt)) harg'
       ⟨_, hb.choose_spec.hasType.2⟩)
 
-theorem ProbeBundle.GoConverges.all (hu : P.NatFixUnfold E γ σ σm ev)
+theorem ProbeBundle.GoConverges.all [VEnv.Injective] (hu : P.NatFixUnfold E γ σ σm ev)
     (hdone : P.Done E γ σ σm R) (b) :
     ∀ t, P.GoConverges E γ (hu.goFn b) σ σm R t
   | 0 => fun _ _ _ h _ _ => absurd h (Nat.not_lt_zero _)
   | t+1 => (ProbeBundle.GoConverges.all hu hdone b t).succ hu hdone
 
 /-- The fuel induction, at the fuel the recursion is actually entered with. -/
-theorem ProbeBundle.NatFixUnfold.reflects (hu : P.NatFixUnfold E γ σ σm ev)
+theorem ProbeBundle.NatFixUnfold.reflects [VEnv.Injective] (hu : P.NatFixUnfold E γ σ σm ev)
     (hdone : P.Done E γ σ σm R) (a) : E.IsDefEqU₀ ((ev.subst γ).appN (σ a)) (.natLit (R a)) := by
   obtain ⟨pf, hen⟩ := hu.entry a
   obtain ⟨_, hpT⟩ := hu.packT a
@@ -341,7 +341,7 @@ caller never instantiates a telescope. What replaces the syntactic `Q` of an ear
 closing of the probe's own context (`hcl`) to discharge it with, since that is the one thing it
 cannot build without naming the binder's type. Both hypotheses are plain propositions about
 `mkRhs (.fvar id)`: `mkRhs` is a function, so nothing here is monadic. -/
-theorem ProbeBundle.probe.WF {c : VContext} {m mp : MLCtx} [cwf : c.MLCWF m] [cwfp : c.MLCWF mp]
+theorem ProbeBundle.probe.WF [VEnv.Injective] {c : VContext} {m mp : MLCtx} [cwf : c.MLCWF m] [cwfp : c.MLCWF mp]
     {P : ProbeBundle (c.withMLC m)} {s : VState} {fail : ∀ {α}, M α}
     {subst : Array Expr} {mkRhs : Expr → Expr}
     {R : (c.withMLC m).Ext → VExpr.Subst → VExpr → VExpr → Prop}
@@ -584,7 +584,7 @@ every argument of `go` still bound. `entry` at `a` fixes the base point to `a`, 
 `reflects` runs the induction at. `lambdaTelescope.Inv` supplies the closing (its domains and
 `VExpr.lams_appN`), and `hσm` supplies the arguments' typing, which is what makes that closing a
 `VEnv.Ctx.SubstEq`. -/
-theorem unfoldNatWellFounded.WF' {c : VContext} {m₀ : MLCtx} [c.MLCWF m₀] {s : VState}
+theorem unfoldNatWellFounded.WF' [VEnv.Injective] {c : VContext} {m₀ : MLCtx} [c.MLCWF m₀] {s : VState}
     {e meas : Expr} {fail : ∀ {α}, M α} {ev mv : VExpr}
     (hev : (c.withMLC m₀).TrExprS e ev) (hmv : (c.withMLC m₀).TrExprS meas mv)
     (hnat : c.venv.contains ``Nat) (hsafe : c.safety = .safe)
@@ -1693,7 +1693,7 @@ contexts are built on top of `c` and are the business of `probe.WF`.
 `R` is quantified after `γ`, which is what lets the answer depend on the closing: `Nat.bitwise`
 is checked with its operator still a variable of `c`, and only a closing says which `Bool`
 operation that variable stands for. -/
-theorem unfoldNatWellFounded.WF {c : VContext} {m₀ : MLCtx} [c.MLCWF m₀] {s : VState}
+theorem unfoldNatWellFounded.WF [VEnv.Injective] {c : VContext} {m₀ : MLCtx} [c.MLCWF m₀] {s : VState}
     {e meas : Expr} {fail : ∀ {α}, M α} {ev mv : VExpr}
     (hev : (c.withMLC m₀).TrExprS e ev) (hmv : (c.withMLC m₀).TrExprS meas mv)
     (hnat : c.venv.contains ``Nat) (hsafe : c.safety = .safe)
@@ -1720,7 +1720,7 @@ first, which is what `fun m _ => m` measures.
 The measure being fixed, so are its translation and what it is worth at the recursion's
 arguments -- that is `natFstLamApp`, and it is a closed term, so no closing reaches it -- and all
 that is left of `unfoldNatWellFounded.WF` for the caller is the value being unfolded. -/
-theorem unfoldNatWellFounded.WF₂ {c : VContext} {m₀ : MLCtx} [c.MLCWF m₀] {s : VState}
+theorem unfoldNatWellFounded.WF₂ [VEnv.Injective] {c : VContext} {m₀ : MLCtx} [c.MLCWF m₀] {s : VState}
     {e : Expr} {fail : ∀ {α}, M α} {ev : VExpr}
     (hev : (c.withMLC m₀).TrExprS e ev)
     (hnat : c.venv.contains ``Nat) (hsafe : c.safety = .safe)

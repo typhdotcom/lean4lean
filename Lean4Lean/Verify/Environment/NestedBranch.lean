@@ -181,7 +181,7 @@ theorem PrimitiveInductiveResult.flat {env : Environment} {lparams : List Name} 
 
 /-- The nested branch of `addInductive`: the translation checked flat into `env'`, the final
 phase gives a model of what it adds. -/
-theorem addInductive.WF_nested {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem addInductive.WF_nested [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     {lparams : List Name} {nparams : Nat} {types : List InductiveType} {isUnsafe : Bool}
     {fuel : FuelConfig}
     (hcl : ∀ T ∈ types, ElimNestedInductive.TypeClosed T)
@@ -854,7 +854,7 @@ theorem addInductive.WF_nested {env : Environment} {ves : VEnvs} (wf : ves.WF en
   · have := hnpF x (hnames.mem_iff.1 (hx.2 ▸ List.mem_map_of_mem hx.1))
     simp_all
 
-theorem addInductive.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+theorem addInductive.WF [VEnv.Injective] {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
     (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig)
     (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :

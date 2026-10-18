@@ -276,7 +276,7 @@ theorem ArgsInv.rebase {cE c₂ : VContext} {X X' : Name → Prop} {pre : List N
     obtain ⟨h1, h2⟩ := H.rel h
     rw [← hl]; exact ⟨h1.mono hv, h2.mono hv⟩
 
-theorem loopArgs1.WF {c₂ : VContext} {X : Name → Prop} {pre : List Name} {Mp : TypeChecker.MLCtx}
+theorem loopArgs1.WF [VEnv.Injective] {c₂ : VContext} {X : Name → Prop} {pre : List Name} {Mp : TypeChecker.MLCtx}
     {hMp : Mp.WF c₂.venv c₂.lparams} {pfvs : List FVarId} {params idx₀ : List VExpr} {u : VLevel}
     (hMpT : Mp.IsTele pfvs params) {stats : InductiveStats}
     (hpar : stats.params.toList = pfvs.map .fvar) {F₀ : List FVarId} {P : VContext → Prop}
@@ -888,7 +888,7 @@ structure Ind1Inv (cT : VContext) (X : Name → Prop) (pre : List Name) (Mp : Ty
   idxE : ∀ (j : Nat) (td : TyData), tds[j]? = some td →
     cE.venv.IsTele cE.lparams.length params.reverse td.idx
 
-theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopInd1.WF [VEnv.Injective] {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {level ml : VLevel} {types : List InductiveType} {typeTr : List VExpr}
     {stats : InductiveStats} {elimLevel : Level} {env : Environment} {VB : VEnv}

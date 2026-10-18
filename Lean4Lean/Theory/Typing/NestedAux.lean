@@ -26,7 +26,7 @@ namespace VInductiveType
 /-- `AuxWF` from what the kernel establishes: the occurrence's arguments typed against the binders
 `psJ` the earlier type is declared with, over parameters `Qs` agreeing with the block's, and the
 auxiliary type's declared type and constructors as the earlier type's instantiated. -/
-theorem AuxWF.of_lit {env : VEnv} (henv : env.WF) {d : VInductDecl} {T : VInductiveType}
+theorem AuxWF.of_lit [VEnv.Injective] {env : VEnv} (henv : env.WF) {d : VInductDecl} {T : VInductiveType}
     {o : VNested} {dI : VInductDecl} {tI : Nat} {TI : VInductiveType}
     (hind : env.inducts o.ind = some (dI, tI)) (hTI : dI.types[tI]? = some TI)
     (hlen : o.lvls.length = dI.uvars) (hlwf : ∀ l ∈ o.lvls, l.WF d.uvars)

@@ -84,7 +84,7 @@ def rerunCeil (lab size : Nat) : Option Nat := if lab < size then some lab else 
 /-- A well-formed state stays so in a context a computation is run again in, for a fact at level
 `lab`: one extending the level-`lab` context, admitting `c`, with the levels above `lab` set
 aside. -/
-theorem VState.WF.transfer {c : VContext} {s : VState} {g : NameGenerator} {lab : Nat}
+theorem VState.WF.transfer [VEnv.Injective] {c : VContext} {s : VState} {g : NameGenerator} {lab : Nat}
     {m : MLCtx} (wf : s.WF c) (wf₂ : m.WF c.venv c.lparams)
     (hvis : c.ceiling.all (lab ≤ ·)) (hlab : lab ≤ s.scopeIds.size)
     (hb : (levelCtx c.mlctx s.scopeFV c.ceiling c.top lab).Below m)
@@ -157,7 +157,7 @@ theorem rerunCeil_le {c : VContext} {s : VState} (wf : s.WF c) {lab : Nat}
 /-- `withTaint x` learns what `x` establishes of its result: at every level from the level of the
 facts it used up, in every context extending that level's context that admits the current one,
 where `x`'s input lives (`D`) and its precondition holds (`Pre`). -/
-theorem RecM.WF.withTaintLearn {c : VContext} {s : VState} {x : RecM α} {Q : α → VState → Prop}
+theorem RecM.WF.withTaintLearn [VEnv.Injective] {c : VContext} {s : VState} {x : RecM α} {Q : α → VState → Prop}
     {D : FVarId → Prop} {Pre : MLCtx → Prop} {P : α → MLCtx → Prop} {R : α → Prop}
     (hDc : ∀ fv, D fv → c.lctx.Dom fv)
     (hss : ∀ m : Methods, m.SS → ∀ (S : Supp) (c₂ : Context), Agree S c.toContext c₂ →
