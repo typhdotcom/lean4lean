@@ -175,7 +175,7 @@ def quotIndType : Expr :=
             (.app (.bvar 1) (.app (.app (.app (.const ``Quot.mk [.param `u]) (.bvar 3)) (.bvar 2))
               (.bvar 0))) .default)
           (.forallE `q (.app (.app (.const ``Quot [.param `u]) (.bvar 3)) (.bvar 2))
-            (.app (.bvar 2) (.bvar 0)) .implicit) .default) .implicit) .implicit) .implicit
+            (.app (.bvar 2) (.bvar 0)) .default) .default) .implicit) .implicit) .implicit
 
 def quotInfo : ConstantInfo :=
   .quotInfo { name := ``Quot, levelParams := [`u], type := quotType, kind := .type }
