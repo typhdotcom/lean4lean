@@ -1083,7 +1083,8 @@ theorem _root_.Lean4Lean.VEnvAt.addAxiomList {env : Environment} {venv : VEnv}
           (by rw [← wf.tr.map_wf.find?'_eq_find?]; exact hfr _ (.head _)) hwf h₁' wf.tr
         hasPrimitives := wf.hasPrimitives.addConst (hnp _ (.head _)) h₁'
         safePrimitives := wf.safePrimitives_add _ (hax ▸ hfr _ (.head _))
-          (by rw [hax, hnp _ (.head _)]; nofun) }
+          (by rw [hax, hnp _ (.head _)]; nofun)
+        envClosed := wf.envClosed_add _ (hax ▸ hfr _ (.head _)) ⟨htr.2.2.suppIn_nil, trivial⟩ }
     refine VEnvAt.addAxiomList axs cs wf₁ ?_ hnd.2 (fun a ha => ?_) (fun a ha => hnp a (.tail _ ha))
       h₂
     · exact Lean4Lean.List.Forall₂.imp (fun _ _ h =>

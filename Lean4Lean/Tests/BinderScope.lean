@@ -1,8 +1,9 @@
 import Lean4Lean.Environment
 
 /-!
-A variable's scope keeps what the type checker learns in it to itself, and comparing two lambdas
-or pis opens every binder, dependent or not.
+What the type checker learns in a variable's scope is kept after the scope closes only if it does
+not rest on the scope's variable, and comparing two lambdas or pis opens every binder, dependent
+or not.
 -/
 
 namespace Lean4Lean.Tests.BinderScope
@@ -34,24 +35,24 @@ private def two : Expr := mkApp (.const ``Nat.succ []) (mkApp (.const ``Nat.succ
 run_meta do
   let env := (← getEnv).toKernelEnv
   let nat := Expr.const ``Nat []
-  -- What is inferred, reduced or found equal under a binder is dropped when the binder is left,
-  -- though `two` does not mention the variable; outside any binder it is kept.
-  let (inside, after, outside) ← runM <| M.run env (x := do
-    let inside ← withLocalDecl `x .default nat fun _ => do
+  let current (s : State) (c : InferCache) (e : Expr) : Bool :=
+    match c[e]? with
+    | some (_, l, id) => s.scopeIds.valid l id
+    | none => false
+  -- What is inferred under a binder about a term mentioning its variable is current only while
+  -- the binder is open; what is inferred about `two`, which does not mention it, stays current.
+  let (inside, afterX, afterTwo) ← runM <| M.run env (x := do
+    let (inside, sx) ← withLocalDecl `x .default nat fun x => do
+      let sx := mkApp (.const ``Nat.succ []) x
+      _ ← inferType sx
       _ ← inferType two
-      _ ← whnf two
-      _ ← isDefEq two two
       let s ← get
-      pure (s.inferTypeI.size, s.whnfCache.size)
+      pure ((current s s.inferTypeI sx, current s s.inferTypeI two), sx)
     let s ← get
-    let after := (s.inferTypeI.size, s.whnfCache.size)
-    _ ← inferType two
-    _ ← whnf two
-    let s ← get
-    pure (inside, after, (s.inferTypeI.size, s.whnfCache.size)))
-  unless inside.1 > 0 && inside.2 > 0 do throwError "nothing was cached under the binder"
-  unless after == (0, 0) do throwError "the binder's caches outlived it: {after}"
-  unless outside.1 > 0 && outside.2 > 0 do throwError "nothing was cached outside a binder"
+    pure (inside, current s s.inferTypeI sx, current s s.inferTypeI two))
+  unless inside == (true, true) do throwError "nothing was cached under the binder: {inside}"
+  if afterX then throwError "a fact about the binder's variable outlived it"
+  unless afterTwo do throwError "a fact not about the binder's variable was dropped"
   -- Two lambdas whose bodies do not mention their variable are compared under a fresh variable.
   let f := Expr.lam `x nat (mkApp (.lam `y nat (.bvar 0) .default) (.const ``Nat.zero [])) .default
   let g := Expr.lam `x nat (.const ``Nat.zero []) .default
@@ -97,8 +98,9 @@ private def leakDecl (name : Name) (cached : Bool) : Declaration :=
 
 run_meta do
   let env := (← getEnv).toKernelEnv
-  -- Lean's kernel keeps both equivalences after leaving `p` and accepts both; lean4lean drops them,
-  -- and the check cached under `p` with them, and rejects both.
+  -- Lean's kernel keeps both equivalences after leaving `p` and accepts both; for lean4lean they
+  -- rest on `p`, as does the check cached under `p` with them, so they end with it, and it rejects
+  -- both.
   for (n, cached) in [(`leakEqv, false), (`leakCache, true)] do
     unless (env.addDecl {} (leakDecl n cached)) matches .ok _ do
       throwError "Lean's kernel rejected `{n}`"

@@ -1316,6 +1316,19 @@ theorem data_eq {e₁ e₂ : Expr} : e₁ == e₂ → e₁.data = e₂.data := b
 instance : LawfulHashable Expr where
   hash_eq e₁ e₂ h := by simp [hash, Expr.hash, data_eq h]
 
+instance (priority := low) {α β} [BEq α] [BEq β] [EquivBEq α] [EquivBEq β] : EquivBEq (α × β) where
+  rfl := by intro ⟨a, b⟩; simp [BEq.beq]
+  symm := by intro ⟨a, b⟩ ⟨c, d⟩ h; simp [BEq.beq] at h ⊢; exact ⟨BEq.symm h.1, BEq.symm h.2⟩
+  trans := by
+    intro ⟨a, b⟩ ⟨c, d⟩ ⟨e, f⟩ h1 h2; simp [BEq.beq] at h1 h2 ⊢
+    exact ⟨BEq.trans h1.1 h2.1, BEq.trans h1.2 h2.2⟩
+
+instance (priority := low) {α β} [BEq α] [BEq β] [Hashable α] [Hashable β] [LawfulHashable α]
+    [LawfulHashable β] : LawfulHashable (α × β) where
+  hash_eq := by
+    intro ⟨a, b⟩ ⟨c, d⟩ h; simp [BEq.beq] at h
+    simp [hash, hash_eq h.1, hash_eq h.2]
+
 theorem instantiate1_eqv {e₁ e₂ : Expr} :
     e₁ == e₂ → e₁.instantiate1' a k == e₂.instantiate1' a k := by
   simp [(· == ·)]; induction e₁ generalizing e₂ k

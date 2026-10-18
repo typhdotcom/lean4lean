@@ -316,60 +316,45 @@ theorem reduceRecursor.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agr
     · exact tail
   · exact tail
 
-theorem whnfCore'.save.SS {c₁ c₂ : Context} {s : State} (he : Dom c₁ e)
-    (h1 : SuppBelow c₁ e e₁) :
-    RecM.SS c₁ c₂ s (whnfCore'.save e cheapProj e₁) (whnfCore'.save e cheapProj e₁)
-      fun r _ => SuppBelow c₁ e r := by
-  refine fun _ hm => ⟨save.SWF he h1 _ hm.swf, fun _ _ _ => ?_⟩
-  simp only [save]; split <;> exact fun h _ => h
-
-theorem whnfCore'.loop.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e f : Expr}
+theorem whnfCoreCore.loop.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e f : Expr}
     {rargs : Array Expr} (hA : Agree S c₁ c₂) (hS : S.Closed c₁) (he : Dom c₁ e)
     (hs : e.SuppIn S) (hargs : ∀ S, S.Closed c₁ → e.SuppIn S → ∀ a ∈ rargs, a.SuppIn S)
     (hf : SuppBelow c₁ e f) :
-    RecM.SS c₁ c₂ s (whnfCore'.loop e cheapProj rargs m f) (whnfCore'.loop e cheapProj rargs m f)
-      fun e₁ _ => SuppBelow c₁ e e₁ := by
+    RecM.SS c₁ c₂ s (whnfCoreCore.loop cheapProj rargs m f) (whnfCoreCore.loop cheapProj rargs m f)
+      fun p _ => SuppBelow c₁ e p.1 := by
   have hcont {m f s} (hf : SuppBelow c₁ e f) :
-      RecM.SS c₁ c₂ s (whnfCore'.loop.cont e cheapProj rargs m f)
-        (whnfCore'.loop.cont e cheapProj rargs m f) fun e₁ _ => SuppBelow c₁ e e₁ := by
-    unfold whnfCore'.loop.cont
+      RecM.SS c₁ c₂ s (whnfCoreCore.loop.cont cheapProj rargs m f)
+        (whnfCoreCore.loop.cont cheapProj rargs m f) fun p _ => SuppBelow c₁ e p.1 := by
+    unfold whnfCoreCore.loop.cont
     have hr : SuppBelow c₁ e ((f.instantiateRange (rargs.size - m) rargs.size rargs).mkAppRevRange
         0 (rargs.size - m) rargs) := fun S hS h =>
       Expr.SuppIn.mkAppRevRange hS.2.dummy (hargs S hS h)
         (Expr.SuppIn.instantiateRange (hargs S hS h) (hf S hS h))
-    refine .stateWF fun wf => (whnfCore.SS hA hS (hr.dom wf he) (hr S hS hs)).bind
-      fun _ _ _ h => ?_
-    exact save.SS he (hr.trans h)
-  unfold whnfCore'.loop; split
+    exact .stateWF fun wf => (whnfCore.SS hA hS (hr.dom wf he) (hr S hS hs)).bind
+      fun _ _ _ h => .pure (hr.trans h)
+  unfold whnfCoreCore.loop; split
   · split
-    · exact whnfCore'.loop.SS hA hS he hs hargs fun S hS h => (hf S hS h).2
+    · exact whnfCoreCore.loop.SS hA hS he hs hargs fun S hS h => (hf S hS h).2
     · exact hcont hf
   · exact hcont hf
 termination_by rargs.size - m
 
-theorem whnfCore'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
-    (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
-    RecM.SS c₁ c₂ s (whnfCore' e cheapProj) (whnfCore' e cheapProj)
-      fun e₁ _ => SuppBelow c₁ e e₁ := by
-  unfold whnfCore'; extract_lets F
-  let full := (· matches Expr.fvar _ | .app .. | .letE .. | .proj ..)
-  generalize hP : (fun e₁ (_ : State) => _) = P
-  have hid {s} : RecM.SS c₁ c₂ s (pure e) (pure e) P := hP ▸ .pure .rfl
-  suffices hF : full e → RecM.SS c₁ c₂ s (F ⟨⟩) (F ⟨⟩) P by
-    split
-    any_goals exact hid
-    any_goals exact hF rfl
-    · exact hP ▸ whnfCore'.SS (e := _) hA hS he hs
-    · refine .getLCtx ?_; rw [isLetFVar_agree hA hs]; split <;> [exact hid; exact hF rfl]
-  simp [F]; refine fun hfull => .get ?_; split
-  · rename_i r eq; refine .stateWF fun wf => hP ▸ .pure ?_
-    exact fun S hS h => (wf.whnfCore _ _ eq).2 S hS he h
-  have hsave {e₁ s} (h1 : SuppBelow c₁ e e₁) :
-      RecM.SS c₁ c₂ s (save e cheapProj e₁) (save e cheapProj e₁) P :=
-    hP ▸ save.SS he h1
+theorem whnfCoreCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
+    (hS : S.Closed c₁) (hfull : (e matches .fvar _ | .app .. | .letE .. | .proj ..) = true)
+    (he : Dom c₁ e) (hs : e.SuppIn S) :
+    RecM.SS c₁ c₂ s (whnfCoreCore e cheapProj) (whnfCoreCore e cheapProj)
+      fun p _ => SuppBelow c₁ e p.1 := by
+  unfold whnfCoreCore
+  generalize hP : (fun (p : Expr × Bool) (_ : State) => _) = P
+  have hid {s} (b) : RecM.SS c₁ c₂ s (pure (e, b)) (pure (e, b)) P := hP ▸ .pure .rfl
+  have hmap {x₁ x₂ : RecM Expr} {s} (b)
+      (h : RecM.SS c₁ c₂ s x₁ x₂ fun e₁ _ => SuppBelow c₁ e e₁) :
+      RecM.SS c₁ c₂ s ((fun a => (a, b)) <$> x₁) ((fun a => (a, b)) <$> x₂) P :=
+    hP ▸ h.map fun _ _ _ h => h
+  simp
   split <;> cases hfull
-  · exact hP ▸ whnfFVar.SS hA hS hs
-  · rename_i fn arg _
+  · exact hmap _ (whnfFVar.SS hA hS hs)
+  · rename_i _ fn arg
     generalize fn.app arg = e at *
     have hargs S (_ : S.Closed c₁) (h : e.SuppIn S) := Expr.SuppIn.getAppRevArgs h
     have hf0 : Dom c₁ e.getAppFn := dom_iff.2 (dom_iff.1 he).getAppFn
@@ -381,26 +366,55 @@ theorem whnfCore'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S 
     · refine (reduceRecursor.SS hA hS he hs).bind fun _ _ _ h => ?_
       split
       · have h := h _ rfl
-        exact hP ▸ (whnfCore.SS hA hS (h.dom ‹_› he) (h S hS hs)).mono
+        exact hmap _ <| (whnfCore.SS hA hS (h.dom ‹_› he) (h S hS hs)).mono
           fun _ _ _ h' => h.trans h'
-      · exact hid
+      · exact hid _
     · have hr : SuppBelow c₁ e (f.mkAppRevRange 0 e.getAppRevArgs.size e.getAppRevArgs) :=
         fun S hS h => Expr.SuppIn.mkAppRevRange hS.2.dummy (hargs S hS h) (hf' S hS h)
-      refine (whnfCore.SS hA hS (hr.dom wf he) (hr S hS hs)).bind fun _ _ _ h =>
-        hsave (hr.trans h)
-  · rename_i n ty val body nd _
+      exact hmap _ <| (whnfCore.SS hA hS (hr.dom wf he) (hr S hS hs)).mono fun _ _ _ h =>
+        hr.trans h
+  · rename_i n ty val body nd
     have hr : SuppBelow c₁ (.letE n ty val body nd) (body.instantiate1' val) := fun S hS h =>
       Expr.SuppIn.instantiate1 h.2.1 h.2.2
-    refine .stateWF fun wf => (whnfCore.SS hA hS (hr.dom wf he) (hr S hS hs)).bind
-      fun _ _ _ h => hsave (hr.trans h)
-  · rename_i tn idx st _
+    exact .stateWF fun wf => hmap _ <| (whnfCore.SS hA hS (hr.dom wf he) (hr S hS hs)).mono
+      fun _ _ _ h => hr.trans h
+  · rename_i tn idx st
     have hst : Dom c₁ st := he
     refine (reduceProj.SS hA hS hst hs).bind fun _ _ _ h => ?_
     split
     · have h : SuppBelow c₁ (.proj tn idx st) _ := fun S hS h' => h _ rfl S hS h'
-      exact .stateWF fun wf => (whnfCore.SS hA hS (h.dom wf he) (h S hS hs)).bind
-        fun _ _ _ h' => hsave (h.trans h')
-    · exact hsave .rfl
+      exact .stateWF fun wf => hmap _ <| (whnfCore.SS hA hS (h.dom wf he) (h S hS hs)).mono
+        fun _ _ _ h' => h.trans h'
+    · exact hP ▸ .pure .rfl
+
+theorem whnfCore'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
+    (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
+    RecM.SS c₁ c₂ s (whnfCore' e cheapProj) (whnfCore' e cheapProj)
+      fun e₁ _ => SuppBelow c₁ e e₁ := by
+  refine .of_swf (Q' := fun _ _ => True) (whnfCore'.SWF he) ?_
+  unfold whnfCore'; extract_lets F
+  let full := (· matches Expr.fvar _ | .app .. | .letE .. | .proj ..)
+  have hid {s} : RecM.SS c₁ c₂ s (pure e) (pure e) fun _ _ => True := .pure trivial
+  suffices hF : full e → RecM.SS c₁ c₂ s (F ⟨⟩) (F ⟨⟩) fun _ _ => True by
+    split
+    any_goals exact hid
+    any_goals exact hF rfl
+    · rename_i _ e'
+      exact (whnfCore'.SS (e := e') hA hS he hs).mono fun _ _ _ _ => trivial
+    · refine .getLCtx ?_; rw [isLetFVar_agree hA hs]; split <;> [exact hid; exact hF rfl]
+  simp [F]; refine fun hfull => .get <| .readThe ?_
+  refine RecM.SS.cached' hA (fun _ _ _ => ?_) (fun _ _ => ?_) (fun _ => ?_)
+  · exact RecM.SS.taintWith.map fun _ _ _ _ => trivial
+  · exact RecM.SWF.taintWith'.map fun _ _ _ h => h
+  refine (RecM.SS.withTaint fun _ => whnfCoreCore.SS hA hS hfull he hs).bind
+    fun ⟨⟨e₁, sv⟩, l⟩ s _ h1 => ?_
+  simp only
+  split
+  · refine fun _ hm => ⟨?_, fun _ _ _ eq _ _ => by revert eq; exact id⟩
+    rintro wf a s' ⟨⟩
+    exact ⟨{ wf with whnfCore := CondSupp.insert wf.whnfCore (CondSupp.of wf he h1) }, .rfl,
+      ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
+  · exact .pure trivial
 
 theorem unfoldDefinitionCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hs : e.SuppIn S) :
@@ -417,10 +431,10 @@ theorem unfoldDefinitionCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA
   refine .get ?_
   split
   · exact .pure trivial
-  · refine fun _ hm => ⟨?_, fun _ _ _ eq _ => by revert eq; exact id⟩
+  · refine fun _ hm => ⟨?_, fun _ _ _ eq _ _ => by revert eq; exact id⟩
     intro wf a s' eq
     cases eq
-    refine ⟨{ wf with unfold := fun e' r' h' S hS he' => ?_ }, .rfl, trivial⟩
+    refine ⟨{ wf with unfold := fun e' r' h' S hS he' => ?_ }, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
     rw [Std.HashMap.getElem?_insert] at h'; split at h'
     · cases h'; rename_i eq
       exact isDelta_supp hS hd (Expr.SuppIn.eqv_rev eq he')
@@ -528,6 +542,24 @@ theorem reduceNat.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S 
     refine (whnf.SS hA hS hd (Expr.SuppIn.appArg! hS.2.dummy hs)).bind fun _ _ _ _ => ?_
     split <;> exact .pure trivial
 
+theorem whnfLoop.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e' : Expr} {n : Nat}
+    (hA : Agree S c₁ c₂) (hS : S.Closed c₁) (he' : Dom c₁ e') (hs' : e'.SuppIn S) :
+    RecM.SS c₁ c₂ s (whnfLoop e' n) (whnfLoop e' n) fun e₁ _ => SuppBelow c₁ e' e₁ := by
+  refine .of_swf (Q' := fun _ _ => True) (whnfLoop.SWF he') ?_
+  induction n generalizing s e' with
+  | zero => unfold whnfLoop; exact .throw
+  | succ n ih => ?_
+  unfold whnfLoop
+  refine .getEnv <| (whnfCore'.SS hA hS he' hs').bind fun e₁ _ _ h1 => .stateWF fun wf => ?_
+  refine (RecM.SS.liftExcept reduceNative.SWF fun _ h => h).bind fun _ _ _ h3 => ?_
+  split <;> [cases h3; skip]
+  refine (reduceNat.SS hA hS (h1.dom wf he') (h1 S hS hs')).bind fun _ _ _ h3 => ?_; split
+  · exact .pure trivial
+  refine (unfoldDefinition.SS hA (h1 S hS hs')).bind fun _ _ _ H => ?_
+  split <;> [skip; exact .pure trivial]
+  have H := h1.trans (H _ rfl)
+  exact (ih (H.dom wf he') (H S hS hs')).mono fun _ _ _ _ => trivial
+
 theorem whnf'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
     RecM.SS c₁ c₂ s (whnf' e) (whnf' e) fun e₁ _ => SuppBelow c₁ e e₁ := by
@@ -541,39 +573,18 @@ theorem whnf'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁
     · rename_i _ e'
       exact (whnf'.SS (e := e') hA hS he hs).mono fun _ _ _ _ => trivial
     · refine .getLCtx ?_; rw [isLetFVar_agree hA hs]; split <;> [exact hid; exact hF]
-  simp [F]; refine .get ?_; split
-  · exact .pure trivial
-  have loop {e' n s} (he' : Dom c₁ e') (hs' : e'.SuppIn S) :
-      RecM.SS c₁ c₂ s (loop e' n) (loop e' n) fun e₁ _ => SuppBelow c₁ e' e₁ := by
-    refine .of_swf (Q' := fun _ _ => True) ?_ ?_
-    · exact (show RecM.SWF c₁ s (loop e' n) fun e₁ _ => SuppBelow c₁ e' e₁ by
-        clear hs'
-        induction n generalizing s e' with | zero => exact .throw | succ n ih => ?_
-        refine .getEnv <| (whnfCore'.SWF he').bind fun e₁ _ _ h1 => .stateWF fun wf => ?_
-        refine (M.SWF.liftExcept reduceNative.SWF).lift.bind fun _ _ _ h3 => ?_
-        split <;> [cases h3; skip]
-        refine (reduceNat.SWF (h1.dom wf he')).bind fun _ _ _ h3 => ?_; split
-        · exact .pure (h1.trans (h3 _ rfl))
-        refine unfoldDefinition.SWF.bind fun _ _ _ H => ?_
-        split <;> [skip; exact .pure h1]
-        have H := h1.trans (H _ rfl)
-        exact (ih (H.dom wf he')).mono fun _ _ _ h => H.trans h)
-    induction n generalizing s e' with | zero => exact .throw | succ n ih => ?_
-    refine .getEnv <| (whnfCore'.SS hA hS he' hs').bind fun e₁ _ _ h1 => .stateWF fun wf => ?_
-    refine (RecM.SS.liftExcept reduceNative.SWF fun _ h => h).bind fun _ _ _ h3 => ?_
-    split <;> [cases h3; skip]
-    refine (reduceNat.SS hA hS (h1.dom wf he') (h1 S hS hs')).bind fun _ _ _ h3 => ?_; split
-    · exact .pure trivial
-    refine (unfoldDefinition.SS hA (h1 S hS hs')).bind fun _ _ _ H => ?_
-    split <;> [skip; exact .pure trivial]
-    have H := h1.trans (H _ rfl)
-    exact ih (H.dom wf he') (H S hS hs')
+  simp [F]; refine .get <| .readThe ?_
+  refine RecM.SS.cached' hA (fun _ _ _ => ?_) (fun _ _ => ?_) (fun _ => ?_)
+  · exact RecM.SS.taintWith.map fun _ _ _ _ => trivial
+  · exact RecM.SWF.taintWith'.map fun _ _ _ h => h
+  have loop {e' n s} (he' : Dom c₁ e') (hs' : e'.SuppIn S) := whnfLoop.SS (n := n) (s := s) hA hS he' hs'
   refine .readThe ?_
   rw [hA.eagerReduce, hA.fuel]
-  refine (loop he hs).bind fun e₁ s _ h1 => ?_
-  refine fun _ hm => ⟨?_, fun _ _ _ eq _ => by revert eq; exact id⟩
+  refine (RecM.SS.withTaint fun _ => loop he hs).bind fun ⟨e₁, l⟩ s _ h1 => ?_
+  refine fun _ hm => ⟨?_, fun _ _ _ eq _ _ => by revert eq; exact id⟩
   rintro wf a s' ⟨⟩
-  exact ⟨{ wf with whnf := CondSupp.insert wf.whnf (CondSupp.of wf he h1) }, .rfl, trivial⟩
+  exact ⟨{ wf with whnf := CondSupp.insert wf.whnf (CondSupp.of wf he h1) }, .rfl,
+      ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
 
 end Inner
 end TypeChecker

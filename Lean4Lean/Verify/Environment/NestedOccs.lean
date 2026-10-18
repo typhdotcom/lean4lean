@@ -407,16 +407,12 @@ theorem nested_occs {env : Environment} {ves : VEnvs} (wf : ves.WF env) {lparams
     ElimNestedInductive.Opens.mlctx henv.ordered hoI (M₀ := .nil) trivial rfl (by simp) hxnd hQl
       (by simpa using hIT.mono hle)
   simp only [TypeChecker.MLCtx.vlctx, VLCtx.fvars_nil, List.append_nil] at hME hMfv
-  have hresM : ∀ fv ∈ M.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv := by
-    intro fv h
-    rw [hMfv, List.mem_reverse] at h
-    exact ElimNestedInductive.run_params hrun fv (by rw [hparams]; simpa using h)
   let c := TypeChecker.VContext.ofMLCtx hVT lparams fuel M hMw
   have hfvc : ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
       p.2.FVarsIn (· ∈ c.vlctx.fvars) := fun p hp =>
     (hfvK p hp).mono fun x hx => by
       show x ∈ M.vlctx.fvars; rw [hMfv]; exact List.mem_reverse.2 hx
-  obtain ⟨s, -, hQ⟩ := TypeChecker.M.WF.runMLCtx hVT hMw hresM
+  obtain ⟨s, -, hQ⟩ := TypeChecker.M.WF.runMLCtx hVT hMw
     (TypeChecker.checkType.forM_lit (c := c) _ (fun p : Name × Expr => p.2) hfvc) (hMl ▸ hF.occList)
   -- the context's variables are the parameters
   have hEsome : ∀ x ∈ M.vlctx, x.1.isSome := by

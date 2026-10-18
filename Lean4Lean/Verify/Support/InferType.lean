@@ -130,7 +130,8 @@ theorem inferLambda.loop.SWF {c c' : Context} {s : State} {e₀ e : Expr} {arr :
     have main {s₁} : RecM.SWF c' s₁ (withLocalDecl name bi (dom.instantiateRev arr) fun fv =>
         inferLambda.loop inferOnly (arr.push fv) body) fun ty _ => SuppBelow c e₀ ty := by
       refine .stateWF fun wf => .withLocalDecl hd ?_
-      have E := wf.ctxExt (name := name) (ty := dom.instantiateRev arr) (bi := bi)
+      intro hfresh
+      have E := wf.ctxExt hfresh (name := name) (ty := dom.instantiateRev arr) (bi := bi)
       refine inferLambda.loop.SWF (T.push E) (by simp [harr]) ?_ fun S hS he => ?_
       · exact fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))
       · have ⟨HS, h1, h2⟩ := H S hS he
@@ -168,7 +169,8 @@ theorem inferForall.loop.SWF {c c' : Context} {s : State} {e₀ e : Expr} {arr :
     refine .stateWF fun wf => (inferType.SWF hd).bind fun ty _ _ hty => .stateWF fun wf₁ => ?_
     refine (ensureSortCore.SWF (hty.dom wf₁ hd)).bind fun t1 s₁ _ ht1 => ?_
     refine .stateWF fun wf => .withLocalDecl hd ?_
-    have E := wf.ctxExt (name := name) (ty := dom.instantiateRev arr) (bi := bi) (s := s₁)
+    intro hfresh
+    have E := wf.ctxExt hfresh (name := name) (ty := dom.instantiateRev arr) (bi := bi) (s := s₁)
     refine inferForall.loop.SWF (T.push E) (by simp [harr]) ?_ fun S hS he => ?_
     · exact fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))
     · have ⟨HS, ⟨h1, h2⟩, h3⟩ := H S hS he
@@ -209,7 +211,8 @@ theorem inferLet.loop.SWF {c c' : Context} {s : State} {e₀ e : Expr} {arr : Ar
         (val.instantiateRev arr) fun fv => inferLet.loop inferOnly (arr.push fv) body)
         fun ty _ => SuppBelow c e₀ ty := by
       refine .stateWF fun wf => .withLetDecl ht hv ?_
-      have E := wf.ctxExtLet (name := name) (ty := type.instantiateRev arr)
+      intro hfresh
+      have E := wf.ctxExtLet hfresh (name := name) (ty := type.instantiateRev arr)
         (val := val.instantiateRev arr)
       refine inferLet.loop.SWF (T.push E) (by simp [harr]) ?_ fun S hS he => ?_
       · exact fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))
@@ -360,26 +363,16 @@ theorem inferProj.SWF {c : Context} {s : State} {struct structType : Expr}
     · exact .getLCtx .throw
   · exact .getLCtx .throw
 
-theorem inferType'.SWF {c : Context} {s : State} {e : Expr} (he : Dom c e) :
-    (inferType' e inferOnly).SWF c s fun ty _ => SuppBelow c e ty := by
-  unfold inferType'; lift_lets; intro F F1
-  split <;> [exact .throw; refine .get <| .get ?_]
-  split
-  · rename_i h; refine .stateWF fun wf => .pure ?_
-    generalize hic : cond .. = ic at h
-    have : ∀ e r, ic[e]? = some r → CondSupp c s.ngen e r := by
-      subst ic; cases inferOnly <;> [exact wf.inferTypeC; exact wf.inferTypeI]
-    exact fun S hS h' => (this _ _ h).2 S hS he h'
+mutual
+theorem inferTypeCore.SWF {c : Context} {s : State} {e : Expr} (hb : e.hasLooseBVars = false)
+    (he : Dom c e) :
+    (inferTypeCore e inferOnly).SWF c s fun ty _ => SuppBelow c e ty := by
+  unfold inferTypeCore; lift_lets; intro F
   generalize hP : (fun _ (_ : State) => _) = P
-  have hF {ty s} (H : SuppBelow c e ty) : (F ty).SWF c s P := by
-    rintro _ _ wf a s' ⟨⟩
-    have hc := CondSupp.of wf he H
-    subst P; cases inferOnly
-    · exact ⟨{ wf with inferTypeC := CondSupp.insert wf.inferTypeC hc }, .rfl, H⟩
-    · exact ⟨{ wf with inferTypeI := CondSupp.insert wf.inferTypeI hc }, .rfl, H⟩
+  have hF {ty s} (H : SuppBelow c e ty) : (F ty).SWF c s P := hP ▸ .pure H
   have sub {e'} (h : ∀ fv ∈ e'.fvarsList, fv ∈ e.fvarsList) : Dom c e' := fun fv h' => he fv (h fv h')
   split
-  · rename_i l _ _
+  · rename_i l
     have H : SuppBelow c (.lit l) (mkConst l.typeName) := by
       intro S _ h; cases l <;> exact ⟨h.1, nofun⟩
     extract_lets G1; split <;> [split; skip]
@@ -387,16 +380,16 @@ theorem inferType'.SWF {c : Context} {s : State} {e : Expr} (he : Dom c e) :
     · refine .getEnv <| (M.SWF.liftExcept envGet.SWF).lift.bind fun _ _ _ _ => ?_
       exact .getEnv <| (M.SWF.liftExcept envGet.SWF).lift.bind fun _ _ _ _ => hF H
     · exact hF H
-  · rename_i e _ _
+  · rename_i e
     exact (inferType'.SWF (e := e) he).bind fun _ _ _ h => hF h
-  · rename_i st idx e _ _
+  · rename_i st idx e
     have he' : Dom c e := he
     refine (inferType'.SWF he').bind fun ty _ _ h => .stateWF fun wf => ?_
     exact (inferProj.SWF he' (h.dom wf he') h).bind fun _ _ _ h => hF h
   · exact .readThe <| (M.SWF.liftExcept inferFVar.SWF).lift.bind fun _ _ _ h => hF h
   · exact .throw
-  · rename_i h _; simp [Expr.hasLooseBVars, Expr.looseBVarRange'] at h
-  · rename_i u _ _
+  · simp [Expr.hasLooseBVars, Expr.looseBVarRange'] at hb
+  · rename_i u
     have H : SuppBelow c (.sort u) (.sort (.succ u)) := fun S _ h => (h : Level.LParamsIn S.lvl u)
     split
     · exact .readThe <| (M.SWF.liftExcept (Q := fun _ => True) fun _ _ => trivial).lift.bind
@@ -405,7 +398,7 @@ theorem inferType'.SWF {c : Context} {s : State} {e : Expr} (he : Dom c e) :
   · exact .readThe <| (M.SWF.liftExcept inferConstant.SWF).lift.bind fun _ _ _ h => hF h
   · exact (inferLambda.SWF he).bind fun _ _ _ h => hF h
   · exact (inferForall.SWF he).bind fun _ _ _ h => hF h
-  · rename_i f a _ _
+  · rename_i f a
     have hf : Dom c f := sub fun fv h => by simp [Expr.fvarsList, h]
     have ha : Dom c a := sub fun fv h => by simp [Expr.fvarsList, h]
     split
@@ -428,6 +421,28 @@ theorem inferType'.SWF {c : Context} {s : State} {e : Expr} (he : Dom c e) :
     · refine hF fun S hS h => ?_
       exact Expr.SuppIn.inst1 h.2 <| Expr.SuppIn.bindingBody! hS.2.dummy (hfty'' S hS h.1)
   · exact (inferLet.SWF he).bind fun _ _ _ h => hF h
+
+
+theorem inferType'.SWF {c : Context} {s : State} {e : Expr} (he : Dom c e) :
+    (inferType' e inferOnly).SWF c s fun ty _ => SuppBelow c e ty := by
+  unfold inferType'
+  split <;> [exact .throw; (rename_i hb; refine .get <| .readThe ?_)]
+  split
+  · rename_i r l h
+    obtain ⟨_, h⟩ := State.cached?_some' h
+    refine .stateWF fun wf => RecM.SWF.taintWith.bind fun _ _ _ _ => .pure ?_
+    generalize hic : cond .. = ic at h
+    have : ∀ e (r : Cached), ic[e]? = some r → CondSupp c s.ngen e r.1 := by
+      subst ic; cases inferOnly <;> [exact wf.inferTypeC; exact wf.inferTypeI]
+    exact fun S hS h' => (this _ _ h).2 S hS he h'
+  refine (RecM.SWF.withTaint (inferTypeCore.SWF (by simpa using hb) he)).bind
+    fun ⟨ty, t⟩ _ _ H => ?_
+  rintro _ _ wf a s' ⟨⟩
+  have hc := CondSupp.of wf he H
+  cases inferOnly
+  · exact ⟨{ wf with inferTypeC := CondSupp.insert wf.inferTypeC hc }, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, H⟩
+  · exact ⟨{ wf with inferTypeI := CondSupp.insert wf.inferTypeI hc }, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, H⟩
+end
 
 end Inner
 end TypeChecker

@@ -26,3 +26,19 @@ theorem Reserves.mono : ngen ≤ ngen' → Reserves ngen fv → Reserves ngen' f
   | ⟨h₁⟩ => fun H _ hi => Nat.lt_of_lt_of_le (H _ hi) h₁
 
 theorem LE.next {ngen : NameGenerator} : ngen ≤ ngen.next := ⟨Nat.le_succ _⟩
+
+theorem reserves_next {ngen : NameGenerator} {fv : FVarId} :
+    ngen.next.Reserves fv ↔ ngen.Reserves fv ∨ fv = ⟨ngen.curr⟩ := by
+  constructor
+  · intro h
+    by_cases e : ∃ i, fv = ⟨.num ngen.namePrefix i⟩
+    · obtain ⟨i, rfl⟩ := e
+      have := h i rfl
+      simp only [next, curr] at this ⊢
+      rcases Nat.lt_succ_iff_lt_or_eq.1 this with h' | rfl
+      · exact .inl fun j hj => by cases hj; exact h'
+      · exact .inr rfl
+    · exact .inl fun i hi => (e ⟨i, hi⟩).elim
+  · rintro (h | rfl)
+    · exact h.mono LE.next
+    · exact next_reserves_self

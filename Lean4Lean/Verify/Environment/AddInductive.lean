@@ -344,16 +344,8 @@ theorem WF.throw {c : VContext} {Q} : WF c (throw e : M α) Q := nofun
 theorem WF.liftExcept {c : VContext} {x : Except Exception α} {Q} (h : x.WF Q) :
     WF c (liftM x : M α) Q := fun _ e => h _ e
 
-theorem VState.WF.emptyM (c : VContext) : TypeChecker.VState.WF c.tc {} where
-  trctx := c.mlctx_wf.tr
-  ngen_wf := c.notKernel
-  ectx := .empty
-  inferTypeI_wf := .empty
-  inferTypeC_wf := .empty
-  inferTypeC_lit := .empty
-  whnfCore_wf := .empty
-  whnf_wf := .empty
-  unfold_wf _ := by simp
+theorem VState.WF.emptyM (c : VContext) : TypeChecker.VState.WF c.tc {} :=
+  .emptyOf _ c.envAt.envClosed rfl
 
 /-- Stripping a binder type's annotations, each checked to return the type it annotates. -/
 theorem consumeTypeAnnotations.WF {c : VContext} {e : Expr} :

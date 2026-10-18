@@ -61,7 +61,8 @@ theorem isDefEqLambda.SWF {c : Context} {s : State} {subst : Array Expr}
     | none => exact Dom.instRev hsub hd₂
     | some y => exact hx y rfl
   refine .stateWF fun wf => .withLocalDecl hd ?_
-  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
+  intro hfresh
+  have E := wf.ctxExt hfresh (name := n₂) (ty := d₂') (bi := bi₂)
   refine isDefEqLambda.SWF (fun a ha => ?_) (hb₁.mono E) (hb₂.mono E)
   simp only [Array.mem_push] at ha
   obtain ha | rfl := ha
@@ -97,7 +98,8 @@ theorem isDefEqForall.SWF {c : Context} {s : State} {subst : Array Expr}
     | none => exact Dom.instRev hsub hd₂
     | some y => exact hx y rfl
   refine .stateWF fun wf => .withLocalDecl hd ?_
-  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
+  intro hfresh
+  have E := wf.ctxExt hfresh (name := n₂) (ty := d₂') (bi := bi₂)
   refine isDefEqForall.SWF (fun a ha => ?_) (hb₁.mono E) (hb₂.mono E)
   simp only [Array.mem_push] at ha
   obtain ha | rfl := ha
@@ -107,23 +109,31 @@ theorem isDefEqForall.SWF {c : Context} {s : State} {subst : Array Expr}
 theorem quickIsDefEq.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂ : Dom c e₂) :
     (quickIsDefEq e₁ e₂ useHash).SWF c s fun _ _ => True := by
   unfold quickIsDefEq
-  refine .bind (Q := fun _ _ => True) ?_ fun _ _ _ _ => ?_
+  refine .bind (Q := fun _ _ => True) ?_ fun r _ _ _ => ?_
   · intro _ _ wf _ s₁ eq
-    simp [modifyGet, MonadStateOf.modifyGet, monadLift, MonadLift.monadLift, StateT.modifyGet,
-      pure, Except.pure] at eq
-    split at eq; rename_i b _ b' m hm
-    change let s' := _; (_, s') = _ at eq; extract_lets s' at eq
-    injection eq; subst b' s₁
-    exact ⟨{ wf with }, .rfl, trivial⟩
-  split; · exact .pure trivial
+    change Except.ok (s.checkEquiv useHash e₁ e₂) = _ at eq
+    have h2 : s₁ = (s.checkEquiv useHash e₁ e₂).2 :=
+      (congrArg Prod.snd (Except.ok.inj eq)).symm
+    obtain ⟨m, hm⟩ := State.checkEquiv_snd s useHash e₁ e₂
+    rw [h2, hm]
+    exact ⟨wf.setAux rfl rfl rfl rfl rfl rfl, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
+  extract_lets J
+  have hJ {s} : RecM.SWF c s (J ()) fun _ _ => True := by
+    dsimp only [J]
+    split
+    · exact .toLBoolM (isDefEqLambda.SWF nofun h₁ h₂)
+    · exact .toLBoolM (isDefEqForall.SWF nofun h₁ h₂)
+    · exact .pure trivial
+    · exact .toLBoolM (isDefEq.SWF h₁ h₂)
+    · exact .panic trivial
+    · exact .pure trivial
+    · exact .pure trivial
   split
-  · exact .toLBoolM (isDefEqLambda.SWF nofun h₁ h₂)
-  · exact .toLBoolM (isDefEqForall.SWF nofun h₁ h₂)
-  · exact .pure trivial
-  · exact .toLBoolM (isDefEq.SWF h₁ h₂)
-  · exact .panic trivial
-  · exact .pure trivial
-  · exact .pure trivial
+  · refine .readThe ?_
+    split
+    · exact (RecM.SWF.taintWith).bind fun _ _ _ _ => .pure trivial
+    · exact hJ
+  · exact hJ
 
 theorem isDefEqArgs.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂ : Dom c e₂) :
     (isDefEqArgs e₁ e₂).SWF c s fun _ _ => True := by
@@ -236,7 +246,7 @@ theorem isDefEqProofIrrel.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h�
 theorem cacheFailure.SWF {c : Context} {s : State} :
     (cacheFailure e₁ e₂).SWF c s fun _ _ => True := by
   rintro wf _ _ ⟨⟩
-  exact ⟨{ wf with }, .rfl, trivial⟩
+  exact ⟨{ wf with }, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
 
 theorem tryUnfoldProjApp.SWF {c : Context} {s : State} (he : Dom c e) :
     (tryUnfoldProjApp e).SWF c s fun oe _ => ∀ e₁, oe = some e₁ → SuppBelow c e e₁ := by

@@ -1,7 +1,7 @@
 import Batteries.Data.UnionFind.Lemmas
 import Lean4Lean.Verify.Environment.Lemmas
 import Lean4Lean.EquivManager
-import Lean4Lean.Verify.TypeChecker.Basic
+import Lean4Lean.Verify.TypeChecker.Rerun
 
 namespace Lean4Lean.EquivManager
 open Lean hiding Environment Exception
@@ -166,166 +166,161 @@ theorem IsDefEqE.uniq (henv : env.WF) (noBV : Δ.NoBV) (hΔ : Δ.WF env Us.lengt
   have ⟨_, a1, _, a2, a3⟩ := eq.trExpr henv noBV hΔ .refl .rfl he₁
   exact .symm <| a1.uniq henv (.refl henv hΔ) he₂ a2 |>.trans henv hΔ a3
 
-protected structure LE (m₁ m₂ : EquivManager) where
-  uf : m₁.uf.Equiv i₁ i₂ → m₂.uf.Equiv i₁ i₂
-  toNodeMap {e : Expr} : m₁.toNodeMap[e]? = some i → m₂.toNodeMap[e]? = some i
-
-instance : LE EquivManager := ⟨EquivManager.LE⟩
-
-theorem LE.rfl {m : EquivManager} : m ≤ m := ⟨id, id⟩
-
-theorem LE.trans {m₁ m₂ m₃ : EquivManager} (h1 : m₁ ≤ m₂) (h2 : m₂ ≤ m₃) : m₁ ≤ m₃ :=
- ⟨h2.1 ∘ h1.1, h2.2 ∘ h1.2⟩
-
-variable (env Us Δ) in
-def M.WF (m : EquivManager) (x : StateM EquivManager α) (P : α → EquivManager → Prop) :=
-  m.WF env Us Δ → ∀ ⦃a m'⦄, x.run m = (a, m') → m'.WF env Us Δ ∧ m ≤ m' ∧ P a m'
-
-theorem M.WF.stateWF {P : α → EquivManager → Prop}
-    (H : m.WF env Us Δ → M.WF env Us Δ m x P) :
-    M.WF env Us Δ m x P := fun h => H h h
-
-protected theorem M.WF.pure {a : α} {P : α → EquivManager → Prop} (H : P a m) :
-    M.WF env Us Δ m (pure a) P := by
-  rintro wf _ _ ⟨⟩; exact ⟨wf, .rfl, H⟩
-
-protected theorem M.WF.bind {x : StateM EquivManager β} {f : β → StateM EquivManager γ}
-    (h1 : M.WF env Us Δ m x P) (h2 : ∀ a m', m ≤ m' → P a m' → M.WF env Us Δ m' (f a) Q) :
-    M.WF env Us Δ m (x >>= f) Q := by
-  intro wf a m₁; simp [bind, StateT.run, StateT.bind]; split; intro eq
-  have ⟨wf, a1, a2⟩ := (h1 wf ‹_› :)
-  have ⟨wf, b1, b2⟩ := h2 _ _ a1 a2 wf eq
-  exact ⟨wf, a1.trans b1, b2⟩
-
-protected theorem M.WF.mono {x : StateM EquivManager β}
-    (h1 : M.WF env Us Δ m x P) (h2 : ∀ a m', m ≤ m' → P a m' → Q a m') :
-    M.WF env Us Δ m x Q := by
-  simpa using h1.bind fun _ _ a1 a2 => .pure (h2 _ _ a1 a2)
-
-protected theorem M.WF.bind_le {x : StateM EquivManager β} {f : β → StateM EquivManager γ}
-    (h1 : M.WF env Us Δ m x P) (le : m₀ ≤ m)
-    (h2 : ∀ a m', m₀ ≤ m' → P a m' → M.WF env Us Δ m' (f a) Q) :
-    M.WF env Us Δ m (x >>= f) Q := h1.bind fun _ _ a1 => h2 _ _ (le.trans a1)
-
-protected theorem M.WF.andM {x y : StateM EquivManager Bool}
-    (h1 : M.WF env Us Δ m x fun b _ => b → P)
-    (h2 : ∀ {m}, M.WF env Us Δ m y fun b _ => b → Q) :
-    M.WF env Us Δ m (x <&&> y) fun b _ => b → P ∧ Q := by
-  refine h1.bind fun b _ _ h1 => ?_; cases b <;> [exact .pure nofun; skip]
-  refine h2.mono fun _ _ _ h2 h => ⟨h1 rfl, h2 h⟩
-
-theorem find.WF : M.WF env Us Δ m (EquivManager.find i) fun j m => m.uf.Equiv i j := by
-  intro wf a m'; simp [StateT.run, find]; split <;> rintro ⟨⟩
-  · refine ⟨⟨?_, ?_⟩, ⟨by simp [UnionFind.equiv_find], id⟩, ?_⟩
-    · simp; exact wf.wf
-    · simp [UnionFind.equiv_find]; exact wf.defeq
-    · simp [UnionFind.equiv_find]; exact .rfl
-  · exact ⟨wf, .rfl, .rfl⟩
-
-theorem merge.WF (wf : m.WF env Us Δ)
-    (he : IsDefEqE env Us Δ e₁ e₂)
-    (hi : m.toNodeMap[e₁]? = some i) (hj : m.toNodeMap[e₂]? = some j) :
-    (merge m i j).WF env Us Δ ∧ m ≤ merge m i j := by
-  simp [merge]; iterate 2 split <;> [skip; exact ⟨wf, .rfl⟩]
-  refine ⟨⟨?_, ?_⟩, ⟨by simp [UnionFind.equiv_union]; exact .inl, by simp⟩⟩
-  · simp; exact wf.wf
-  · simp [UnionFind.equiv_union]
-    rintro _ _ _ _ h1 h2 (h3 | ⟨h3, h4⟩ | ⟨h3, h4⟩)
-    · exact wf.defeq h1 h2 h3
-    · refine (wf.defeq h1 hi h3).trans he |>.trans (wf.defeq hj h2 h4)
-    · exact (wf.defeq h1 hj h3).trans he.symm |>.trans (wf.defeq hi h2 h4)
-
-theorem toNode.WF :
-    M.WF env Us Δ m (EquivManager.toNode e) fun n m => m.toNodeMap[e]? = some n := by
-  intro wf a m'; simp [StateT.run, toNode]; split <;> rintro ⟨⟩ <;> [exact ⟨wf, .rfl, ‹_›⟩; skip]
-  refine ⟨{ wf {i} := ?_, defeq h1 h2 h3 := ?_ }, ⟨by simp, ?_⟩, by simp⟩
-  · simp [Std.HashMap.getElem?_insert]
-    refine ⟨fun h => ?_, fun ⟨_, h⟩ => ?_⟩
-    · obtain h | rfl := Nat.lt_succ_iff_lt_or_eq.1 h
-      · have ⟨e', h⟩ := wf.wf.1 h
-        exists e'; rwa [if_neg]; intro eq
-        rename_i hn _ _; exact hn _ (Std.HashMap.getElem?_congr eq ▸ h)
-      · exact ⟨e, by simp⟩
-    · split at h
-      · cases h; apply Nat.lt_succ_self
-      · exact Nat.lt_succ_of_lt (wf.wf.2 ⟨_, h⟩)
-  · simp [Std.HashMap.getElem?_insert] at h1 h2 h3
-    split at h1 <;> split at h2 <;> rename_i a1 a2
-    · exact .relevant <| .of_eqv <| BEq.trans (BEq.symm a1) a2
-    · cases h1; cases Nat.ne_of_gt (wf.wf.2 ⟨_, h2⟩) (h3.eq_of_ge_size (Nat.le_refl _))
-    · cases h2; cases Nat.ne_of_gt (wf.wf.2 ⟨_, h1⟩) (h3.symm.eq_of_ge_size (Nat.le_refl _))
-    · exact wf.defeq h1 h2 h3
-  · simp [Std.HashMap.getElem?_insert]
-    intro _ _ h; rwa [if_neg]; rename_i h' _ _
-    exact fun eq => h' _ (Std.HashMap.getElem?_congr eq ▸ h)
-
-theorem isEquiv.WF :
-    M.WF env Us Δ m (isEquiv useHash e₁ e₂) fun b _ => b → IsDefEqE env Us Δ e₁ e₂ := by
-  unfold isEquiv; split <;> [exact .pure fun _ => ptrEqExpr_eq ‹_› ▸ .rfl; skip]
-  split <;> [exact .pure nofun; split]
-  · rename_i h; refine .pure ?_
-    simp only [Bool.and_eq_true, Expr.isBVar] at h
-    split at h <;> cases h.1; split at h <;> cases h.2
-    simp [Expr.bvarIdx!]; rintro ⟨⟩; exact .rfl
-  refine toNode.WF.bind fun i₁ _ _ a1 => find.WF.bind fun j₁ _ le₁ a2 => ?_
-  refine toNode.WF.bind fun i₂ _ le₂ b1 => find.WF.bind fun j₂ m₀ le₃ b2 => ?_
-  refine .stateWF fun wf => ?_
-  replace a1 := le₁.trans le₂ |>.trans le₃ |>.toNodeMap a1
-  replace a2 := le₂.trans le₃ |>.uf a2
-  replace b1 := le₃.toNodeMap b1
-  extract_lets F4
-  split
-  · rename_i h; simp at h; cases h; refine .pure fun _ => wf.defeq a1 b1 (a2.trans b2.symm)
-  have {m b} (le₄ : m₀ ≤ m) (H : b = true → IsDefEqE env Us Δ e₁ e₂) :
-      M.WF env Us Δ m (F4 b) fun b _ => b → IsDefEqE env Us Δ e₁ e₂ := by
-    dsimp only [F4]; split <;> [skip; exact .pure H]
-    intro wf a _; simp; rintro ⟨⟩
-    replace a1 := le₄.toNodeMap a1; replace a2 := le₄.uf a2
-    replace b1 := le₄.toNodeMap b1; replace b2 := le₄.uf b2
-    have ⟨r₁, hr₁⟩ := wf.wf.1 <| a2.lt_size.1 <| wf.wf.2 ⟨_, a1⟩
-    have ⟨r₂, hr₂⟩ := wf.wf.1 <| b2.lt_size.1 <| wf.wf.2 ⟨_, b1⟩
-    suffices IsDefEqE env Us Δ r₁ r₂ from have ⟨wf, h⟩ := merge.WF wf this hr₁ hr₂; ⟨wf, h, H⟩
-    exact (wf.defeq a1 hr₁ a2).symm.trans <| .trans (H ‹_›) (wf.defeq b1 hr₂ b2)
-  simp; split
-  · apply this .rfl; simp; rintro rfl rfl; exact .rfl
-  · apply this .rfl; simp; rintro rfl; exact .rfl
-  · apply this .rfl; simp; rintro rfl; exact .rfl
-  · apply this .rfl; simp; rintro rfl; exact .rfl
-  · apply this .rfl; simp; rintro rfl; exact .rfl
-  · exact .bind (.andM isEquiv.WF isEquiv.WF) fun _ _ le H =>
-      this le fun hb => .app (H hb).1 (H hb).2
-  · exact .bind (.andM isEquiv.WF isEquiv.WF) fun _ _ le H =>
-      this le fun hb => .lam (H hb).1 (H hb).2
-  · exact .bind isEquiv.WF fun _ _ le H => this le fun hb => .mdata (H hb)
-  · exact .bind (.andM isEquiv.WF isEquiv.WF) fun _ _ le H =>
-      this le fun hb => .forallE (H hb).1 (H hb).2
-  · exact .bind (.andM (.pure id) isEquiv.WF) fun _ _ le H =>
-      this le fun hb => by
-        obtain ⟨⟨rfl, rfl⟩, h⟩ : (_ ∧ _) ∧ _ := by simpa using H hb
-        exact .proj h
-  · exact .bind (.andM isEquiv.WF <| .andM isEquiv.WF isEquiv.WF) fun _ _ le H =>
-      this le fun hb => .letE (H hb).1 (H hb).2.1 (H hb).2.2
-  · exact .pure nofun
-
 end EquivManager
+
+namespace ScopedEquivManager
+
+variable {env : VEnv} {Us : List Name}
+
+/-- The equivalences of a chain of contexts are a relation the scoped union-find can answer
+queries by. -/
+theorem Chain.erel (henv : env.WF) (H : Chain env Us Γ c) : ERel (ChainE env Us Γ c) where
+  beq h _ := .relevant (.of_eqv h)
+  symm h hc := (h hc).symm
+  trans h1 h2 := fun hc => by
+    have a1 := ChainE.mono henv H (Nat.le_max_left ..) h1 hc
+    have a2 := ChainE.mono henv H (Nat.le_max_right ..) h2 hc
+    exact a1.trans a2
+  mono h h1 := ChainE.mono henv H h h1
+  app h1 h2 := fun hc =>
+    .app (ChainE.mono henv H (Nat.le_max_left ..) h1 hc)
+      (ChainE.mono henv H (Nat.le_max_right ..) h2 hc)
+  lam h1 h2 := fun hc =>
+    .lam (ChainE.mono henv H (Nat.le_max_left ..) h1 hc)
+      (ChainE.mono henv H (Nat.le_max_right ..) h2 hc)
+  forallE h1 h2 := fun hc =>
+    .forallE (ChainE.mono henv H (Nat.le_max_left ..) h1 hc)
+      (ChainE.mono henv H (Nat.le_max_right ..) h2 hc)
+  letE h1 h2 h3 := fun hc =>
+    .letE (ChainE.mono henv H (by omega) h1 hc) (ChainE.mono henv H (by omega) h2 hc)
+      (ChainE.mono henv H (Nat.le_max_right ..) h3 hc)
+  mdata h := fun hc => .mdata (h hc)
+  proj h := fun hc => .proj (h hc)
+
+end ScopedEquivManager
 
 namespace TypeChecker.Inner
 
-open EquivManager in
-theorem addEquiv.WF {c : VContext} {s : VState} (he₁ : c.TrExprS e₁ e') (he₂ : c.TrExpr e₂ e') :
-    RecM.WF c s (modify fun st => { st with eqvManager := st.eqvManager.addEquiv e₁ e₂ })
-      fun _ _ => True := by
+/-- The equivalences of one context, at every level. -/
+theorem IsDefEqE.erel (env : VEnv) (Us : List Name) (Δ : VLCtx) :
+    ScopedEquivManager.ERel fun _ => EquivManager.IsDefEqE env Us Δ where
+  beq h := .relevant (.of_eqv h)
+  symm h := h.symm
+  trans h1 h2 := h1.trans h2
+  mono _ h := h
+  app h1 h2 := .app h1 h2
+  lam h1 h2 := .lam h1 h2
+  forallE h1 h2 := .forallE h1 h2
+  letE h1 h2 h3 := .letE h1 h2 h3
+  mdata h := .mdata h
+  proj h := .proj h
+
+theorem RecM.WF.withTaint {c : VContext} {s : VState} {x : RecM α} {Q : α → VState → Prop}
+    (h : x.WF c ⟨{ s.toState with taint := 0 }⟩ Q)
+    (hQ : ∀ a (s₁ s₂ : VState), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
+    (TypeChecker.withTaint x).WF c s fun p s' => Q p.1 s' := by
+  intro m mwf wf a s' e
+  unfold TypeChecker.withTaint at e
+  simp only [bind, ReaderT.bind, StateT.bind, Except.bind, get, getThe,
+    MonadStateOf.get, liftM, monadLift, MonadLift.monadLift, StateT.get, pure, Except.pure,
+    StateT.pure, ReaderT.pure, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet] at e
+  split at e <;> [cases e; skip]
+  rename_i v e₁
+  obtain ⟨b, s₁⟩ := v
+  cases e
+  obtain ⟨vs₁, h1, h2, h3, h4⟩ := h m mwf (wf.setTaint 0 s.fvLvl) _ _ e₁
+  subst h1
+  exact ⟨⟨{ vs₁.toState with taint := max s.taint vs₁.taint }⟩, rfl, h2,
+    h3.setTaint _ vs₁.fvLvl, hQ b vs₁ _ rfl h4⟩
+
+/-- What a recorded equivalence of `e₁` and `e₂` asserts in a context, as a fact learned. -/
+def PairFact (env : VEnv) (Us : List Name) (e₁ e₂ : Lean.Expr) (m : MLCtx) : Prop :=
+  ∀ t' u', TrExprS env Us m.vlctx e₁ t' → TrExprS env Us m.vlctx e₂ u' →
+    EquivManager.IsDefEqE env Us m.vlctx e₁ e₂
+
+theorem PairFact.eqv {e₁ e₂ k₁ k₂ : Lean.Expr} (H : PairFact env Us e₁ e₂ m)
+    (h₁ : (e₁ == k₁) = true) (h₂ : (e₂ == k₂) = true) :
+    PairClaim env Us (k₁, k₂) v m := fun t' u' ht hu => by
+  have ht' := ht.eqv (by rwa [BEq.comm] at h₁)
+  have hu' := hu.eqv (by rwa [BEq.comm] at h₂)
+  exact (EquivManager.IsDefEqE.relevant (.of_eqv h₁)).symm.trans (H t' u' ht' hu') |>.trans
+    (.relevant (.of_eqv h₂))
+
+theorem _root_.Lean4Lean.TypeChecker.VState.WF.labelId_le {c : VContext} {s : VState}
+    (wf : s.WF c) (l : Nat) : s.scopeIds.labelId l ≤ s.ngen.idx := by
+  rcases ScopedEquivManager.Scopes.labelId_mem s.scopeIds l with h | h
+  · rw [h]; exact Nat.zero_le _
+  · exact (wf.ids_wf _ h).2
+
+theorem _root_.Lean4Lean.TypeChecker.State.recordEquiv_eq (st : State) (t u : Lean.Expr)
+    (l : Nat) : ∃ lab memo, l ≤ lab ∧ st.recordEquiv t u l =
+      { st with
+        fvLvl := memo
+        eqvPairs := st.eqvPairs.insert (t, u) (lab, st.scopeIds.labelId lab)
+        eqvManager := ((ScopedEquivManager.addEquiv st.scopeIds (fun _ => 0) t u
+          st.scopeIds.size).run st.eqvManager).2 } := by
+  unfold State.recordEquiv
+  rcases h1 : fvarLevel st.scopeFV t st.fvLvl with ⟨lt, m1⟩
+  rcases h2 : fvarLevel st.scopeFV u m1 with ⟨ls, m2⟩
+  simp only [h1, h2]
+  exact ⟨_, _, Nat.le_max_left _ _, rfl⟩
+
+theorem recordEquiv.WF {c : VContext} {s : VState} (he₁ : c.TrExprS e₁ e') (he₂ : c.TrExpr e₂ e')
+    (hL : ∀ lab, l ≤ lab → lab ≤ s.scopeIds.size → c.ceiling.all (lab ≤ ·) →
+      Learned c.venv c.lparams (levelCtx c.mlctx s.scopeFV c.ceiling c.top lab) c.lctx s.ngen
+        (PairFact c.venv c.lparams e₁ e₂)) :
+    RecM.WF c s (modify (·.recordEquiv e₁ e₂ l)) fun _ _ => True := by
   rintro _ mwf wf _ _ ⟨⟩
-  refine ⟨{ s with toState := _ }, rfl, .rfl, { wf with ectx := ?_ }, trivial⟩
-  simp [addEquiv]; split; rename_i h1; split; rename_i h2
-  have ⟨ewf, b2, b3⟩ := toNode.WF wf.ectx h1
-  have ⟨ewf, c2, c3⟩ := toNode.WF ewf h2
-  exact (merge.WF ewf (.defeq he₁ he₂) (c2.toNodeMap b3) c3).1
+  obtain ⟨lab, memo, hlab, hr⟩ := State.recordEquiv_eq s.toState e₁ e₂ l
+  dsimp only; rw [hr]
+  have hE := ScopedEquivManager.Chain.erel c.Ewf (ScopeShape.chain wf.shape)
+  have hd : EquivManager.IsDefEqE c.venv c.lparams c.vlctx e₁ e₂ := .defeq he₁ he₂
+  have hd' : s.LinkE c s.scopeIds.size e₁ e₂ := fun hc' => by
+    cases hce : c.ceiling with
+    | some lab => rw [hce] at hc'; have := wf.ceil_lt lab hce; simp at hc'; omega
+    | none =>
+      show EquivManager.IsDefEqE _ _
+        (levelCtx c.mlctx s.scopeFV none c.top s.scopeIds.size).vlctx e₁ e₂
+      rw [← wf.fv_size, levelCtx_size]; exact hd
+  refine ⟨⟨_⟩, rfl, .rfl,
+    { wf with supp := wf.supp.setAux rfl rfl rfl rfl rfl rfl, ectx := ?_, pairs_wf := ?_,
+              ids_made := ⟨wf.ids_made.1.insert (wf.labelId_le _), wf.ids_made.2⟩ }, trivial⟩
+  · generalize hr : (ScopedEquivManager.addEquiv s.scopeIds (fun _ => 0) e₁ e₂
+      s.scopeIds.size).run s.eqvManager = r
+    obtain ⟨⟨⟩, m'⟩ := r
+    exact (ScopedEquivManager.addEquiv.SWF hE hd' wf.ectx _ _ hr).1
+  · refine wf.pairs_wf.insert fun k' hk hval hc => ?_
+    refine ⟨c.lctx, s.ngen, Lean.NameGenerator.LE.rfl, Keeps.refl _ _, Admits.refl _ _, ?_⟩
+    have H := hL _ hlab (le_of_valid hval) hc
+    simp only [BEq.beq, Bool.and_eq_true] at hk
+    exact fun m wfm hb ha => (H m wfm hb ha).eqv hk.1 hk.2
 
 theorem isDefEq.WF {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (isDefEq e₁ e₂) fun b _ => b → c.IsDefEqU e₁' e₂' := by
-  refine (isDefEqCore.WF he₁ he₂).bind fun b _ _ hb => ?_
+  have hd₁ := c.mlctx_wf.dom_of_tr he₁; have hd₂ := c.mlctx_wf.dom_of_tr he₂
+  rw [c.lctx_eq] at hd₁ hd₂
+  refine (RecM.WF.withTaintLearn (D := fun fv => fv ∈ e₁.fvarsList ∨ fv ∈ e₂.fvarsList)
+    (Pre := fun m => (∃ t', TrExprS c.venv c.lparams m.vlctx e₁ t') ∧
+      ∃ u', TrExprS c.venv c.lparams m.vlctx e₂ u')
+    (P := fun b m => b = true → EquivManager.IsDefEqE c.venv c.lparams m.vlctx e₁ e₂)
+    (fun fv h => h.elim (hd₁ fv) (hd₂ fv))
+    (fun m hm S c₂ hA hS hD hl hc => isDefEqCore.SS hA hS hd₁ hd₂
+      (Lean.Expr.suppIn_of_fvars (fun fv h => hD fv (.inl h)) hl hc)
+      (Lean.Expr.suppIn_of_fvars (fun fv h => hD fv (.inr h)) hl hc) m hm |>.mono
+        fun _ _ _ _ => (trivial : True))
+    (fun c₂ hv _ hl ⟨⟨t', ht⟩, ⟨u', hu⟩⟩ _ => by
+      rw [← hv, ← hl] at ht hu ⊢
+      exact (isDefEqCore.WF ht hu).mono fun b _ _ h hb => .defeq ht ⟨_, hu, (h hb).symm⟩)
+    (isDefEqCore.WF he₁ he₂)).bind fun p s' le ⟨hb, _, hL⟩ => ?_
+  obtain ⟨b, l⟩ := p
   simp; split
-  · exact (addEquiv.WF he₁ ⟨_, he₂, (hb ‹_›).symm⟩).map fun _ _ _ _ => hb
+  · refine (recordEquiv.WF he₁ ⟨_, he₂, (hb ‹_›).symm⟩ fun lab h1 h2 h3 => ?_).map
+      fun _ _ _ _ => hb
+    rw [le.2.1] at h2; rw [le.2.2]
+    have H := hL lab h1 h2 h3
+    exact fun m wfm hbm ha t' u' ht hu =>
+      H m wfm hbm ha (fun fv h => h.elim (wfm.dom_of_tr ht fv) (wfm.dom_of_tr hu fv))
+        ⟨⟨_, ht⟩, ⟨_, hu⟩⟩ ‹_›
   · exact .pure hb

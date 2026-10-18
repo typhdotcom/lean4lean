@@ -25,9 +25,11 @@ theorem TypeChecker.Inner.inferType'_fvar {m : TypeChecker.Methods} {ctx : TypeC
   simp [bind, ReaderT.bind, StateT.bind, Except.bind, get, getThe, MonadStateOf.get, StateT.get,
     liftM, monadLift, MonadLift.monadLift, StateT.lift, readThe, MonadReaderOf.read,
     hs, TypeChecker.Inner.inferFVar, pure, ReaderT.pure, StateT.pure, Except.pure, modify,
-    modifyGet, MonadStateOf.modifyGet, StateT.modifyGet]
-  have hr : (read : ReaderT TypeChecker.Context (StateT TypeChecker.State (Except Exception))
-      TypeChecker.Context) ctx s = .ok (ctx, s) := rfl
+    modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, TypeChecker.State.cached?,
+    TypeChecker.withTaint, TypeChecker.Inner.inferTypeCore]
+  have hr (st : TypeChecker.State) : (read : ReaderT TypeChecker.Context
+      (StateT TypeChecker.State (Except Exception)) TypeChecker.Context) ctx st = .ok (ctx, st) :=
+    rfl
   simp only [hr, h]
   exact ⟨_, rfl⟩
 
@@ -284,8 +286,8 @@ theorem Sub.whnfB {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {B : Name → Prop}
     (he : cs.TrExprS e E) (hB : e.SuppIn (BFree B)) :
     WF cb (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
       e₁.SuppIn (Sub.suppB X cs B) ∧ cs.FVarsBelow e e₁ ∧ cs.TrExpr e₁ E :=
-  whnf.WF_sim H.closedB H.notKernel (H.agree.mono ⟨fun _ => id, fun _ => id, fun _ h => h.1⟩)
-    (fun _ => H.freshFor) hcl
+  whnf.WF_sim H.closedB H.closed (H.agree.mono ⟨fun _ => id, fun _ => id, fun _ h => h.1⟩)
+    (fun _ => H.freshFor) H.ceiling.symm hcl
     (fun fv hfv => H.dom ((fvarsIn_iff.1 he.fvarsIn).1 fv hfv)) ((H.suppIn he).and hB) he
 
 /-- Each binder domain along `e`'s spine of pis is allowed by `S`: what `isRec` checks of a

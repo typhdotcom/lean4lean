@@ -318,14 +318,22 @@ theorem declareTypeAxioms.WF_prim {c : VContext} {type : InductiveType}
     rw [show c.venv.addConst type.name ⟨0, .sort (.succ .zero)⟩ = some venvT from hT'];
     simpa [Function.comp_def] using hAx
   refine ⟨venvT, venvAx, hT, hAx, ⟨htrAx, hprim c.envAt.hasPrimitives
-      (by simpa using Primitive.AddsConsts.addConstList (l' := []) hall .id), ?_⟩,
+      (by simpa using Primitive.AddsConsts.addConstList (l' := []) hall .id), ?_, ?_⟩,
     henv', hpnd, hpfr⟩
-  intro n ci hn hp
-  rw [henv'] at hn
-  refine safePrimitives_addAxiomList mapWF c.envAt.safePrimitives _ hpnd hpfr
-    (fun ax hax _ => ?_) hn hp
-  simp only [primAxioms, List.mem_cons, List.mem_map] at hax
-  rcases hax with rfl | ⟨ct, -, rfl⟩ <;> exact ⟨rfl, rfl⟩
+  · intro n ci hn hp
+    rw [henv'] at hn
+    refine safePrimitives_addAxiomList mapWF c.envAt.safePrimitives _ hpnd hpfr
+      (fun ax hax _ => ?_) hn hp
+    simp only [primAxioms, List.mem_cons, List.mem_map] at hax
+    rcases hax with rfl | ⟨ct, -, rfl⟩ <;> exact ⟨rfl, rfl⟩
+  · rw [henv']
+    refine Environment.envClosed_addAxiomList _ mapWF c.envAt.envClosed hpnd hpfr fun ax hax => ?_
+    simp only [primAxioms, List.mem_cons, List.mem_map] at hax
+    rcases hax with rfl | ⟨ct, hct', rfl⟩
+    · refine ⟨?_, trivial⟩
+      show type.type.SuppIn _
+      rw [htype]; exact trivial
+    · exact ⟨(primCtor_tr hIT (hct ct hct')).1.suppIn_nil, trivial⟩
 
 theorem appN_ne_forallE {A B : VExpr} : ∀ (is : List VExpr) (f : VExpr),
     (∀ A' B', f ≠ .forallE A' B') → f.appN is ≠ .forallE A B

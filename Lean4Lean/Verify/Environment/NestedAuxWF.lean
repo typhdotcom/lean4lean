@@ -322,8 +322,6 @@ theorem nested_auxWF {env : Environment} {ves : VEnvs} (wf : ves.WF env) {nparam
   have hVT : VEnvAt envT (inductSafety isUnsafe) env₀ :=
     typeAx_venvAt hF henvAt hflat hd hRI.spec rfl (by simp) hnn hRI.Rfresh hRI.renfresh hnamesR rfl
       hlpk henv₀
-  have hres : ∀ x ∈ xs, ({} : TypeChecker.State).ngen.Reserves x := fun x hx =>
-    ElimNestedInductive.run_params hrun x (by rw [hparams]; simp [hx])
   have hfvK := ElimNestedInductive.aux2nested_fvarsIn hEC hcl hrun hparams
   have hmem : (p.2, p.1) ∈
       Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp) := by
@@ -343,7 +341,7 @@ theorem nested_auxWF {env : Environment} {ves : VEnvs} (wf : ves.WF env) {nparam
 
   have hI0 : TrExprS env₀ lps [] I.type (.foralls Qs B) := hQB ▸ hty0.mono hle₀
   -- the occurrence's head: a constant of the environment, at its levels
-  obtain ⟨ciJ, hciJ, hLsJ⟩ := occ_head hVT hF.occList hoI hxnd hres hQl hI0 hfvK hmem
+  obtain ⟨ciJ, hciJ, hLsJ⟩ := occ_head hVT hF.occList hoI hxnd hQl hI0 hfvK hmem
     (Ds := Ks.toList) (by rw [hK1])
   have hJenv : venv.constants J = some ciJ := by
     rcases VEnv.addConstList_constants_cases henv₀ hciJ with h | h
@@ -383,7 +381,7 @@ theorem nested_auxWF {env : Environment} {ves : VEnvs} (wf : ves.WF env) {nparam
     rw [Expr.instantiateLevelParams_eq, peel_instantiateLevelParamsCore'] at hb
     obtain ⟨bJ, hbJ, -⟩ := Option.map_eq_some_iff.1 hb
     exact le_leadingForalls_of_peel hbJ
-  have hargTy := occ_argTypes hVT hF.occList hoI hxnd hres hQl hI0 hfvK hmem
+  have hargTy := occ_argTypes hVT hF.occList hoI hxnd hQl hI0 hfvK hmem
     (hparams ▸ hK) hnI hlb hxsAnd hxxA.symm hJT (htrJ.mono (hleJ.trans hle₀)) hsz hLs' hLs hPs hys
     VEnv.LE.rfl (U := dN.uvars) hU.symm
   -- the auxiliary type's declared type is the instantiated earlier type

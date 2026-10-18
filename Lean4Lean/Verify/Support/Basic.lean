@@ -1,4 +1,4 @@
-import Lean4Lean.Verify.TypeChecker.Basic
+import Lean4Lean.Verify.TypeChecker.Learned
 
 /-!
 # What an expression mentions

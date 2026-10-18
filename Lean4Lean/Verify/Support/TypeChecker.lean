@@ -41,7 +41,7 @@ theorem SuppBelow.dom {c : Context} {s : State} (wf : SuppState c s) {e e₁ : E
 
 theorem CondSupp.of {c : Context} {s : State} (wf : SuppState c s) {e r : Expr} (he : Dom c e)
     (H : SuppBelow c e r) : CondSupp c s.ngen e r :=
-  ⟨fun fv h => wf.reserves fv (he fv h), fun S hS _ h => H S hS h⟩
+  ⟨fun fv h => .inr (he fv h), fun S hS _ h => H S hS h⟩
 
 theorem CondSupp.eqv {c : Context} {ngen : NameGenerator} {e e' r : Expr}
     (h : CondSupp c ngen e r) (eq : e == e') : CondSupp c ngen e' r := by
@@ -51,13 +51,43 @@ theorem CondSupp.eqv {c : Context} {ngen : NameGenerator} {e e' r : Expr}
   refine ⟨fun fv hfv => h.1 fv (sub eq fv hfv), fun S hS hd he => ?_⟩
   exact h.2 S hS (fun fv hfv => hd fv (sub eq' fv hfv)) (Expr.SuppIn.eqv_rev eq he)
 
-theorem CondSupp.insert {c : Context} {ngen : NameGenerator} {m : ExprMap Expr}
-    (H : ∀ e r, m[e]? = some r → CondSupp c ngen e r) {e r : Expr} (h : CondSupp c ngen e r) :
-    ∀ e' r', (m.insert e r)[e']? = some r' → CondSupp c ngen e' r' := by
+theorem CondSupp.insert {c : Context} {ngen : NameGenerator} {m : InferCache}
+    (H : ∀ e (r : Cached), m[e]? = some r → CondSupp c ngen e r.1) {e : Expr} {r : Cached}
+    (h : CondSupp c ngen e r.1) :
+    ∀ e' (r' : Cached), (m.insert e r)[e']? = some r' → CondSupp c ngen e' r'.1 := by
   intro e' r' h'
   rw [Std.HashMap.getElem?_insert] at h'; split at h'
   · cases h'; exact CondSupp.eqv h ‹_›
   · exact H _ _ h'
+
+theorem RecM.SWF.taintWith {c : Context} {s : State} :
+    (modify (·.taintWith l) : RecM Unit).SWF c s fun _ _ => True := by
+  rintro _ _ wf _ _ ⟨⟩
+  exact ⟨wf.setAux rfl rfl rfl rfl rfl rfl, .rfl, ⟨Nat.le_max_left _ _, rfl, .refl _ _⟩, trivial⟩
+
+theorem RecM.SWF.taintWith' {c : Context} {s : State} :
+    (modify (·.taintWith l) : RecM Unit).SWF c s fun _ s' => l ≤ s'.taint := by
+  rintro _ _ wf _ _ ⟨⟩
+  exact ⟨wf.setAux rfl rfl rfl rfl rfl rfl, .rfl, ⟨Nat.le_max_left _ _, rfl, .refl _ _⟩,
+    Nat.le_max_right _ _⟩
+
+theorem State.checkEquiv_snd (s : State) (u : Bool) (a b : Expr) :
+    ∃ m, (s.checkEquiv u a b).2 = { s with eqvManager := m } := by
+  unfold State.checkEquiv
+  dsimp only
+  split
+  · exact ⟨_, rfl⟩
+  · split <;> exact ⟨_, rfl⟩
+
+theorem State.cached?_some' {s : State} {ceil : Option Nat}
+    {o : Option Cached} {r : Expr} {l : Nat} (h : s.cached? ceil o = some (r, l)) :
+    ∃ id, o = some (r, l, id) := by
+  unfold State.cached? at h
+  split at h
+  · split at h
+    · cases h; exact ⟨_, rfl⟩
+    · cases h
+  · cases h
 
 theorem M.SWF.stateWF {c : Context} {s : State} {x : M α} {Q}
     (H : SuppState c s → x.SWF c s Q) : x.SWF c s Q := fun wf => H wf wf
@@ -82,10 +112,11 @@ theorem RecM.SWF.readThe {c : Context} {s : State} {f : Context → RecM α} {Q}
 
 /-- Changing what the state holds besides the caches and name generator. -/
 theorem RecM.SWF.modify {c : Context} {s : State} {f : State → State} {Q}
-    (hf : ∀ s, SuppState c s → SuppState c (f s) ∧ s.ngen ≤ (f s).ngen) (H : Q () (f s)) :
+    (hf : ∀ s, SuppState c s → SuppState c (f s) ∧ s.ngen ≤ (f s).ngen ∧ State.Mono c.lctx s (f s))
+    (H : Q () (f s)) :
     (modify f : RecM Unit).SWF c s Q := by
   intro _ _ wf a s' e
-  cases e; exact ⟨(hf s wf).1, (hf s wf).2, H⟩
+  cases e; exact ⟨(hf s wf).1, (hf s wf).2.1, (hf s wf).2.2, H⟩
 
 theorem RecM.SWF.failBind {c : Context} {s : State} {g : LocalContext → Exception}
     {f : α → RecM β} {Q} :
@@ -159,11 +190,10 @@ theorem isDefEqCore.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂ : Do
 
 theorem isDefEq.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂ : Dom c e₂) :
     RecM.SWF c s (isDefEq e₁ e₂) fun _ _ => True := by
-  refine (isDefEqCore.SWF h₁ h₂).bind fun b _ _ _ => ?_
+  refine (RecM.SWF.withTaint (isDefEqCore.SWF h₁ h₂)).bind fun b _ _ _ => ?_
   simp; split
   · rintro _ _ wf _ _ ⟨⟩
-    exact ⟨⟨wf.lctxWF, wf.wellScoped, wf.envClosed, wf.reserves, wf.inferTypeI, wf.inferTypeC,
-      wf.whnfCore, wf.whnf, wf.unfold⟩, .rfl, trivial⟩
+    exact ⟨wf.setAux rfl rfl rfl rfl rfl rfl, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
   · exact .pure trivial
 
 theorem ensureSortCore.SWF {c : Context} {s : State} (he : Dom c e) :

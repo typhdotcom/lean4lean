@@ -1,4 +1,5 @@
 import Lean4Lean.Verify.Support.SimIsDefEq
+import Lean4Lean.Verify.Support.EnvSupp
 import Lean4Lean.Verify.Environment.AddInductive
 
 /-!
@@ -13,21 +14,6 @@ open Lean hiding Environment Exception
 open Kernel
 
 open private Lean.Kernel.Environment.add from Lean.Environment
-
-theorem Level.LParamsIn.of_ofLevel {Us : List Name} :
-    ∀ {u : Level} {u'}, VLevel.ofLevel Us u = some u' → u.LParamsIn (· ∈ Us)
-  | .zero, _, _ => trivial
-  | .succ u, _, h => by
-    simp only [VLevel.ofLevel, bind, Option.bind_eq_some_iff] at h
-    obtain ⟨_, h, -⟩ := h; exact Level.LParamsIn.of_ofLevel (u := u) h
-  | .max a b, _, h | .imax a b, _, h => by
-    simp only [VLevel.ofLevel, bind, Option.bind_eq_some_iff] at h
-    obtain ⟨_, ha, _, hb, -⟩ := h
-    exact ⟨Level.LParamsIn.of_ofLevel ha, Level.LParamsIn.of_ofLevel hb⟩
-  | .param n, _, h => by
-    simp only [VLevel.ofLevel] at h; split at h <;> cases h
-    exact List.idxOf_lt_length_iff.1 ‹_›
-  | .mvar _, _, h => by cases h
 
 /-- The constants a literal expands into are declared, once the constants its translation
 needs are. -/
@@ -70,73 +56,6 @@ theorem TrExprS.suppIn {env : VEnv} {Us : List Name} {Δ : VLCtx} {e : Expr} {e'
   | lit h => exact hp.lit henv h
   | mdata _ ih => exact ih
   | proj _ _ ih => exact ih
-
-/-- The right-hand sides of a recursor's rules translate at its level parameters. -/
-theorem TrEnv'.recRules {safety : DefinitionSafety} {C Q venv} (H : TrEnv' safety C Q venv)
-    {name : Name} {v : RecursorVal} (h : C.find? name = some (.recInfo v))
-    (hs : safety ≤ (ConstantInfo.recInfo v).safety) :
-    ∀ r ∈ v.rules, ∃ e, TrExprS venv v.levelParams [] r.rhs e := by
-  have {C : ConstMap} {n ci'} (hC : C.WF) :
-      (SMap.insert C n ci').find? name = some (ConstantInfo.recInfo v) →
-      C.find? name = some (ConstantInfo.recInfo v) ∨ n = name ∧ ci' = ConstantInfo.recInfo v := by
-    rw [hC.find?_insert]; simp; split <;> simp +contextual [*]
-  induction H with
-  | empty => simp [SMap.find?] at h
-  | ignore h1 h2 H ih =>
-    obtain h | ⟨rfl, rfl⟩ := this H.map_wf h
-    · exact ih h
-    · exact (h2 hs).elim
-  | «axiom» _ _ _ h1 H ih =>
-    obtain h | ⟨-, h⟩ := this H.map_wf h
-    · exact fun r hr => let ⟨e, he⟩ := ih h r hr; ⟨e, he.mono (VEnv.addConst_le h1)⟩
-    · cases h
-  | defn h2 h3 h4 h1 H ih =>
-    obtain h | ⟨-, h⟩ := this H.map_wf h
-    · exact fun r hr => let ⟨e, he⟩ := ih h r hr
-        ⟨e, he.mono ((VEnv.addConst_le h1).trans VEnv.addDefEq_le)⟩
-    · cases h
-  | mutualDef hblk hnd hfr _ hadd _ H ih =>
-    rcases insertDefs_find? H.map_wf hfr hnd h with h | ⟨d, hd, -, h⟩
-    · exact fun r hr => let ⟨e, he⟩ := ih h r hr
-        ⟨e, he.mono ((VEnv.addConsts_le hadd).trans VEnv.addDefEqs_le)⟩
-    · cases h
-  | thm _ _ _ _ h1 H ih =>
-    obtain h | ⟨-, h⟩ := this H.map_wf h
-    · exact fun r hr => let ⟨e, he⟩ := ih h r hr; ⟨e, he.mono (VEnv.addConst_le h1)⟩
-    · cases h
-  | «opaque» _ _ _ h1 H ih =>
-    obtain h | ⟨-, h⟩ := this H.map_wf h
-    · exact fun r hr => let ⟨e, he⟩ := ih h r hr; ⟨e, he.mono (VEnv.addConst_le h1)⟩
-    · cases h
-  | quot _ h1 H ih =>
-    suffices ∀ {n k ci' P}, (∀ (C : ConstMap) env, Aligned safety C env → P C env →
-        C.find? name = some (ConstantInfo.recInfo v)) →
-        ∀ (C : ConstMap) env, Aligned safety C env → AddQuot1 n k ci' P C env →
-          C.find? name = some (ConstantInfo.recInfo v) by
-      refine fun r hr => ?_
-      obtain ⟨e, he⟩ := ih (this (this <| this <| this fun _ _ _ ⟨hC, _⟩ => hC ▸ h)
-        _ _ H.aligned h1) r hr
-      exact ⟨e, he.mono h1.le⟩
-    rintro n k ci' P ih C env wf ⟨_, h1, _, h2, h3, h4, h5⟩
-    have wf' := wf.const h3 ⟨by cases safety <;> rfl, h2.2⟩ h4 rfl
-    obtain h | ⟨-, h⟩ := this wf.map_wf (ih _ _ wf' h5)
-    · exact h
-    · cases h
-  | induct _ h1 H ih =>
-    have hle := h1.le
-    obtain ⟨-, -, -, hrecs, hnd, hfr, ⟨_, hp, rfl⟩, -, -, hR, hB⟩ := h1
-    rcases insertConsts_find?_perm H.map_wf hfr hnd hp h with h' | ⟨hm, -⟩
-    · exact fun r hr => let ⟨e, he⟩ := ih h' r hr; ⟨e, he.mono hle⟩
-    · simp only [inductConsts, List.mem_append, List.mem_map] at hm
-      rcases hm with (⟨_, -, he⟩ | ⟨_, -, he⟩) | ⟨w, hw, he⟩
-      · cases he
-      · cases he
-      cases he
-      obtain ⟨⟨T, i⟩, -, htr, -⟩ := Lean4Lean.List.Forall₂.forall_exists_l hrecs _ hw
-      intro r hr
-      obtain ⟨⟨T', j⟩, -, ⟨-, -, -, h3⟩⟩ :=
-        Lean4Lean.List.Forall₂.forall_exists_l htr.2.2.2.2.2.2.2.2.2.2.2 r hr
-      exact ⟨_, h3.mono ((VEnv.addDefEqList_le).trans (VEnv.addBlock_le hB))⟩
 
 theorem VInductDecl.mem_ctors_of_mem {d : VInductDecl} {T : VInductiveType} {c : VConstructor}
     (hT : T ∈ d.types) (hc : c ∈ T.ctors) : ∃ j, (j, c) ∈ d.ctors := by
@@ -400,19 +319,6 @@ theorem TypeChecker.MLCtx.WF.lparams_append {env : VEnv} {Us pre : List Name}
 
 namespace AddInductive
 
-theorem _root_.Lean4Lean.TypeChecker.VState.WF.emptyAt (c : TypeChecker.VContext)
-    (hnk : ∀ fv ∈ c.mlctx.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv) :
-    TypeChecker.VState.WF c {} where
-  trctx := c.mlctx_wf.tr
-  ngen_wf := hnk
-  ectx := .empty
-  inferTypeI_wf := .empty
-  inferTypeC_wf := .empty
-  inferTypeC_lit := .empty
-  whnfCore_wf := TypeChecker.WHNFCache.WF.empty
-  whnf_wf := TypeChecker.WHNFCache.WF.empty
-  unfold_wf _ := by simp
-
 theorem _root_.Lean.ConstantInfo.SuppIn.mono {C C' : Name → Prop} (H : ∀ x, C x → C' x)
     {ci : ConstantInfo} (h : ci.SuppIn C) : ci.SuppIn C' := by
   have hS {e : Expr} : e.SuppIn ⟨fun _ => False, (· ∈ ci.levelParams), C⟩ →
@@ -427,6 +333,13 @@ theorem _root_.Lean.ConstantInfo.SuppIn.mono {C C' : Name → Prop} (H : ∀ x, 
   | ctorInfo => exact H _ h2
   | recInfo => exact ⟨H _ h2.1, fun r hr => hS (h2.2 r hr)⟩
   | _ => trivial
+
+theorem _root_.Lean4Lean.TypeChecker.VState.WF.emptyAt (c : TypeChecker.VContext)
+    (hcl : ConstMap.Closed c.env.constants) (hc : c.ceiling = none) :
+    TypeChecker.VState.WF c {} :=
+  .emptyOf c (fun n ci h => by
+    rw [Kernel.Environment.find?, c.trenv.map_wf.find?'_eq_find?] at h
+    exact (hcl n ci h).mono fun _ _ => trivial) hc
 
 /-- A closed expression with a translation mentions only names its environment declares. -/
 theorem TrExprS.suppIn_env {env : Environment} {venv : VEnv} {safety}
@@ -508,10 +421,6 @@ theorem VContext.suppState {c : VContext} (hcl : ConstMap.Closed c.env.constants
     change c.env.find? n = some ci at h
     rw [Kernel.Environment.find?, c.envAt.tr.map_wf.find?'_eq_find?] at h
     exact (hcl n ci h).mono fun _ _ => trivial
-  reserves fv h := c.notKernel fv <| by
-    change c.lctx.Dom fv at h
-    have htr := c.lctx_eq ▸ c.mlctx_wf.tr
-    exact htr.find?_eq_some.1 (Option.isSome_iff_exists.1 h)
   inferTypeI := by simp
   inferTypeC := by simp
   whnfCore := by simp
@@ -521,35 +430,34 @@ theorem VContext.suppState {c : VContext} (hcl : ConstMap.Closed c.env.constants
 /-- A type checker call, run over the kernel's local context, verified by running it in a context
 that agrees with it on what the call mentions. -/
 theorem WF.liftTC_sim {c : VContext} {c₂ : TypeChecker.VContext} {x : TypeChecker.M α}
-    {Q P : α → Prop}
-    (hnk : ∀ fv ∈ c₂.mlctx.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv)
+    {Q P : α → Prop} (hcl₂ : ConstMap.Closed c₂.env.constants)
     (hss : SuppState c.tc.toContext {})
     (hsim : TypeChecker.M.SS c.tc.toContext c₂.toContext {} x x fun a _ => P a)
-    (hF : ∀ g, TypeChecker.FreshFor c.tc.toContext c₂.toContext g)
+    (hF : ∀ g, TypeChecker.FreshFor c.tc.toContext c₂.toContext g) (hc : c₂.ceiling = none)
     (H : TypeChecker.M.WF c₂ {} x fun a _ => Q a) :
     WF c (monadLift x : M α) fun a => P a ∧ Q a := by
   intro a eq
   change TypeChecker.M.run c.env c.safety c.lctx c.lparams c.fuel x = .ok a at eq
   simp only [TypeChecker.M.run, StateT.run', Functor.map, Except.map] at eq
   split at eq <;> cases eq; rename_i eq
-  obtain ⟨_, _, h1⟩ := hsim.1 hss _ _ eq
-  obtain ⟨_, _, _, _, h2⟩ := H (TypeChecker.VState.WF.emptyAt c₂ hnk) _ _ (hsim.2 hss _ _ eq (hF _))
+  obtain ⟨_, _, _, h1⟩ := hsim.1 hss _ _ eq
+  obtain ⟨_, _, _, _, h2⟩ := H (TypeChecker.VState.WF.emptyAt c₂ hcl₂ hc) _ _ (hsim.2 hss _ _ eq (hF _)
+    (TypeChecker.CeilFits.none hc))
   exact ⟨h1, h2⟩
 
 /-- `whnf`, run over the kernel's local context and verified in a context that agrees with it on
 what its input mentions. -/
 theorem whnf.WF_sim {c : VContext} {c₂ : TypeChecker.VContext} {S : Supp} {e : Expr} {e' : VExpr}
-    (hcl : ConstMap.Closed c.env.constants)
-    (hnk : ∀ fv ∈ c₂.mlctx.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv)
+    (hcl : ConstMap.Closed c.env.constants) (hcl₂ : ConstMap.Closed c₂.env.constants)
     (hA : TypeChecker.Agree S c.tc.toContext c₂.toContext)
-    (hF : ∀ g, TypeChecker.FreshFor c.tc.toContext c₂.toContext g) (hS : S.Closed c.tc.toContext)
-    (hd : TypeChecker.Dom c.tc.toContext e) (hs : e.SuppIn S) (he : c₂.TrExprS e e') :
+    (hF : ∀ g, TypeChecker.FreshFor c.tc.toContext c₂.toContext g) (hc : c₂.ceiling = none)
+    (hS : S.Closed c.tc.toContext) (hd : TypeChecker.Dom c.tc.toContext e) (hs : e.SuppIn S) (he : c₂.TrExprS e e') :
     WF c (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
       e₁.SuppIn S ∧ c₂.FVarsBelow e e₁ ∧ c₂.TrExpr e₁ e' := by
   have hsim : TypeChecker.M.SS c.tc.toContext c₂.toContext {} (TypeChecker.whnf e)
       (TypeChecker.whnf e) fun e₁ _ => TypeChecker.SuppBelow c.tc.toContext e e₁ :=
     TypeChecker.RecM.SS.run (fun m hm => hm.whnf hA hS hd hs) hA.fuel
-  exact (WF.liftTC_sim hnk (VContext.suppState hcl) hsim hF (TypeChecker.whnf.WF he)).mono
+  exact (WF.liftTC_sim hcl₂ (VContext.suppState hcl) hsim hF hc (TypeChecker.whnf.WF he)).mono
     fun _ ⟨h1, h2⟩ => ⟨h1 S hS hs, h2⟩
 
 /-- `cs` is the part of the kernel's context `cb` a computation reads: some of its variables,
@@ -576,6 +484,7 @@ structure Sub (X : Name → Prop) (pre : List Name) (ρ : Lift) (cs : TypeChecke
   safety : cb.safety = cs.safety
   fuel : cb.fuel = cs.fuel
   eagerReduce : cs.eagerReduce = false
+  ceiling : cb.tc.ceiling = cs.ceiling := by rfl
   notKernel : ∀ fv ∈ cs.mlctx.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv
 
 /-- What a computation over `cs` may mention. -/
@@ -617,6 +526,7 @@ theorem Sub.agree {X pre ρ cs cb} (H : Sub X pre ρ cs cb) :
   eagerReduce := H.eagerReduce
   lparams _ h _ := h
   fuel := H.fuel.symm
+  ceiling _ h := H.ceiling ▸ h
 
 theorem Sub.freshFor {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {g} :
     TypeChecker.FreshFor cb.tc.toContext cs.toContext g :=
@@ -626,10 +536,6 @@ theorem Sub.freshFor {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {g} :
       rw [cs.lctx_eq] at this
       exact this.1 (Option.isSome_iff_exists.1 h)
     exact H.dom h'
-
-theorem _root_.Lean.LocalDecl.erase_type {d d' : LocalDecl} (h : d.erase = d'.erase) :
-    d.type = d'.type ∧ d.value' = d'.value' := by
-  cases d <;> cases d' <;> simp_all [LocalDecl.erase, LocalDecl.type, LocalDecl.value']
 
 theorem Sub.suppClosed {X pre ρ cs cb} (H : Sub X pre ρ cs cb) :
     (Sub.supp X cs).Closed cb.tc.toContext := by
@@ -666,7 +572,7 @@ theorem Sub.whnf {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} {E : VExpr
     (he : cs.TrExprS e E) :
     WF cb (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
       e₁.SuppIn (Sub.supp X cs) ∧ cs.FVarsBelow e e₁ ∧ cs.TrExpr e₁ E :=
-  whnf.WF_sim H.closedB H.notKernel H.agree (fun _ => H.freshFor) H.suppClosed
+  whnf.WF_sim H.closedB H.closed H.agree (fun _ => H.freshFor) H.ceiling.symm H.suppClosed
     (fun fv hfv => H.dom ((fvarsIn_iff.1 he.fvarsIn).1 fv hfv)) (H.suppIn he) he
 
 /-- The translation of an expression of `cs`, in `cb`. -/
@@ -761,6 +667,7 @@ theorem Sub.push {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {name : Name} {ty : E
     safety := H.safety
     fuel := H.fuel
     eagerReduce := H.eagerReduce
+    ceiling := H.ceiling
     notKernel := ?_ }⟩
   · refine .cons_fvar (_, _) (.vlam _) (fun x hx => ?_) H.lift
     have := (fvarsIn_iff.1 hty.fvarsIn).1 x hx
@@ -1018,7 +925,7 @@ theorem Ext.liftTC {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.con
     (hsim : TypeChecker.M.SS cb.tc.toContext (cb.small m H.wf).toContext {} x x fun a _ => P a)
     (W : TypeChecker.M.WF (cb.small m H.wf) {} x fun a _ => Q a) :
     WF cb (monadLift x : M α) fun a => Q a :=
-  (WF.liftTC_sim H.notKernel (VContext.suppState hcl) hsim (fun _ => H.freshFor) W).mono
+  (WF.liftTC_sim hcl (VContext.suppState hcl) hsim (fun _ => H.freshFor) rfl W).mono
     fun _ h => h.2
 
 /-- `whnf` in the kernel's context, verified in `m`. -/

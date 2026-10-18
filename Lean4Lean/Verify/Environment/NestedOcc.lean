@@ -179,31 +179,20 @@ def TypeChecker.VContext.ofMLCtx {env : Environment} {safety : DefinitionSafety}
 
 theorem TypeChecker.VState.WF.ofMLCtx {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
     {wf : VEnvAt env safety venv} {lparams : List Name} {fuel : FuelConfig} {M : MLCtx}
-    {hM : M.WF venv lparams}
-    (hres : ∀ fv ∈ M.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv) :
-    VState.WF (.ofMLCtx wf lparams fuel M hM) {} where
-  trctx := hM.tr
-  ngen_wf := hres
-  ectx := .empty
-  inferTypeI_wf := .empty
-  inferTypeC_wf := .empty
-  inferTypeC_lit := .empty
-  whnfCore_wf := .empty
-  whnf_wf := .empty
-  unfold_wf _ := by simp
+    {hM : M.WF venv lparams} : VState.WF (.ofMLCtx wf lparams fuel M hM) {} :=
+  .emptyOf _ wf.envClosed rfl
 
 /-- Running the type checker in a local context it models: what holds of the result, holds at
 the final state. -/
 theorem TypeChecker.M.WF.runMLCtx {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
     (wf : VEnvAt env safety venv) {lparams : List Name} {fuel : FuelConfig} {M : MLCtx}
     (hM : M.WF venv lparams)
-    (hres : ∀ fv ∈ M.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv)
     {x : TypeChecker.M α} {Q} (H : x.WF (.ofMLCtx wf lparams fuel M hM) {} Q) {a : α}
     (h : TypeChecker.M.run env safety M.lctx lparams fuel x = .ok a) :
     ∃ s : VState, s.WF (.ofMLCtx wf lparams fuel M hM) ∧ Q a s := by
   simp only [TypeChecker.M.run, StateT.run', Functor.map, Except.map] at h
   split at h <;> cases h; rename_i eq
-  obtain ⟨s, -, -, hs, hQ⟩ := H (.ofMLCtx hres) _ _ eq
+  obtain ⟨s, -, -, hs, hQ⟩ := H .ofMLCtx _ _ eq
   exact ⟨s, hs, hQ⟩
 
 theorem List.Forall₂.unique_r {R S : α → β → Prop} (h : ∀ a b b', R a b → S a b' → b = b') :
@@ -310,7 +299,6 @@ theorem occ_argTypes {envT : Environment} {safety : DefinitionSafety} {venvT : V
         do _ ← TypeChecker.checkType p.2) = .ok ())
     {Ity bodyI : Expr} {xsP : List FVarId}
     (hoI : ElimNestedInductive.Opens {} Ity xsP res.lctx bodyI) (hndP : xsP.Nodup)
-    (hres : ∀ x ∈ xsP, ({} : TypeChecker.State).ngen.Reserves x)
     {Qs : List VExpr} {B : VExpr} (hQl : Qs.length = xsP.length)
     (hI : TrExprS venvT lparams [] Ity (.foralls Qs B))
     (hfvK : ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
@@ -341,14 +329,12 @@ theorem occ_argTypes {envT : Environment} {safety : DefinitionSafety} {venvT : V
     ElimNestedInductive.Opens.mlctx henv.ordered hoI (M₀ := .nil) trivial rfl (by simp) hndP hQl
       (by simpa using hI)
   simp only [MLCtx.vlctx, VLCtx.toCtx, VLCtx.fvars_nil, List.append_nil] at hMc hMfv
-  have hresM : ∀ fv ∈ M.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv := by
-    rw [hMfv]; exact fun fv h => hres fv (List.mem_reverse.1 h)
   let c := TypeChecker.VContext.ofMLCtx wfT lparams fuel M hMw
   have hfvc : ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
       p.2.FVarsIn (· ∈ c.vlctx.fvars) := fun p hp =>
     (hfvK p hp).mono fun x hx => by
       show x ∈ M.vlctx.fvars; rw [hMfv]; exact List.mem_reverse.2 hx
-  obtain ⟨s, hs, hQ⟩ := TypeChecker.M.WF.runMLCtx wfT hMw hresM
+  obtain ⟨s, hs, hQ⟩ := TypeChecker.M.WF.runMLCtx wfT hMw
     (checkType.forM_lit (c := c) _ (fun p : Name × Expr => p.2) hfvc) (hMl ▸ hocc)
   obtain ⟨⟨eK, hKtr⟩, ty, hlit⟩ := hQ _ hmem
   -- the occurrence: `J` applied to its arguments over the parameters
@@ -415,7 +401,6 @@ theorem occ_head {envT : Environment} {safety : DefinitionSafety} {venvT : VEnv}
         do _ ← TypeChecker.checkType p.2) = .ok ())
     {Ity bodyI : Expr} {xsP : List FVarId}
     (hoI : ElimNestedInductive.Opens {} Ity xsP res.lctx bodyI) (hndP : xsP.Nodup)
-    (hres : ∀ x ∈ xsP, ({} : TypeChecker.State).ngen.Reserves x)
     {Qs : List VExpr} {B : VExpr} (hQl : Qs.length = xsP.length)
     (hI : TrExprS venvT lparams [] Ity (.foralls Qs B))
     (hfvK : ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
@@ -429,14 +414,12 @@ theorem occ_head {envT : Environment} {safety : DefinitionSafety} {venvT : VEnv}
     ElimNestedInductive.Opens.mlctx henv.ordered hoI (M₀ := .nil) trivial rfl (by simp) hndP hQl
       (by simpa using hI)
   simp only [MLCtx.vlctx, VLCtx.toCtx, VLCtx.fvars_nil, List.append_nil] at hMc hMfv
-  have hresM : ∀ fv ∈ M.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv := by
-    rw [hMfv]; exact fun fv h => hres fv (List.mem_reverse.1 h)
   let c := TypeChecker.VContext.ofMLCtx wfT lparams fuel M hMw
   have hfvc : ∀ p ∈ Std.TreeMap.toList (res.aux2nested : Std.TreeMap Name Expr Name.quickCmp),
       p.2.FVarsIn (· ∈ c.vlctx.fvars) := fun p hp =>
     (hfvK p hp).mono fun x hx => by
       show x ∈ M.vlctx.fvars; rw [hMfv]; exact List.mem_reverse.2 hx
-  obtain ⟨s, -, hQ⟩ := TypeChecker.M.WF.runMLCtx wfT hMw hresM
+  obtain ⟨s, -, hQ⟩ := TypeChecker.M.WF.runMLCtx wfT hMw
     (checkType.forM_lit (c := c) _ (fun p : Name × Expr => p.2) hfvc) (hMl ▸ hocc)
   obtain ⟨⟨eK, hKtr⟩, -, -⟩ := hQ _ hmem
   simp only at hKtr

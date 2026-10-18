@@ -13,10 +13,11 @@ namespace TypeChecker
 /-- Entering a binder whose type mentions only what `S` allows keeps `S` with the new variable
 closed. -/
 theorem _root_.Lean4Lean.Supp.Closed.push {S : Supp} {c₁ : Context} {s : State} (hS : S.Closed c₁)
-    (wf : SuppState c₁ s) {name ty bi} (hty : ty.SuppIn S) :
+    (wf : SuppState c₁ s) (f₁ : c₁.lctx.find? ⟨s.ngen.curr⟩ = none) {name ty bi}
+    (hty : ty.SuppIn S) :
     (S.addFVars [⟨s.ngen.curr⟩]).Closed
       { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi } := by
-  have E := wf.ctxExt (name := name) (ty := ty) (bi := bi)
+  have E := wf.ctxExt f₁ (name := name) (ty := ty) (bi := bi)
   have T := (Tele.nil (c := c₁)).push E
   have TS := (TeleSupp.nil (c := c₁) (S := S)).push Tele.nil E fun d hd => by
     simp only [LocalContext.find?_mkLocalDecl wf.lctxWF E.fresh, beq_self_eq_true, if_true,
@@ -62,21 +63,19 @@ theorem isDefEqLambda.SS {S : Supp} {c₁ c₂ : Context} {s : State} {subst : A
     | none => exact ⟨hd hd₂, hsi hs₂.1⟩
     | some y => exact hx y rfl
   refine .stateWF fun wf => ?_
-  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
-  have hsub' : ∀ a ∈ subst.push (.fvar ⟨s.ngen.curr⟩),
-      Dom { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ n₂ d₂' bi₂ } a ∧
-        a.SuppIn (S.addFVars [⟨s.ngen.curr⟩]) := by
-    intro a ha
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
-    · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
-  exact .withLocalDecl hd'.1
-    (isDefEqLambda.SS ((Agree.refl wf.lctxWF).mkLocalDecl wf E.fresh) (Supp.Closed.push hS wf hd'.2)
-      hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars))
-    (fun f₂ => isDefEqLambda.SS (hA.mkLocalDecl wf f₂) (Supp.Closed.push hS wf hd'.2)
-      hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars))
-    hA.wf
+  refine .withLocalDecl hd'.1 (fun f₁ => ?_) (fun f₁ f₂ => ?_) hA.wf
+  all_goals
+    have E := wf.ctxExt f₁ (name := n₂) (ty := d₂') (bi := bi₂)
+    have hsub' : ∀ a ∈ subst.push (.fvar ⟨s.ngen.curr⟩),
+        Dom { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ n₂ d₂' bi₂ } a ∧
+          a.SuppIn (S.addFVars [⟨s.ngen.curr⟩]) := by
+      intro a ha
+      simp only [Array.mem_push] at ha
+      obtain ha | rfl := ha
+      · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
+      · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
+  · exact isDefEqLambda.SS ((Agree.refl wf.lctxWF).mkLocalDecl wf E.fresh E.fresh) (Supp.Closed.push hS wf E.fresh hd'.2) hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
+  · exact isDefEqLambda.SS (hA.mkLocalDecl wf f₁ f₂) (Supp.Closed.push hS wf E.fresh hd'.2) hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
 
 theorem isDefEqForall.SS {S : Supp} {c₁ c₂ : Context} {s : State} {subst : Array Expr}
     (hA : Agree S c₁ c₂) (hS : S.Closed c₁)
@@ -114,45 +113,51 @@ theorem isDefEqForall.SS {S : Supp} {c₁ c₂ : Context} {s : State} {subst : A
     | none => exact ⟨hd hd₂, hsi hs₂.1⟩
     | some y => exact hx y rfl
   refine .stateWF fun wf => ?_
-  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
-  have hsub' : ∀ a ∈ subst.push (.fvar ⟨s.ngen.curr⟩),
-      Dom { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ n₂ d₂' bi₂ } a ∧
-        a.SuppIn (S.addFVars [⟨s.ngen.curr⟩]) := by
-    intro a ha
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
-    · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
-  exact .withLocalDecl hd'.1
-    (isDefEqForall.SS ((Agree.refl wf.lctxWF).mkLocalDecl wf E.fresh) (Supp.Closed.push hS wf hd'.2)
-      hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars))
-    (fun f₂ => isDefEqForall.SS (hA.mkLocalDecl wf f₂) (Supp.Closed.push hS wf hd'.2)
-      hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars))
-    hA.wf
+  refine .withLocalDecl hd'.1 (fun f₁ => ?_) (fun f₁ f₂ => ?_) hA.wf
+  all_goals
+    have E := wf.ctxExt f₁ (name := n₂) (ty := d₂') (bi := bi₂)
+    have hsub' : ∀ a ∈ subst.push (.fvar ⟨s.ngen.curr⟩),
+        Dom { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ n₂ d₂' bi₂ } a ∧
+          a.SuppIn (S.addFVars [⟨s.ngen.curr⟩]) := by
+      intro a ha
+      simp only [Array.mem_push] at ha
+      obtain ha | rfl := ha
+      · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
+      · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
+  · exact isDefEqForall.SS ((Agree.refl wf.lctxWF).mkLocalDecl wf E.fresh E.fresh) (Supp.Closed.push hS wf E.fresh hd'.2) hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
+  · exact isDefEqForall.SS (hA.mkLocalDecl wf f₁ f₂) (Supp.Closed.push hS wf E.fresh hd'.2) hsub' (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
 
 theorem quickIsDefEq.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (h₁ : Dom c₁ e₁) (h₂ : Dom c₁ e₂) (hs₁ : e₁.SuppIn S) (hs₂ : e₂.SuppIn S) :
     RecM.SS c₁ c₂ s (quickIsDefEq e₁ e₂ useHash) (quickIsDefEq e₁ e₂ useHash)
       fun _ _ => True := by
   unfold quickIsDefEq
-  refine .bind (Q := fun _ _ => True) (fun m hm => ⟨?_, fun _ _ _ eq _ => by revert eq; exact id⟩)
+  refine .bind (Q := fun _ _ => True) (fun m hm => ⟨?_, fun _ _ _ eq _ _ => by revert eq; exact id⟩)
     fun _ _ _ _ => ?_
   · intro wf _ s₁ eq
-    simp [modifyGet, MonadStateOf.modifyGet, monadLift, MonadLift.monadLift, StateT.modifyGet,
-      pure, Except.pure] at eq
-    split at eq; rename_i b _ b' m hm
-    change let s' := _; (_, s') = _ at eq; extract_lets s' at eq
-    injection eq; subst b' s₁
-    exact ⟨{ wf with }, .rfl, trivial⟩
-  split; · exact .pure trivial
+    change Except.ok (s.checkEquiv useHash e₁ e₂) = _ at eq
+    have h2 : s₁ = (s.checkEquiv useHash e₁ e₂).2 :=
+      (congrArg Prod.snd (Except.ok.inj eq)).symm
+    obtain ⟨m, hm⟩ := State.checkEquiv_snd s useHash e₁ e₂
+    rw [h2, hm]
+    exact ⟨wf.setAux rfl rfl rfl rfl rfl rfl, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
+  extract_lets J
+  have hJ {s} : RecM.SS c₁ c₂ s (J ()) (J ()) fun _ _ => True := by
+    dsimp only [J]
+    split
+    · exact .toLBoolM (isDefEqLambda.SS hA hS nofun h₁ h₂ hs₁ hs₂)
+    · exact .toLBoolM (isDefEqForall.SS hA hS nofun h₁ h₂ hs₁ hs₂)
+    · exact .pure trivial
+    · exact .toLBoolM (isDefEq.SS hA hS h₁ h₂ hs₁ hs₂)
+    · exact .panic trivial
+    · exact .pure trivial
+    · exact .pure trivial
   split
-  · exact .toLBoolM (isDefEqLambda.SS hA hS nofun h₁ h₂ hs₁ hs₂)
-  · exact .toLBoolM (isDefEqForall.SS hA hS nofun h₁ h₂ hs₁ hs₂)
-  · exact .pure trivial
-  · exact .toLBoolM (isDefEq.SS hA hS h₁ h₂ hs₁ hs₂)
-  · exact .panic trivial
-  · exact .pure trivial
-  · exact .pure trivial
+  · refine .readThe ?_
+    refine RecM.SS.ceilIf hA (fun _ => ?_) ?_ hJ
+    · exact RecM.SS.taintWith.bind fun _ _ _ _ => .pure trivial
+    · exact RecM.SWF.taintWith'.bind fun _ _ _ h => .pure h
+  · exact hJ
 
 theorem isDefEqArgs.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (h₁ : Dom c₁ e₁) (h₂ : Dom c₁ e₂) (hs₁ : e₁.SuppIn S) (hs₂ : e₂.SuppIn S) :
@@ -275,7 +280,7 @@ theorem isDefEqProofIrrel.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : 
 
 theorem cacheFailure.SS {c₁ c₂ : Context} {s : State} :
     RecM.SS c₁ c₂ s (cacheFailure e₁ e₂) (cacheFailure e₁ e₂) fun _ _ => True :=
-  fun _ _ => ⟨cacheFailure.SWF, fun _ _ _ eq _ => by revert eq; exact id⟩
+  fun _ _ => ⟨cacheFailure.SWF, fun _ _ _ eq _ _ => by revert eq; exact id⟩
 
 theorem tryUnfoldProjApp.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
@@ -517,10 +522,10 @@ end Inner
 
 open Inner in
 theorem Methods.withFuel.SS : ∀ n, (Methods.withFuel n).SS
-  | 0 => ⟨fun _ _ _ _ _ _ => ⟨.throw, fun _ _ _ h _ => nomatch h⟩,
-      fun _ _ _ _ => ⟨.throw, fun _ _ _ h _ => nomatch h⟩,
-      fun _ _ _ _ => ⟨.throw, fun _ _ _ h _ => nomatch h⟩,
-      fun _ _ _ _ => ⟨.throw, fun _ _ _ h _ => nomatch h⟩⟩
+  | 0 => ⟨fun _ _ _ _ _ _ => ⟨.throw, fun _ _ _ h _ _ => nomatch h⟩,
+      fun _ _ _ _ => ⟨.throw, fun _ _ _ h _ _ => nomatch h⟩,
+      fun _ _ _ _ => ⟨.throw, fun _ _ _ h _ _ => nomatch h⟩,
+      fun _ _ _ _ => ⟨.throw, fun _ _ _ h _ _ => nomatch h⟩⟩
   | n + 1 => ⟨fun hA hS h₁ h₂ hs₁ hs₂ => isDefEqCore'.SS hA hS h₁ h₂ hs₁ hs₂ _ (withFuel.SS n),
       fun hA hS h hs => whnfCore'.SS hA hS h hs _ (withFuel.SS n),
       fun hA hS h hs => whnf'.SS hA hS h hs _ (withFuel.SS n),
@@ -531,8 +536,8 @@ theorem RecM.SS.run {c₁ c₂ : Context} {s : State} {x₁ x₂ : RecM α} {Q}
     (H : RecM.SS c₁ c₂ s x₁ x₂ Q) (hfuel : c₂.fuel = c₁.fuel) :
     M.SS c₁ c₂ s (RecM.run x₁) (RecM.run x₂) Q := by
   have := H _ (Methods.withFuel.SS c₁.fuel.recDepth)
-  exact ⟨this.1, fun wf a s' eq hF => by
-    have := this.2 wf a s' eq hF
+  exact ⟨this.1, fun wf a s' eq hF hC => by
+    have := this.2 wf a s' eq hF hC
     show x₂ (Methods.withFuel c₂.fuel.recDepth) c₂ s = _
     rw [hfuel]; exact this⟩
 

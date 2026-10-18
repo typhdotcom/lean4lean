@@ -44,8 +44,8 @@ theorem unfoldDefinition_const_axiom {n : Name} {us : List Level} {ax : AxiomVal
 theorem whnf_loop_const_axiom {n : Name} {us : List Level} {ax : AxiomVal} (m : Methods)
     (ctx : TypeChecker.Context) (h : ctx.env.find? n = some (.axiomInfo ax)) (fuel : Nat)
     (s : TypeChecker.State) :
-    Inner.whnf'.loop (.const n us) (fuel + 1) m ctx s = .ok (.const n us, s) := by
-  unfold Inner.whnf'.loop
+    Inner.whnfLoop (.const n us) (fuel + 1) m ctx s = .ok (.const n us, s) := by
+  unfold Inner.whnfLoop
   simp only [bind, ReaderT.bind, StateT.bind, Except.bind]
   rw [show (liftM TypeChecker.getEnv : RecM Environment) m ctx s = .ok (ctx.env, s) from rfl]
   simp only [whnfCore'_const]
@@ -70,16 +70,24 @@ theorem whnf_const_axiom {n : Name} {us : List Level} {ax : AxiomVal}
   | succ fuel =>
     simp only [Inner.whnf, Methods.withFuel] at hr'
     unfold Inner.whnf' at hr'
-    simp only [bind, ReaderT.bind, StateT.bind, Except.bind] at hr'
+    simp only [Bind.bind, ReaderT.bind, StateT.bind, Except.bind] at hr'
     rw [show (get : RecM TypeChecker.State) (Methods.withFuel fuel) ctx s = .ok (s, s) from rfl] at hr'
-    simp only [hs, Std.HashMap.getElem?_empty] at hr'
-    rw [RecM.bind_ok (show (readThe TypeChecker.Context : RecM _) (Methods.withFuel fuel) ctx s =
+    simp only at hr'
+    rw [show (readThe TypeChecker.Context : RecM _) (Methods.withFuel fuel) ctx s =
+      .ok (ctx, s) from rfl] at hr'
+    simp only [hs, Std.HashMap.getElem?_empty, TypeChecker.State.cached?] at hr'
+    simp only [ReaderT.bind, StateT.bind, Except.bind] at hr'
+    rw [M.bind_ok (show (readThe TypeChecker.Context : RecM _) (Methods.withFuel fuel) ctx s =
       .ok (ctx, s) from rfl)] at hr'
     generalize (if ctx.eagerReduce = true then ctx.fuel.whnfEager else ctx.fuel.whnf) = wf at hr'
+    unfold TypeChecker.withTaint at hr'
+    simp only [Bind.bind, ReaderT.bind, StateT.bind, Except.bind] at hr'
     cases wf with
     | zero => cases hr'
     | succ wf =>
-      rw [RecM.bind_ok (whnf_loop_const_axiom _ ctx h wf s)] at hr'
+      simp only [get, getThe, MonadStateOf.get, liftM, monadLift, MonadLift.monadLift, StateT.get,
+        modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, Pure.pure, Except.pure,
+        StateT.pure, ReaderT.pure, whnf_loop_const_axiom _ ctx h wf] at hr'
       cases hr'; rfl
 
 namespace AddInductive

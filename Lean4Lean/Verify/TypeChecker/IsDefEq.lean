@@ -52,7 +52,7 @@ theorem isDefEqLambda.WF {c : VContext} {s : VState}
   extract_lets d₂'
   have : d₂' = d₂.instantiateList fvs := by split at hx <;> [simp only [d₂', instantiateRev_of_closed hsubst hcl, Option.getD_none]; exact hx]
   clear_value d₂'; subst this
-  refine .withLocalDecl b2 b1 .rfl fun v mwf' _ _ _ => ?_
+  refine .withLocalDecl b2 b1 Lean.NameGenerator.LE.rfl fun v mwf' _ _ _ => ?_
   have b3' := b3.inst_fvar c.Ewf mwf'.1.tr.wf
   have a3'' := a3'.inst_fvar c.Ewf mwf'.1.tr.wf
   rw [Expr.instantiateList_instantiate1_comm (by rfl), ← Expr.instantiateList] at a3'' b3'
@@ -96,7 +96,7 @@ theorem isDefEqForall.WF {c : VContext} {s : VState}
   extract_lets d₂'
   have : d₂' = d₂.instantiateList fvs := by split at hx <;> [simp only [d₂', instantiateRev_of_closed hsubst hcl, Option.getD_none]; exact hx]
   clear_value d₂'; subst this
-  refine .withLocalDecl b2 b1 .rfl fun v mwf' _ _ _ => ?_
+  refine .withLocalDecl b2 b1 Lean.NameGenerator.LE.rfl fun v mwf' _ _ _ => ?_
   have b3' := b3.inst_fvar c.Ewf mwf'.1.tr.wf
   have a3'' := a3'.inst_fvar c.Ewf mwf'.1.tr.wf
   rw [Expr.instantiateList_instantiate1_comm (by rfl), ← Expr.instantiateList] at a3'' b3'
@@ -106,35 +106,100 @@ theorem isDefEqForall.WF {c : VContext} {s : VState}
   have bb := eq.symm.trans c'.Ewf mwf'.1.tr.wf.toCtx (h hb) |>.of_r c'.Ewf mwf'.1.tr.wf.toCtx bT
   exact ⟨_, .symm <| .forallEDF tt'.symm <| bb.symm⟩
 
+/-- A union-find equivalence at a level holds at every deeper level up to the current depth, and
+the current depth's context is the whole context. -/
+theorem _root_.Lean4Lean.TypeChecker.VState.WF.linkE_top {c : VContext} {s : VState} (wf : s.WF c) {l : Nat} {e₁ e₂ : Expr}
+    (h : s.LinkE c l e₁ e₂) : s.LinkE c s.scopeIds.size e₁ e₂ := by
+  intro hc'
+  cases hce : c.ceiling with
+  | some lab => rw [hce] at hc'; have := wf.ceil_lt lab hce; simp at hc'; omega
+  | none =>
+    have hch := ScopeShape.chain wf.shape
+    rw [hce] at hch
+    have h' := h (by simp [hce])
+    rw [hce] at h'
+    simp only [] at h' ⊢
+    rcases Nat.le_total l s.scopeIds.size with hl | hl
+    · obtain ⟨_, W⟩ := hch.lift l _ hl (by simp)
+      exact h'.weak' c.Ewf W (hch.wf _ (by simp))
+    · have e1 : levelCtx c.mlctx s.scopeFV none c.top l = c.mlctx :=
+        levelCtx_none (Array.getElem?_eq_none_iff.2 (by rw [wf.fv_size]; exact hl)) (by simp)
+      have e2 : levelCtx c.mlctx s.scopeFV none c.top s.scopeIds.size = c.mlctx := by
+        rw [← wf.fv_size, levelCtx_size]
+      rw [e2]; rw [e1] at h'; exact h'
+
+/-- A union-find equivalence at a level the ceiling keeps holds in the whole context. -/
+theorem _root_.Lean4Lean.TypeChecker.VState.WF.linkE_now {c : VContext} {s : VState} (wf : s.WF c) {l : Nat} {e₁ e₂ : Expr}
+    (h : s.LinkE c l e₁ e₂) (hc : c.ceiling.all (l ≤ ·)) :
+    EquivManager.IsDefEqE c.venv c.lparams c.vlctx e₁ e₂ := by
+  obtain ⟨_, W⟩ := (wf.shape.levelCtx_below l).fvlift
+  exact (h hc).weak' c.Ewf W c.Δwf
+
+theorem checkEquiv.WF {c : VContext} {s : VState} :
+    RecM.WF c s (modifyGet (·.checkEquiv useHash e₁ e₂)) fun r _ =>
+      ∀ l, r = some l → c.ceiling.all (l ≤ ·) → ∀ t' u', c.TrExprS e₁ t' → c.TrExprS e₂ u' →
+        EquivManager.IsDefEqE c.venv c.lparams c.vlctx e₁ e₂ := by
+  intro _ mwf wf _ s₁ eq
+  have hE := ScopedEquivManager.Chain.erel c.Ewf (ScopeShape.chain wf.shape)
+  have ⟨ewf, _, h1⟩ := ScopedEquivManager.isEquiv.SWF hE wf.linkE_top (ids := s.scopeIds)
+    (lv := fun _ => 0) (m := s.eqvManager) (useHash := useHash) (e₁ := e₁) (e₂ := e₂)
+    wf.ectx _ _ rfl
+  simp only [modifyGet, MonadStateOf.modifyGet, monadLift, MonadLift.monadLift,
+    StateT.modifyGet, pure, Except.pure, State.checkEquiv] at eq
+  have hw : VState.WF c ⟨{ s.toState with eqvManager :=
+      ((ScopedEquivManager.isEquiv s.scopeIds (fun _ => 0) useHash e₁ e₂).run s.eqvManager).2 }⟩ :=
+    { wf with ectx := ewf, supp := wf.supp.setAux rfl rfl rfl rfl rfl rfl }
+  split at eq
+  · rename_i l hl
+    cases eq
+    exact ⟨_, rfl, .rfl, hw, fun _ h hc _ _ _ _ => by cases h; exact wf.linkE_now (h1 l hl) hc⟩
+  · split at eq
+    · rename_i l hl
+      cases eq
+      refine ⟨_, rfl, .rfl, hw, fun _ h hc t' u' ht hu => ?_⟩
+      cases h
+      split at hl
+      · rename_i hv; split at hl <;> cases hl
+        exact wf.pairs_wf.now wf.shape hv ‹_› hc t' u' ht hu
+      · cases hl
+    · cases eq
+      refine ⟨_, rfl, .rfl, hw, fun l hl hc t' u' ht hu => ?_⟩
+      split at hl
+      · rename_i hv; split at hl <;> cases hl
+        exact (wf.pairs_wf.now wf.shape hv ‹_› hc u' t' hu ht).symm
+      · cases hl
+
 theorem quickIsDefEq.WF {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :
     RecM.WF c s (quickIsDefEq e₁ e₂ useHash) fun b _ => b = .true → c.IsDefEqU e₁' e₂' := by
   unfold quickIsDefEq
-  refine .bind (Q := fun b _ => b = true → c.IsDefEqU e₁' e₂') ?_ fun _ _ _ h => ?_
-  · intro _ mwf wf _ s₁ eq
-    simp [modifyGet, MonadStateOf.modifyGet, monadLift, MonadLift.monadLift, StateT.modifyGet,
-      pure, Except.pure] at eq
-    split at eq; rename_i b _ b' m hm
-    change let s' := _; (_, s') = _ at eq; extract_lets s' at eq
-    injection eq; subst b' s₁
-    have ⟨ewf, _, h1⟩ := EquivManager.isEquiv.WF wf.ectx hm
-    refine let vs' := { s with toState := s' }; ⟨vs', rfl, .rfl, { wf with ectx := ewf }, ?_⟩
-    intro h
-    exact (h1 h).uniq c.Ewf c.mlctx.noBV c.Δwf he₁ he₂
-  split <;> [exact .pure fun _ => h ‹_›; split]
-  · exact .toLBoolM <| c.withMLC_self ▸
-      isDefEqLambda.WF (subst := #[]) (fvs := []) rfl nofun (c.withMLC_self ▸ he₁) (c.withMLC_self ▸ he₂)
-  · exact .toLBoolM <| c.withMLC_self ▸
-      isDefEqForall.WF (subst := #[]) (fvs := []) rfl nofun (c.withMLC_self ▸ he₁) (c.withMLC_self ▸ he₂)
-  · have .sort hu := he₁; have .sort hv := he₂
-    refine .pure fun h => ⟨_, .sortDF (.of_ofLevel hu) (.of_ofLevel hv) ?_⟩
-    exact Level.isEquiv_wf (toLBool_true.1 h) hu hv
-  · let .mdata he₁ := he₁; let .mdata he₂ := he₂
-    exact .toLBoolM <| isDefEq.WF he₁ he₂
-  · cases he₁
-  · rename_i a1 a2 _; refine .pure fun h => ?_
-    simp at h; subst h; exact he₁.uniq c.Ewf (.refl c.Ewf c.Δwf) he₂
-  · exact .pure nofun
+  refine checkEquiv.WF.bind fun r _ _ h₀ => ?_
+  extract_lets J
+  have hJ {s} : RecM.WF c s (J ()) fun b _ => b = .true → c.IsDefEqU e₁' e₂' := by
+    dsimp only [J]
+    split
+    · exact .toLBoolM <| c.withMLC_self ▸
+        isDefEqLambda.WF (subst := #[]) (fvs := []) rfl nofun (c.withMLC_self ▸ he₁) (c.withMLC_self ▸ he₂)
+    · exact .toLBoolM <| c.withMLC_self ▸
+        isDefEqForall.WF (subst := #[]) (fvs := []) rfl nofun (c.withMLC_self ▸ he₁) (c.withMLC_self ▸ he₂)
+    · have .sort hu := he₁; have .sort hv := he₂
+      refine .pure fun h => ⟨_, .sortDF (.of_ofLevel hu) (.of_ofLevel hv) ?_⟩
+      exact Level.isEquiv_wf (toLBool_true.1 h) hu hv
+    · let .mdata he₁ := he₁; let .mdata he₂ := he₂
+      exact .toLBoolM <| isDefEq.WF he₁ he₂
+    · cases he₁
+    · rename_i a1 a2 _; refine .pure fun h => ?_
+      simp at h; subst h; exact he₁.uniq c.Ewf (.refl c.Ewf c.Δwf) he₂
+    · exact .pure nofun
+  split
+  · rename_i l
+    refine .readThe ?_
+    split
+    · rename_i hc
+      exact (RecM.WF.taintWith).bind fun _ _ _ _ => .pure fun _ =>
+        (h₀ l rfl hc _ _ he₁ he₂).uniq c.Ewf c.mlctx.noBV c.Δwf he₁ he₂
+    · exact hJ
+  · exact hJ
 
 theorem isDefEqArgs.WF {c : VContext} {s : VState}
     (H : ∃ e₁', c.TrExprS e₁.getAppFn e₁' ∧ ∃ e₂', c.TrExprS e₂.getAppFn e₂' ∧ c.IsDefEqU e₁' e₂')
@@ -473,7 +538,8 @@ theorem isDefEqProofIrrel.WF {c : VContext} {s : VState}
 theorem cacheFailure.WF {c : VContext} {s : VState} :
     (cacheFailure e₁ e₂).WF c s fun _ _ => True := by
   rintro wf _ _ ⟨⟩
-  exact ⟨{ s with toState := _ }, rfl, .rfl, { wf with }, ⟨⟩⟩
+  exact ⟨{ s with toState := _ }, rfl, .rfl,
+    { wf with supp := wf.supp.setAux rfl rfl rfl rfl rfl rfl }, ⟨⟩⟩
 
 theorem tryUnfoldProjApp.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     (tryUnfoldProjApp e).WF c s fun oe _ =>

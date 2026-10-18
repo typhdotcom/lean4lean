@@ -62,6 +62,57 @@ theorem VEnvAt.safePrimitives_add {env : Environment} {venv : VEnv}
     (hp : Environment.primitives.contains n) : ci'.safety = .safe ∧ ci'.levelParams = [] :=
   safePrimitives_add' wf.tr.map_wf wf.safePrimitives ci hfresh hok hfind hp
 
+theorem Environment.find?_add_of_ne {env : Environment} (mapWF : env.constants.WF)
+    (ci : ConstantInfo) (hfresh : env.find? ci.name = none) {n : Name}
+    (hne : ci.name ≠ n) (h : env.find? n = none) : (env.add ci).find? n = none := by
+  have hnone : env.constants.find? ci.name = none := by rwa [← mapWF.find?'_eq_find?]
+  have mapWF' := mapWF.insert ci.name ci hnone
+  change SMap.find?' (env.constants.insert ci.name ci) n = none
+  rw [mapWF'.find?'_eq_find?, mapWF.find?_insert, if_neg (by simpa using hne)]
+  rwa [Kernel.Environment.find?, mapWF.find?'_eq_find?] at h
+
+/-- Adding a declaration that mentions no free variables keeps the environment's declarations
+so. -/
+theorem Environment.envClosed_add {env : Environment} (mapWF : env.constants.WF)
+    (hcl : ∀ n ci, env.find? n = some ci → ci.SuppIn fun _ => True)
+    (ci : ConstantInfo) (hfresh : env.find? ci.name = none) (hci : ci.SuppIn fun _ => True) :
+    ∀ n ci', (env.add ci).find? n = some ci' → ci'.SuppIn fun _ => True := by
+  intro n ci' h
+  have hnone : env.constants.find? ci.name = none := by rwa [← mapWF.find?'_eq_find?]
+  have mapWF' := mapWF.insert ci.name ci hnone
+  change SMap.find?' (env.constants.insert ci.name ci) n = some ci' at h
+  rw [mapWF'.find?'_eq_find?, mapWF.find?_insert] at h
+  split at h
+  · cases h; exact hci
+  · exact hcl n ci' (by rwa [Kernel.Environment.find?, mapWF.find?'_eq_find?])
+
+theorem VEnvAt.envClosed_add {env : Environment} {venv : VEnv}
+    (wf : VEnvAt env safety venv) (ci : ConstantInfo) (hfresh : env.find? ci.name = none)
+    (hci : ci.SuppIn fun _ => True) :
+    ∀ n ci', (env.add ci).find? n = some ci' → ci'.SuppIn fun _ => True :=
+  Environment.envClosed_add wf.tr.map_wf wf.envClosed ci hfresh hci
+
+/-- Adding axioms whose types mention no free variables keeps the environment's declarations
+so. -/
+theorem Environment.envClosed_addAxiomList : ∀ {env : Environment} (axs : List AxiomVal),
+    env.constants.WF → (∀ n ci, env.find? n = some ci → ci.SuppIn fun _ => True) →
+    (axs.map (·.name)).Nodup → (∀ ax ∈ axs, env.find? ax.name = none) →
+    (∀ ax ∈ axs, (ConstantInfo.axiomInfo ax).SuppIn fun _ => True) →
+    ∀ n ci, (axs.foldl (fun e ax => e.add (.axiomInfo ax)) env).find? n = some ci →
+      ci.SuppIn fun _ => True
+  | _, [], _, hcl, _, _, _ => hcl
+  | env, ax :: axs, mapWF, hcl, hnd, hfr, hax => by
+    rw [List.map_cons, List.nodup_cons] at hnd
+    have hfr₀ : env.find? (ConstantInfo.axiomInfo ax).name = none := hfr _ (.head _)
+    have hnone : env.constants.find? ax.name = none := by
+      rw [← mapWF.find?'_eq_find?]; exact hfr₀
+    refine Environment.envClosed_addAxiomList (env := env.add (.axiomInfo ax)) axs
+      (mapWF.insert ax.name _ hnone)
+      (Environment.envClosed_add mapWF hcl _ hfr₀ (hax _ (.head _))) hnd.2 (fun a ha => ?_)
+      (fun a ha => hax a (.tail _ ha))
+    have hne : ax.name ≠ a.name := fun hh => hnd.1 (List.mem_map.2 ⟨a, ha, hh.symm⟩)
+    exact Environment.find?_add_of_ne mapWF _ hfr₀ hne (hfr a (.tail _ ha))
+
 theorem VEnv.HasPrimitives.addConsts {env env' : VEnv} : ∀ {cis : List VDefVal},
     env.HasPrimitives → (∀ ci ∈ cis, Environment.primitives.contains ci.name = false) →
     env.addConsts cis = some env' → env'.HasPrimitives
@@ -141,15 +192,6 @@ theorem TrEnv'.ignoreDefs : ∀ {vs : List DefinitionVal} {C : ConstMap},
     simp only [beq_iff_eq]; intro hh
     exact hnd.1 (List.mem_map.2 ⟨e, he, hh.symm⟩)
 
-theorem Environment.find?_add_of_ne {env : Environment} (mapWF : env.constants.WF)
-    (ci : ConstantInfo) (hfresh : env.find? ci.name = none) {n : Name}
-    (hne : ci.name ≠ n) (h : env.find? n = none) : (env.add ci).find? n = none := by
-  have hnone : env.constants.find? ci.name = none := by rwa [← mapWF.find?'_eq_find?]
-  have mapWF' := mapWF.insert ci.name ci hnone
-  change SMap.find?' (env.constants.insert ci.name ci) n = none
-  rw [mapWF'.find?'_eq_find?, mapWF.find?_insert, if_neg (by simpa using hne)]
-  rwa [Kernel.Environment.find?, mapWF.find?'_eq_find?] at h
-
 /-- Data produced by `addMutual`'s header loop for one block member. -/
 def TrMutualHeader (bs : DefinitionSafety) (venv : VEnv) (env : Environment)
     (v : DefinitionVal) (ci : VDefVal) : Prop :=
@@ -184,7 +226,8 @@ theorem VEnvAt.addAxioms {env : Environment} {venv : VEnv} {bs : DefinitionSafet
           (by rw [← wf.tr.map_wf.find?'_eq_find?]; exact hd.2.2.1) hd.2.1 h₁' wf.tr
         hasPrimitives := wf.hasPrimitives.addConst hd.2.2.2 h₁'
         safePrimitives := wf.safePrimitives_add _ (hax ▸ hd.2.2.1)
-          (by rw [hax]; simp [hd.2.2.2]) }
+          (by rw [hax]; simp [hd.2.2.2])
+        envClosed := wf.envClosed_add _ (hax ▸ hd.2.2.1) ⟨hd.1.1.2.2.suppIn_nil, trivial⟩ }
     show VEnvAt (vs.foldl (fun e v => e.add (.axiomInfo { v with isUnsafe := bs == .unsafe }))
       (env.add (.axiomInfo { v with isUnsafe := bs == .unsafe }))) bs venv'
     refine VEnvAt.addAxioms hsf wf₁ ?_ hnd.2 h₂

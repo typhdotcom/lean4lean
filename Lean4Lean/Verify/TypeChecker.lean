@@ -1,6 +1,7 @@
 import Lean4Lean.Verify.TypeChecker.InferType
 import Lean4Lean.Verify.TypeChecker.WHNF
 import Lean4Lean.Verify.TypeChecker.IsDefEq
+import Lean4Lean.Verify.Support.EnvSupp
 
 namespace Lean4Lean
 
@@ -35,12 +36,16 @@ structure VEnvAt (env : Environment) (safety : DefinitionSafety) (venv : VEnv) :
   hasPrimitives : VEnv.HasPrimitives venv
   safePrimitives : env.find? n = some ci →
     Environment.primitives.contains n → ci.safety = .safe ∧ ci.levelParams = []
+  /-- The environment's declarations mention no free variables, and only their own level
+  parameters. -/
+  envClosed : ∀ n ci, env.find? n = some ci → ci.SuppIn fun _ => True
 
 theorem VEnvs.WF.toVEnvAt {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (safety : DefinitionSafety) : VEnvAt env safety (ves.venv safety) where
   tr := wf.tr
   hasPrimitives := wf.hasPrimitives
   safePrimitives := wf.safePrimitives
+  envClosed := (wf.tr (safety := .unsafe)).suppIn_true
 
 namespace TypeChecker
 open Inner
@@ -55,14 +60,16 @@ theorem whnf'_forallE {m : Methods} {c : VContext} {s : VState} :
 
 theorem Methods.withFuel.WF : ∀ {n}, (withFuel n).WF
   | 0 =>
-    { isDefEqCore _ _ := .throw
+    { ss := withFuel.SS 0
+      isDefEqCore _ _ := .throw
       whnfCore _ := .throw
       whnf _ := .throw
       whnf_forallE _ := .throw
       inferType _ _ := .throw }
   | n + 1 =>
     have := withFuel.WF (n := n)
-    { isDefEqCore h1 h2 := isDefEqCore'.WF h1 h2 _ this
+    { ss := withFuel.SS (n + 1)
+      isDefEqCore h1 h2 := isDefEqCore'.WF h1 h2 _ this
       whnfCore h1 := whnfCore'.WF h1 _ this
       whnf h1 := whnf'.WF h1 _ this
       whnf_forallE h := whnf'_forallE h
@@ -86,18 +93,36 @@ def VContext.mk' {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (safety : DefinitionSafety := .safe) (lparams : List Name := [])
     (fuel : FuelConfig := {}) : VContext := .mk1 (wf.toVEnvAt safety) lparams fuel
 
-theorem VState.WF.empty1 {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
-    {wf : VEnvAt env safety venv} {lparams : List Name} {fuel : FuelConfig} :
-    VState.WF (.mk1 wf lparams fuel) {} where
-  trctx := .nil
-  ngen_wf := nofun
-  ectx := .empty
+/-- The empty state is well formed in any context whose environment's declarations mention no
+free variables and which sets nothing aside. -/
+theorem VState.WF.emptyOf (c : VContext)
+    (hcl : ∀ n ci, c.env.find? n = some ci → ci.SuppIn fun _ => True)
+    (hc : c.ceiling = none) : VState.WF c {} where
+  trctx := c.mlctx_wf.tr
+  supp := {
+    lctxWF := c.lctx_eq ▸ c.mlctx_wf.tr.1
+    wellScoped := c.lctx_eq ▸ MLCtx.WF.wellScoped c.Ewf c.mlctx_wf
+    envClosed := hcl
+    inferTypeI := by simp
+    inferTypeC := by simp
+    whnfCore := by simp
+    whnf := by simp
+    unfold := by simp }
+  ectx := .empty_nil
+  pairs_wf := .empty
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
-  inferTypeC_lit := .empty
   whnfCore_wf := .empty
   whnf_wf := .empty
+  ids_made := ⟨.empty, .empty, .empty, .empty, .empty⟩
   unfold_wf _ := by simp
+  shape := hc ▸ .nil
+  ceil_lt _ h := by rw [hc] at h; cases h
+
+theorem VState.WF.empty1 {env : Environment} {safety : DefinitionSafety} {venv : VEnv}
+    {wf : VEnvAt env safety venv} {lparams : List Name} {fuel : FuelConfig} :
+    VState.WF (.mk1 wf lparams fuel) {} :=
+  .emptyOf _ wf.envClosed rfl
 
 theorem VState.WF.empty {env : Environment} {ves : VEnvs} {wf : ves.WF env}
     {safety : DefinitionSafety} {lparams : List Name} {fuel : FuelConfig} :
@@ -230,7 +255,7 @@ theorem checkType.WF {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx
 has the type of its binder, instantiated by the earlier arguments (`LitApp`). -/
 theorem checkType.WF_lit {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx.fvars)) :
     M.WF c s (checkType e) fun ty s' => (∃ e' ty', c.TrTyping e ty e' ty') ∧
-      LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) e ty := by
+      LitApp c.env (ArgTyped c.venv c.lparams c.vlctx) e ty := by
   show M.WF c s (readThe Context >>= fun ctx =>
     Inner.inferType e false (Methods.withFuel ctx.fuel.recDepth)) _
   refine (?_ : M.WF c s (Inner.inferType e false (Methods.withFuel c.toContext.fuel.recDepth)) _)
@@ -247,7 +272,7 @@ at its binder, at the levels and the earlier arguments. -/
 theorem LitApp.argTypes {c : VContext} {s : VState} (wf : s.WF c) {J : Name} {ls : List Level}
     {Ds : Array Expr} {ty : Expr} {ci : ConstantInfo} {ls' : List VLevel} {L : List VExpr}
     {R : VExpr} {Ds' : List VExpr}
-    (H : LitApp c.env (ConditionallyArgTyped s.ngen c.venv c.lparams c.vlctx)
+    (H : LitApp c.env (ArgTyped c.venv c.lparams c.vlctx)
       (mkAppN (.const J ls) Ds) ty)
     (hfind : c.env.find? J = some ci)
     (hty : TrExprS c.venv ci.levelParams [] ci.type (.foralls L R))
@@ -304,7 +329,7 @@ theorem LitApp.argTypes {c : VContext} {s : VState} (wf : s.WF c) {J : Name} {ls
       have hiD : i < Ds.size := by omega
       obtain ⟨a, ha, hx⟩ := List.Forall₂.getElem?_l hDs
         (show Ds.toList[i]? = some Ds[i] by simp [hiD])
-      obtain ⟨-, -, -, -, Hc⟩ := hargs i hiD
+      have Hc := hargs i hiD
       rw [hr] at Hc
       obtain ⟨x', A', hx', hA', hxA⟩ := Hc (hfv _ (by simp)) hdom.fvarsIn
       cases hx'.unique (TrExprS.IsUnique.all _) hx
@@ -326,9 +351,9 @@ theorem LitApp.argTypes {c : VContext} {s : VState} (wf : s.WF c) {J : Name} {ls
   exact (walk Ds.size (Nat.le_refl _)).2 k hk a A ha hA
 
 theorem LitApp.mono {c : VContext} {s s' : VState} (le : s ≤ s')
-    (H : LitApp c.env (ConditionallyArgTyped s.ngen c.venv c.lparams c.vlctx) e ty) :
-    LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) e ty :=
-  H.imp fun _ _ h => h.mono le
+    (H : LitApp c.env (ArgTyped c.venv c.lparams c.vlctx) e ty) :
+    LitApp c.env (ArgTyped c.venv c.lparams c.vlctx) e ty :=
+  H
 
 /-- Checking each of a list of terms, as `addInductive` checks its nested occurrences: each
 translates, and is a `LitApp` at the end. -/
@@ -336,7 +361,7 @@ theorem checkType.forM_lit {c : VContext} {s : VState} (xs : List α) (f : α �
     (hfv : ∀ x ∈ xs, (f x).FVarsIn (· ∈ c.vlctx.fvars)) :
     M.WF c s (xs.forM fun x => do _ ← checkType (f x)) fun _ s' => ∀ x ∈ xs,
       (∃ e', c.TrExprS (f x) e') ∧ ∃ ty,
-        LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) (f x) ty := by
+        LitApp c.env (ArgTyped c.venv c.lparams c.vlctx) (f x) ty := by
   induction xs generalizing s with
   | nil => exact .pure nofun
   | cons x xs ih =>

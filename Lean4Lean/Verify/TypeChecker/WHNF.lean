@@ -40,48 +40,28 @@ theorem whnfFVar.WF {c : VContext} {s : VState} (he : c.TrExprS (.fvar fv) e') :
   refine (TrExprS.fvar h1).uniq c.Ewf ?_ he
   exact .refl c.Ewf c.Δwf
 
-theorem whnfCore'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
-    RecM.WF c s (whnfCore' e cheapProj) fun e₁ _ =>
-      c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
-  unfold whnfCore'; extract_lets F
-  let full := (· matches Expr.fvar _ | .app .. | .letE .. | .proj ..)
-  generalize hP : (fun e₁ (_ : VState) => _) = P
-  have hid {s} : RecM.WF c s (pure e) P := hP ▸ .pure ⟨.rfl, he.trExpr c.Ewf c.Δwf⟩
-  suffices hF : full e → RecM.WF c s (F ⟨⟩) P by
-    split
-    any_goals exact hid
-    any_goals exact hF rfl
-    · let .mdata he := he
-      exact hP ▸ whnfCore'.WF he
-    · refine .getLCtx ?_; split <;> [exact hid; exact hF rfl]
-  simp [F]; refine fun hfull => .get ?_; split
-  · rename_i r eq; refine .stateWF fun wf => hP ▸ .pure ?_
-    have ⟨_, h1, h2, h3⟩ := (wf.whnfCore_wf eq).2.2.2.2 he.fvarsIn
-    refine ⟨h1, h3.defeq c.Ewf c.Δwf ?_⟩
-    exact h2.uniq c.Ewf (.refl c.Ewf c.Δwf) he
-  have hsave {e₁ s} (h1 : c.FVarsBelow e e₁) (h2 : c.TrExpr e₁ e') :
-      (save e cheapProj e₁).WF c s P := by
-    simp [save]
-    split <;> [skip; exact hP ▸ .pure ⟨h1, h2⟩]
-    rintro _ mwf wf a s' ⟨⟩
-    refine let s' := _; ⟨s', rfl, ?_⟩
-    have hic {ic} (hic : WHNFCache.WF c s ic) : WHNFCache.WF c s (ic.insert e e₁) := by
-      intro _ _ h
-      rw [Std.HashMap.getElem?_insert] at h; split at h <;> [cases h; exact hic h]
-      rename_i eq
-      refine .mk c.mlctx.noBV (.eqv h1 eq BEq.rfl) (he.eqv eq) h2 (.eqv eq ?_) ?_ --_ (.eqv h2 eq BEq.rfl) (.eqv eq ?_) ?_
-      · exact he.fvarsIn.mono wf.ngen_wf
-      · exact h2.fvarsIn.mono wf.ngen_wf
-    exact hP ▸ ⟨.rfl, { wf with whnfCore_wf := hic wf.whnfCore_wf }, h1, h2⟩
+/-- `whnfCore'` on a term not in the cache. -/
+theorem whnfCoreCore.WF {c : VContext} {s : VState}
+    (hfull : (e matches .fvar _ | .app .. | .letE .. | .proj ..) = true) (he : c.TrExprS e e') :
+    RecM.WF c s (whnfCoreCore e cheapProj) fun p _ =>
+      c.FVarsBelow e p.1 ∧ c.TrExpr p.1 e' := by
+  unfold whnfCoreCore
+  generalize hP : (fun (p : Expr × Bool) (_ : VState) => _) = P
+  have hid {s} (b) : RecM.WF c s (pure (e, b)) P := hP ▸ .pure ⟨.rfl, he.trExpr c.Ewf c.Δwf⟩
+  have hsave {e₁ s} (b) (h1 : c.FVarsBelow e e₁) (h2 : c.TrExpr e₁ e') :
+      RecM.WF c s (pure (e₁, b)) P := hP ▸ .pure ⟨h1, h2⟩
+  have hmap {x : RecM Expr} {s} (b) (h : x.WF c s fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e') :
+      RecM.WF c s ((fun a => (a, b)) <$> x) P := hP ▸ h.map fun _ _ _ h => h
+  simp
   split <;> cases hfull
-  · exact hP ▸ whnfFVar.WF he
-  · rename_i fn arg _; generalize eq : fn.app arg = e at *
+  · exact hmap _ (whnfFVar.WF he)
+  · rename_i _ fn arg; generalize eq : fn.app arg = e at *
     have ⟨_, stk⟩ := AppStack.build <| e.mkAppList_getAppArgsList ▸ he
     refine (whnfCore.WF stk.tr).bind fun _ s _ ⟨h1, h2⟩ => ?_
     split <;> [rename_i name dom body bi _; split]
-    · let rec loop.WF {e e' i rargs f} (H : LambdaBodyN i e' f) (hi : i ≤ rargs.size) :
+    · let rec loop.WF {e' i rargs f} (H : LambdaBodyN i e' f) (hi : i ≤ rargs.size) :
         ∃ n f', LambdaBodyN n e' f' ∧ n ≤ rargs.size ∧
-          loop e cheapProj rargs i f = loop.cont e cheapProj rargs n f' := by
+          loop cheapProj rargs i f = loop.cont cheapProj rargs n f' := by
         unfold loop; split
         · split
           · refine loop.WF (by simpa [Nat.add_comm] using H.add (.succ .zero)) ‹_›
@@ -109,15 +89,14 @@ theorem whnfCore'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
       have := h2.rebuild_mkAppRevList c.Ewf c.Δwf stk.tr <|
         e.mkAppRevList_getAppArgsRevList ▸ he
       have ⟨_, a1, a2⟩ := this.beta c.Ewf c.Δwf br
-      refine (whnfCore.WF a1).bind fun _ _ _ ⟨b1, b2⟩ => ?_
       have hb := e.mkAppRevList_getAppArgsRevList ▸ h1.mkAppRevList
-      exact hsave (hb.trans (.betaReduce br) |>.trans b1) <|
-        b2.defeq c.Ewf c.Δwf a2
+      exact hmap _ <| (whnfCore.WF a1).mono fun _ _ _ ⟨b1, b2⟩ =>
+        ⟨hb.trans (.betaReduce br) |>.trans b1, b2.defeq c.Ewf c.Δwf a2⟩
     · refine (reduceRecursor.WF he).bind fun _ _ _ h => ?_
-      split <;> [skip; exact hid]
+      split <;> [skip; exact hid _]
       let ⟨h1, _, h2, eq⟩ := h _ rfl
-      refine hP ▸ (whnfCore.WF h2).mono fun _ _ _ ⟨h3, h4⟩ => ?_
-      exact ⟨h1.trans h3, h4.defeq c.Ewf c.Δwf eq⟩
+      exact hmap _ <| (whnfCore.WF h2).mono fun _ _ _ ⟨h3, h4⟩ =>
+        ⟨h1.trans h3, h4.defeq c.Ewf c.Δwf eq⟩
     · rw [Expr.mkAppRevRange_eq_rev (l₁ := []) (l₃ := [])
         (by simp [Expr.getAppRevArgs_toList]; rfl) (by rfl) (by simp [Expr.getAppRevArgs_eq])]
       have {e e₁ : Expr} (hb : c.FVarsBelow e e₁) {es e₀' e'}
@@ -135,17 +114,88 @@ theorem whnfCore'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
             .app c.Ewf c.Δwf h1 h2 h6 (h4.trExpr c.Ewf c.Δwf)⟩
       have eq := e.mkAppRevList_getAppArgsRevList
       let ⟨h3, _, h4, eq⟩ := eq ▸ this h1 (eq ▸ he) stk.tr h2
-      refine (whnfCore.WF h4).bind fun _ _ _ ⟨h5, h6⟩ => ?_
-      refine hsave (h3.trans h5) (h6.defeq c.Ewf c.Δwf eq)
+      exact hmap _ <| (whnfCore.WF h4).mono fun _ _ _ ⟨h5, h6⟩ =>
+        ⟨h3.trans h5, h6.defeq c.Ewf c.Δwf eq⟩
   · let .letE h1 h2 h3 h4 := he
-    refine (whnfCore.WF (h4.inst_let c.Ewf.ordered h3)).bind fun _ _ _ ⟨h1, h2⟩ => ?_
-    exact hsave (.trans (fun _ _ he => he.2.2.instantiate1 he.2.1) h1) h2
+    exact hmap _ <| (whnfCore.WF (h4.inst_let c.Ewf.ordered h3)).mono fun _ _ _ ⟨h1, h2⟩ =>
+      ⟨.trans (fun _ _ he => he.2.2.instantiate1 he.2.1) h1, h2⟩
   · refine (reduceProj.WF he).bind fun _ _ _ H => ?_
     split
     · let ⟨h1, _, h2, eq⟩ := H _ rfl
-      refine (whnfCore.WF h2).bind fun _ _ _ ⟨h3, h4⟩ => ?_
-      exact hsave (h1.trans h3) (h4.defeq c.Ewf c.Δwf eq)
-    · exact hsave .rfl (he.trExpr c.Ewf c.Δwf)
+      exact hmap _ <| (whnfCore.WF h2).mono fun _ _ _ ⟨h3, h4⟩ =>
+        ⟨h1.trans h3, h4.defeq c.Ewf c.Δwf eq⟩
+    · exact hsave _ .rfl (he.trExpr c.Ewf c.Δwf)
+
+
+theorem whnfCore'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+    RecM.WF c s (whnfCore' e cheapProj) fun e₁ _ =>
+      c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
+  unfold whnfCore'; extract_lets F
+  let full := (· matches Expr.fvar _ | .app .. | .letE .. | .proj ..)
+  generalize hP : (fun e₁ (_ : VState) => _) = P
+  have hid {s} : RecM.WF c s (pure e) P := hP ▸ .pure ⟨.rfl, he.trExpr c.Ewf c.Δwf⟩
+  suffices hF : full e → RecM.WF c s (F ⟨⟩) P by
+    split
+    any_goals exact hid
+    any_goals exact hF rfl
+    · let .mdata he := he
+      exact hP ▸ whnfCore'.WF he
+    · refine .getLCtx ?_; split <;> [exact hid; exact hF rfl]
+  simp [F]; refine fun hfull => .get <| .readThe ?_; split
+  · rename_i r l eq
+    obtain ⟨_, eq, hv, hc⟩ := State.cached?_spec eq
+    refine .stateWF fun wf => ?_
+    have ⟨h1, h4⟩ := wf.whnfCore_wf.now wf.shape eq hv hc _ he
+    exact hP ▸ RecM.WF.taintWith.map fun _ _ _ _ => ⟨h1, h4⟩
+  have hd := c.mlctx_wf.dom_of_tr he; rw [c.lctx_eq] at hd
+  refine (RecM.WF.withTaintLearn (D := (· ∈ e.fvarsList))
+    (Pre := fun m => ∃ e', TrExprS c.venv c.lparams m.vlctx e e')
+    (P := fun p m => WHNFClaim c.venv c.lparams e (p.1, 0, 0) m)
+    (R := fun p => SuppBelow c.toContext e p.1) hd
+    (fun m hm S c₂ hA hS hD hl hc => whnfCoreCore.SS hA hS hfull hd
+      (Lean.Expr.suppIn_of_fvars hD hl hc) m hm)
+    (fun c₂ hv _ hl ⟨e'₀, h₀⟩ _ => by
+      rw [← hv, ← hl] at h₀ ⊢
+      exact (whnfCoreCore.WF hfull h₀).mono fun p _ _ ⟨h1, h2⟩ e'' he'' =>
+        ⟨h1, h2.defeq c₂.Ewf c₂.Δwf (h₀.uniq c₂.Ewf (.refl c₂.Ewf c₂.Δwf) he'')⟩)
+    (whnfCoreCore.WF hfull he)).bind fun ⟨⟨e₁, sv⟩, l⟩ s le ⟨⟨h1, h2⟩, hR, hL⟩ => ?_
+  simp only
+  split
+  · rintro _ mwf wf a s' ⟨⟩
+    obtain ⟨lab, memo, hlab, hk⟩ := State.keyLabel_eq s.toState e l
+    dsimp only; rw [hk]
+    refine hP ▸ ⟨_, rfl, .rfl, { wf with
+      supp := { wf.supp with
+        whnfCore := CondSupp.insert wf.supp.whnfCore (CondSupp.of wf.supp hd hR) }
+      whnfCore_wf := wf.whnfCore_wf.insert fun k' hk' hval hc => ?_
+      ids_made := ⟨wf.ids_made.1, wf.ids_made.2.1, wf.ids_made.2.2.1,
+        wf.ids_made.2.2.2.1.insert (wf.labelId_le _), wf.ids_made.2.2.2.2⟩ }, h1, h2⟩
+    refine ⟨c.lctx, s.ngen, Lean.NameGenerator.LE.rfl, Keeps.refl _ _, Admits.refl _ _, ?_⟩
+    have hval' := le_of_valid hval; rw [le.2.1] at hval'
+    have H := hL lab hlab hval' hc
+    rw [← le.2.2] at H
+    intro m wfm hbm ha e'' he''
+    have he₀ := he''.eqv (by rwa [BEq.comm] at hk')
+    have ⟨b1, b2⟩ := H m wfm hbm ha (wfm.dom_of_tr he₀) ⟨_, he₀⟩ e'' he₀
+    exact ⟨b1.eqv hk' BEq.rfl, b2⟩
+  · exact hP ▸ .pure ⟨h1, h2⟩
+
+theorem whnfLoop.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
+    (whnfLoop e n).WF c s fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
+  induction n generalizing s e e' with
+  | zero => unfold whnfLoop; exact .throw
+  | succ n ih => ?_
+  unfold whnfLoop
+  refine .getEnv <| (whnfCore'.WF he).bind fun e₁ s _ ⟨h1, _, he₁, eq⟩ => ?_
+  refine (M.WF.liftExcept reduceNative.WF).lift.bind fun _ _ _ h3 => ?_
+  split <;> [cases h3 _ rfl; skip]
+  refine (reduceNat.WF he₁).bind fun _ _ _ h3 => ?_; split
+  · exact .pure ⟨.trans h1 (h3 _ rfl).1, (h3 _ rfl).2.defeq c.Ewf c.Δwf eq⟩
+  refine (unfoldDefinition.WF he₁).bind fun _ _ _ H => ?_
+  split <;> [skip; exact .pure ⟨h1, _, he₁, eq⟩]
+  have ⟨a1, _, a2, eq'⟩ := H
+  refine (ih a2).mono fun _ _ _ ⟨b1, b2⟩ => ?_
+  exact ⟨h1.trans <| a1.trans b1, b2.defeq c.Ewf c.Δwf <| eq'.trans c.Ewf c.Δwf eq⟩
 
 theorem whnf'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (whnf' e) fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
@@ -159,32 +209,37 @@ theorem whnf'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     · let .mdata he := he
       exact hP ▸ whnf'.WF he
     · refine .getLCtx ?_; split <;> [exact hid; exact hF]
-  simp [F]; refine .get ?_; split
-  · rename_i r eq; refine .stateWF fun wf => hP ▸ .pure ?_
-    have ⟨_, h1, h2, h3⟩ := (wf.whnf_wf eq).2.2.2.2 he.fvarsIn
-    refine ⟨h1, h3.defeq c.Ewf c.Δwf ?_⟩
-    exact h2.uniq c.Ewf (.refl c.Ewf c.Δwf) he
-  have {e e' s n} (he : c.TrExprS e e') : (loop e n).WF c s fun e₁ _ =>
-      c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
-    induction n generalizing s e e' with | zero => exact .throw | succ n ih => ?_
-    refine .getEnv <| (whnfCore'.WF he).bind fun e₁ s _ ⟨h1, _, he₁, eq⟩ => ?_
-    refine (M.WF.liftExcept reduceNative.WF).lift.bind fun _ _ _ h3 => ?_
-    split <;> [cases h3 _ rfl; skip]
-    refine (reduceNat.WF he₁).bind fun _ _ _ h3 => ?_; split
-    · exact .pure ⟨.trans h1 (h3 _ rfl).1, (h3 _ rfl).2.defeq c.Ewf c.Δwf eq⟩
-    refine (unfoldDefinition.WF he₁).bind fun _ _ _ H => ?_
-    split <;> [skip; exact .pure ⟨h1, _, he₁, eq⟩]
-    have ⟨a1, _, a2, eq'⟩ := H
-    refine (ih a2).mono fun _ _ _ ⟨b1, b2⟩ => ?_
-    exact ⟨h1.trans <| a1.trans b1, b2.defeq c.Ewf c.Δwf <| eq'.trans c.Ewf c.Δwf eq⟩
-  refine .readThe <| (this he).bind fun e₁ s _ ⟨h1, h2⟩ => ?_
+  simp [F]; refine .get <| .readThe ?_; split
+  · rename_i r l eq
+    obtain ⟨_, eq, hv, hc⟩ := State.cached?_spec eq
+    refine .stateWF fun wf => ?_
+    have ⟨h1, h4⟩ := wf.whnf_wf.now wf.shape eq hv hc _ he
+    exact hP ▸ RecM.WF.taintWith.map fun _ _ _ _ => ⟨h1, h4⟩
+  have hd := c.mlctx_wf.dom_of_tr he; rw [c.lctx_eq] at hd
+  refine .readThe <| (RecM.WF.withTaintLearn (D := (· ∈ e.fvarsList))
+    (Pre := fun m => ∃ e', TrExprS c.venv c.lparams m.vlctx e e')
+    (P := fun r m => WHNFClaim c.venv c.lparams e (r, 0, 0) m)
+    (R := fun r => SuppBelow c.toContext e r) hd
+    (fun m hm S c₂ hA hS hD hl hc => whnfLoop.SS hA hS hd
+      (Lean.Expr.suppIn_of_fvars hD hl hc) m hm)
+    (fun c₂ hv _ hl ⟨e'₀, h₀⟩ _ => by
+      rw [← hv, ← hl] at h₀ ⊢
+      exact (whnfLoop.WF h₀).mono fun p _ _ ⟨h1, h2⟩ e'' he'' =>
+        ⟨h1, h2.defeq c₂.Ewf c₂.Δwf (h₀.uniq c₂.Ewf (.refl c₂.Ewf c₂.Δwf) he'')⟩)
+    (whnfLoop.WF he)).bind fun ⟨e₁, l⟩ s le ⟨⟨h1, h2⟩, hR, hL⟩ => ?_
   rintro _ mwf wf a s' ⟨⟩
-  refine let s' := _; ⟨s', rfl, ?_⟩
-  have hic {ic} (hic : WHNFCache.WF c s ic) : WHNFCache.WF c s (ic.insert e e₁) := by
-    intro _ _ h
-    rw [Std.HashMap.getElem?_insert] at h; split at h <;> [cases h; exact hic h]
-    rename_i eq
-    refine .mk c.mlctx.noBV (.eqv h1 eq BEq.rfl) (he.eqv eq) h2 (.eqv eq ?_) ?_
-    · exact he.fvarsIn.mono wf.ngen_wf
-    · exact h2.fvarsIn.mono wf.ngen_wf
-  exact hP ▸ ⟨.rfl, { wf with whnf_wf := hic wf.whnf_wf }, h1, h2⟩
+  obtain ⟨lab, memo, hlab, hk⟩ := State.keyLabel_eq s.toState e l
+  dsimp only; rw [hk]
+  refine hP ▸ ⟨_, rfl, .rfl, { wf with
+    supp := { wf.supp with whnf := CondSupp.insert wf.supp.whnf (CondSupp.of wf.supp hd hR) }
+    whnf_wf := wf.whnf_wf.insert fun k' hk' hval hc => ?_
+    ids_made := ⟨wf.ids_made.1, wf.ids_made.2.1, wf.ids_made.2.2.1, wf.ids_made.2.2.2.1,
+      wf.ids_made.2.2.2.2.insert (wf.labelId_le _)⟩ }, h1, h2⟩
+  refine ⟨c.lctx, s.ngen, Lean.NameGenerator.LE.rfl, Keeps.refl _ _, Admits.refl _ _, ?_⟩
+  have hval' := le_of_valid hval; rw [le.2.1] at hval'
+  have H := hL lab hlab hval' hc
+  rw [← le.2.2] at H
+  intro m wfm hbm ha e'' he''
+  have he₀ := he''.eqv (by rwa [BEq.comm] at hk')
+  have ⟨b1, b2⟩ := H m wfm hbm ha (wfm.dom_of_tr he₀) ⟨_, he₀⟩ e'' he₀
+  exact ⟨b1.eqv hk' BEq.rfl, b2⟩

@@ -30,6 +30,7 @@ def Closed (m : ScopedEquivManager) (D : Nat → Prop) : Prop :=
   ∀ n p, m.parent[n]? = some p → D n → D p
 
 variable {m : ScopedEquivManager} {ids : Scopes} {R : Nat → Nat → Nat → Prop} {D : Nat → Prop}
+  {B : Nat → Prop}
 
 theorem rootL.go_spec (hR : LRel D R) (wf : m.WF ids R) (hD : m.Closed D) :
     ∀ k n l l₀, D n → R l₀ n₀ n → l₀ ≤ l → rootL.go m ids k n l = (r, l') →
@@ -221,18 +222,23 @@ structure ERel (E : Nat → Expr → Expr → Prop) : Prop where
 
 /-- What the scoped equivalence manager keeps: one node per term up to `==`, and every current
 link in the relation its terms induce. -/
-structure WFE (m : ScopedEquivManager) (ids : Scopes) (E : Nat → Expr → Expr → Prop) : Prop where
+structure WFE (m : ScopedEquivManager) (ids : Scopes) (E : Nat → Expr → Expr → Prop)
+    (B : Nat → Prop) : Prop where
   sized : m.Sized
   parent_lt : ∀ (n p : Nat), m.parent[n]? = some p → p < m.parent.size
   dom {i} : i < m.parent.size ↔ ∃ e : Expr, m.toNodeMap[e]? = some i
   inj {e₁ e₂ : Expr} {i : Nat} : m.toNodeMap[e₁]? = some i → m.toNodeMap[e₂]? = some i →
     (e₁ == e₂) = true
   links : m.WF ids (NodeRel m E)
+  /-- Every label records an id `B` allows. -/
+  sids : ∀ (n i : Nat), m.sid[n]? = some i → B i
+  /-- `B` allows the id of every scope at a level, and `0`. -/
+  bids : ∀ l, B (ids.labelId l)
 
-theorem WFE.closed (wf : m.WFE ids E) : m.Closed (· < m.parent.size) :=
+theorem WFE.closed (wf : m.WFE ids E B) : m.Closed (· < m.parent.size) :=
   fun n p h _ => wf.parent_lt n p h
 
-theorem WFE.lrel (hE : ERel E) (wf : m.WFE ids E) :
+theorem WFE.lrel (hE : ERel E) (wf : m.WFE ids E B) :
     LRel (· < m.parent.size) (NodeRel m E) where
   refl _ _ _ h1 h2 := hE.beq (wf.inj h1 h2)
   symm h _ _ h1 h2 := hE.symm (h _ _ h2 h1)
@@ -249,8 +255,8 @@ theorem LE.rfl : LE m m := id
 theorem LE.trans {m₁ m₂ m₃ : ScopedEquivManager} (h1 : LE m₁ m₂) (h2 : LE m₂ m₃) : LE m₁ m₃ :=
   fun h => h2 (h1 h)
 
-theorem toNode_spec (wf : m.WFE ids E) (e : Expr) :
-    ((toNode e).run m).2.WFE ids E ∧ LE m ((toNode e).run m).2 ∧
+theorem toNode_spec (wf : m.WFE ids E B) (e : Expr) :
+    ((toNode e).run m).2.WFE ids E B ∧ LE m ((toNode e).run m).2 ∧
       ((toNode e).run m).2.toNodeMap[e]? = some ((toNode e).run m).1 := by
   cases h : m.toNodeMap[e]? with
   | some r => simp only [toNode, StateT.run, h]; exact ⟨wf, fun h => h, trivial⟩
@@ -267,7 +273,8 @@ theorem toNode_spec (wf : m.WFE ids E) (e : Expr) :
       rw [Std.HashMap.getElem?_insert]
     have hlt {e' : Expr} {i} (h' : m.toNodeMap[e']? = some i) : i < m.parent.size :=
       wf.dom.2 ⟨_, h'⟩
-    refine ⟨{ sized := ?_, parent_lt := ?_, dom := ?_, inj := ?_, links := ?_ },
+    refine ⟨{ sized := ?_, parent_lt := ?_, dom := ?_, inj := ?_, links := ?_, sids := ?_
+              bids := wf.bids },
       fun h' => by rw [hget, hold h']; exact h', by rw [hget, if_pos BEq.rfl]⟩
     · exact ⟨by simp [wf.sized.lvl], by simp [wf.sized.sid]⟩
     · intro n p hp
@@ -319,6 +326,33 @@ theorem toNode_spec (wf : m.WFE ids E) (e : Expr) :
         split at a2
         · cases a2; omega
         exact wf.links n p hp hne hok e₁ e₂ a1 a2
+    · intro n i h'
+      rw [Array.getElem?_push] at h'
+      split at h'
+      · cases h'; exact wf.bids 0
+      · exact wf.sids n i h'
+
+theorem link_sid {a b l n i : Nat} (h : (m.link ids a b l).sid[n]? = some i) :
+    m.sid[n]? = some i ∨ ids.labelId l = i := by
+  simp only [link, Array.set!] at h
+  rw [Array.getElem?_setIfInBounds] at h
+  split at h
+  · split at h
+    · cases h; exact .inr rfl
+    · cases h
+  · exact .inl h
+
+theorem merge_sid {n i : Nat} (h : (m.merge ids n1 n2 l).sid[n]? = some i) :
+    m.sid[n]? = some i ∨ ∃ l', ids.labelId l' = i := by
+  unfold merge at h; dsimp only at h
+  split at h
+  · exact .inl h
+  · split at h
+    · exact (link_sid h).imp_right fun h => ⟨_, h⟩
+    · split at h
+      · exact (link_sid h).imp_right fun h => ⟨_, h⟩
+      · exact (link_sid (m := m) (ids := ids) (b := (m.rootL ids n2).1) h).imp_right
+          fun h => ⟨_, h⟩
 
 theorem merge_toNodeMap : (m.merge ids n1 n2 l).toNodeMap = m.toNodeMap := by
   unfold merge; dsimp only
@@ -348,13 +382,16 @@ theorem link_parent_lt (h : ∀ (n p : Nat), m.parent[n]? = some p → p < m.par
     · cases hp
   · exact h n p hp
 
-theorem merge_WFE (hE : ERel E) (wf : m.WFE ids E) (d1 : n1 < m.parent.size)
-    (d2 : n2 < m.parent.size) (h : NodeRel m E l n1 n2) : (m.merge ids n1 n2 l).WFE ids E := by
+theorem merge_WFE (hE : ERel E) (wf : m.WFE ids E B) (d1 : n1 < m.parent.size)
+    (d2 : n2 < m.parent.size) (h : NodeRel m E l n1 n2) : (m.merge ids n1 n2 l).WFE ids E B := by
   have hT := merge_toNodeMap (m := m) (ids := ids) (n1 := n1) (n2 := n2) (l := l)
   have hS := merge_parent_size (m := m) (ids := ids) (n1 := n1) (n2 := n2) (l := l)
   have hN : NodeRel (m.merge ids n1 n2 l) E = NodeRel m E := by
     funext l i j; simp only [NodeRel, hT]
-  refine { sized := merge_sized wf.sized, parent_lt := ?_, dom := ?_, inj := ?_, links := ?_ }
+  have hsids : ∀ (n i : Nat), (m.merge ids n1 n2 l).sid[n]? = some i → B i :=
+    fun n i h => (merge_sid h).elim (wf.sids n i) fun ⟨l, h⟩ => h ▸ wf.bids l
+  refine { sized := merge_sized wf.sized, sids := hsids, bids := wf.bids, parent_lt := ?_, dom := ?_, inj := ?_,
+           links := ?_ }
   · unfold merge; dsimp only
     split
     · exact wf.parent_lt
@@ -373,17 +410,17 @@ theorem merge_WFE (hE : ERel E) (wf : m.WFE ids E) (d1 : n1 < m.parent.size)
   · rw [hN]; exact merge_WF (wf.lrel hE) wf.links wf.closed wf.sized d1 d2 h
 
 /-- A computation on the manager keeps it sound and its nodes, and ends in `P`. -/
-def SWF (ids : Scopes) (E : Nat → Expr → Expr → Prop) (m : ScopedEquivManager)
+def SWF (ids : Scopes) (E : Nat → Expr → Expr → Prop) (B : Nat → Prop) (m : ScopedEquivManager)
     (x : StateM ScopedEquivManager α) (P : α → ScopedEquivManager → Prop) : Prop :=
-  m.WFE ids E → ∀ a m', x.run m = (a, m') → m'.WFE ids E ∧ LE m m' ∧ P a m'
+  m.WFE ids E B → ∀ a m', x.run m = (a, m') → m'.WFE ids E B ∧ LE m m' ∧ P a m'
 
 protected theorem SWF.pure {P : α → ScopedEquivManager → Prop} (H : P a m) :
-    SWF ids E m (pure a) P := by
+    SWF ids E B m (pure a) P := by
   rintro wf _ _ ⟨⟩; exact ⟨wf, LE.rfl, H⟩
 
 protected theorem SWF.bind {x : StateM ScopedEquivManager β} {f : β → StateM ScopedEquivManager γ}
-    {P Q} (h1 : SWF ids E m x P) (h2 : ∀ a m', LE m m' → P a m' → SWF ids E m' (f a) Q) :
-    SWF ids E m (x >>= f) Q := by
+    {P Q} (h1 : SWF ids E B m x P) (h2 : ∀ a m', LE m m' → P a m' → SWF ids E B m' (f a) Q) :
+    SWF ids E B m (x >>= f) Q := by
   intro wf a m₁
   simp only [bind, StateT.run, StateT.bind]
   generalize e : x m = r; obtain ⟨b, m₂⟩ := r
@@ -393,33 +430,33 @@ protected theorem SWF.bind {x : StateM ScopedEquivManager β} {f : β → StateM
   exact ⟨wf₃, a1.trans b1, b2⟩
 
 protected theorem SWF.mono {x : StateM ScopedEquivManager β} {P Q}
-    (h1 : SWF ids E m x P) (h2 : ∀ a m', LE m m' → P a m' → Q a m') : SWF ids E m x Q :=
+    (h1 : SWF ids E B m x P) (h2 : ∀ a m', LE m m' → P a m' → Q a m') : SWF ids E B m x Q :=
   fun wf a m' e => let ⟨w, l, p⟩ := h1 wf a m' e; ⟨w, l, h2 _ _ l p⟩
 
 protected theorem SWF.stateWF {x : StateM ScopedEquivManager β} {P}
-    (H : m.WFE ids E → SWF ids E m x P) : SWF ids E m x P := fun h => H h h
+    (H : m.WFE ids E B → SWF ids E B m x P) : SWF ids E B m x P := fun h => H h h
 
 theorem toNode.SWF (e : Expr) :
-    SWF ids E m (toNode e) fun n m' => m'.toNodeMap[e]? = some n := by
+    SWF ids E B m (toNode e) fun n m' => m'.toNodeMap[e]? = some n := by
   intro wf a m' eq
   have := toNode_spec wf e
   simp only [StateT.run] at eq this
   rw [eq] at this
   exact this
 
-theorem get.SWF : SWF ids E m get fun a m' => a = m' := by
+theorem get.SWF : SWF ids E B m get fun a m' => a = m' := by
   rintro wf _ _ ⟨⟩; exact ⟨wf, LE.rfl, rfl⟩
 
-theorem modifyMerge.SWF (hE : ERel E) {n1 n2 l} (H : m.WFE ids E → n1 < m.parent.size ∧
+theorem modifyMerge.SWF (hE : ERel E) {n1 n2 l} (H : m.WFE ids E B → n1 < m.parent.size ∧
     n2 < m.parent.size ∧ NodeRel m E l n1 n2) :
-    SWF ids E m (modify (·.merge ids n1 n2 l)) fun _ _ => True := by
+    SWF ids E B m (modify (·.merge ids n1 n2 l)) fun _ _ => True := by
   rintro wf _ _ ⟨⟩
   obtain ⟨d1, d2, h⟩ := H wf
   exact ⟨merge_WFE hE wf d1 d2 h, fun h => by
     show (m.merge ids n1 n2 l).toNodeMap[_]? = _; rw [merge_toNodeMap]; exact h, trivial⟩
 
 /-- A relation between two terms is one between their nodes. -/
-theorem WFE.nodeRel (hE : ERel E) (wf : m.WFE ids E) (h1 : m.toNodeMap[e₁]? = some n1)
+theorem WFE.nodeRel (hE : ERel E) (wf : m.WFE ids E B) (h1 : m.toNodeMap[e₁]? = some n1)
     (h2 : m.toNodeMap[e₂]? = some n2) (h : E l e₁ e₂) : NodeRel m E l n1 n2 := by
   intro e₁' e₂' a1 a2
   have := hE.trans (hE.trans (hE.beq (wf.inj a1 h1)) h) (hE.beq (wf.inj h2 a2))
@@ -427,9 +464,9 @@ theorem WFE.nodeRel (hE : ERel E) (wf : m.WFE ids E) (h1 : m.toNodeMap[e₁]? = 
 
 theorem both.SWF {x : StateM ScopedEquivManager (Option Nat)}
     {y : Unit → StateM ScopedEquivManager (Option Nat)} {P Q : Nat → Prop}
-    (h1 : SWF ids E m x fun r _ => ∀ l, r = some l → P l)
-    (h2 : ∀ {m}, SWF ids E m (y ()) fun r _ => ∀ l, r = some l → Q l) :
-    SWF ids E m (both x y) fun r _ => ∀ l, r = some l → ∃ a b, l = max a b ∧ P a ∧ Q b := by
+    (h1 : SWF ids E B m x fun r _ => ∀ l, r = some l → P l)
+    (h2 : ∀ {m}, SWF ids E B m (y ()) fun r _ => ∀ l, r = some l → Q l) :
+    SWF ids E B m (both x y) fun r _ => ∀ l, r = some l → ∃ a b, l = max a b ∧ P a ∧ Q b := by
   unfold both
   refine h1.bind fun r _ _ hr => ?_
   cases r with
@@ -445,7 +482,7 @@ recorded at the current depth `ids.size`, where every reported level's equivalen
 (`hTop`). -/
 theorem isEquiv.SWF (hE : ERel E) (hTop : ∀ {l e₁ e₂}, E l e₁ e₂ → E ids.size e₁ e₂)
     {lv : Expr → Nat} {m : ScopedEquivManager} {useHash : Bool} {e₁ e₂ : Expr} :
-    SWF ids E m (isEquiv ids lv useHash e₁ e₂) fun r _ => ∀ l, r = some l → E l e₁ e₂ := by
+    SWF ids E B m (isEquiv ids lv useHash e₁ e₂) fun r _ => ∀ l, r = some l → E l e₁ e₂ := by
   unfold isEquiv
   split
   · rename_i h; exact .pure fun _ e => by cases e; rw [ptrEqExpr_eq h]; exact hE.beq BEq.rfl
@@ -474,7 +511,7 @@ theorem isEquiv.SWF (hE : ERel E) (hTop : ∀ {l e₁ e₂}, E l e₁ e₂ → E
     exact connLevel_spec (wf.lrel hE) wf.links wf.closed d1 d2 hl _ _ a1 b1
   -- the structural cases end by recording the equivalence found
   have fin {m} (le : LE m₀ m) {r : Option Nat} (H : ∀ l, r = some l → E l e₁ e₂) :
-      ScopedEquivManager.SWF ids E m (do
+      ScopedEquivManager.SWF ids E B m (do
         let some l := r | return none
         modify (·.merge ids n1 n2 ids.size)
         return some l) fun r _ => ∀ l, r = some l → E l e₁ e₂ := by
@@ -485,7 +522,7 @@ theorem isEquiv.SWF (hE : ERel E) (hTop : ∀ {l e₁ e₂}, E l e₁ e₂ → E
         wf'.nodeRel hE (le a1) (le b1) (hTop (H l rfl))⟩).bind fun _ _ _ _ => ?_
       exact .pure fun _ e => by cases e; exact H l rfl
   have leaf {X : Option Nat} (H : ∀ l, X = some l → E l e₁ e₂) :
-      ScopedEquivManager.SWF ids E m₀ (do let result ← pure X; match result with
+      ScopedEquivManager.SWF ids E B m₀ (do let result ← pure X; match result with
         | some l => do
           modify fun x => x.merge ids n1 n2 ids.size
           pure (some l)
@@ -498,10 +535,10 @@ theorem isEquiv.SWF (hE : ERel E) (hTop : ∀ {l e₁ e₂}, E l e₁ e₂ → E
   have ite0 {c : Bool} : (if c = true then some 0 else none) = some 0 ∨
       (if c = true then some 0 else none) = none := by split <;> simp
   have rec2 {x : StateM ScopedEquivManager (Option Nat)} {y : Unit → StateM ScopedEquivManager (Option Nat)}
-      {P Q : Nat → Prop} (h1 : ScopedEquivManager.SWF ids E m₀ x fun r _ => ∀ l, r = some l → P l)
-      (h2 : ∀ {m}, ScopedEquivManager.SWF ids E m (y ()) fun r _ => ∀ l, r = some l → Q l)
+      {P Q : Nat → Prop} (h1 : ScopedEquivManager.SWF ids E B m₀ x fun r _ => ∀ l, r = some l → P l)
+      (h2 : ∀ {m}, ScopedEquivManager.SWF ids E B m (y ()) fun r _ => ∀ l, r = some l → Q l)
       (H : ∀ a b, P a → Q b → E (max a b) e₁ e₂) :
-      ScopedEquivManager.SWF ids E m₀ (do let result ← both x y; match result with
+      ScopedEquivManager.SWF ids E B m₀ (do let result ← both x y; match result with
         | some l => do
           modify fun x => x.merge ids n1 n2 ids.size
           pure (some l)
@@ -541,17 +578,82 @@ theorem isEquiv.SWF (hE : ERel E) (hTop : ∀ {l e₁ e₂}, E l e₁ e₂ → E
 
 /-- Recording an equivalence that holds at its level keeps the manager sound. -/
 theorem addEquiv.SWF (hE : ERel E) {lv : Expr → Nat} (h : E l e₁ e₂) :
-    SWF ids E m (addEquiv ids lv e₁ e₂ l) fun _ _ => True := by
+    SWF ids E B m (addEquiv ids lv e₁ e₂ l) fun _ _ => True := by
   unfold addEquiv
   refine (toNode.SWF e₁).bind fun n1 _ _ a1 => (toNode.SWF e₂).bind fun n2 _ le₂ b1 => ?_
   exact modifyMerge.SWF hE fun wf => ⟨wf.dom.2 ⟨_, le₂ a1⟩, wf.dom.2 ⟨_, b1⟩,
     wf.nodeRel hE (le₂ a1) b1 (hE.mono (by omega) h)⟩
 
-theorem WFE.empty : ({} : ScopedEquivManager).WFE ids E where
+theorem WFE.empty (hB : ∀ l, B (ids.labelId l)) : ({} : ScopedEquivManager).WFE ids E B where
   sized := ⟨rfl, rfl⟩
   parent_lt _ _ h := by simp at h
   dom := by simp
   inj h := by simp at h
   links _ _ h := by simp at h
+  sids _ _ h := by simp at h
+  bids := hB
+
+
+theorem WFE.empty_nil {g : Nat} : ({} : ScopedEquivManager).WFE #[] E (· ≤ g) :=
+  .empty fun l => by unfold Scopes.labelId; split <;> simp
+
+/-- A manager sound for one stack of scopes and relation is sound for another, when every link
+current in the second is current in the first and the first relation implies the second. -/
+theorem WFE.mono' {ids' : Scopes} {E' : Nat → Expr → Expr → Prop} {B' : Nat → Prop}
+    (wf : m.WFE ids E B)
+    (hok : ∀ n, m.linkOK ids' n = true → m.linkOK ids n = true)
+    (hE : ∀ l e₁ e₂, E l e₁ e₂ → E' l e₁ e₂)
+    (hB : ∀ i, B i → B' i) (hbids : ∀ l, B' (ids'.labelId l)) : m.WFE ids' E' B' :=
+  { wf with
+    links := wf.links.mono fun n _ h => ⟨hok n h, fun H e₁ e₂ h1 h2 => hE _ _ _ (H e₁ e₂ h1 h2)⟩
+    sids := fun n i h => hB _ (wf.sids n i h)
+    bids := hbids }
+
+/-- As `WFE.mono'`, with the relations compared only at the labels current in the second stack. -/
+theorem WFE.mono_valid {ids' : Scopes} {E' : Nat → Expr → Expr → Prop} {B' : Nat → Prop}
+    (wf : m.WFE ids E B)
+    (hok : ∀ n, m.linkOK ids' n = true → m.linkOK ids n = true)
+    (hE : ∀ l i e₁ e₂, ids'.valid l i = true → E l e₁ e₂ → E' l e₁ e₂)
+    (hB : ∀ i, B i → B' i) (hbids : ∀ l, B' (ids'.labelId l)) : m.WFE ids' E' B' :=
+  { wf with
+    links := wf.links.mono fun n _ h =>
+      ⟨hok n h, fun H e₁ e₂ h1 h2 => hE _ _ _ _ h (H e₁ e₂ h1 h2)⟩
+    sids := fun n i h => hB _ (wf.sids n i h)
+    bids := hbids }
+
+/-- Opening a scope whose id no link records keeps the current links as they were. -/
+theorem linkOK_push {ids : Scopes} {x n : Nat} (hx : m.sid[n]?.getD 0 ≠ x)
+    (h : m.linkOK (ids.push x) n = true) : m.linkOK ids n = true := by
+  simp only [linkOK, Scopes.valid, Bool.or_eq_true, beq_iff_eq] at h ⊢
+  refine h.imp_right fun h => ?_
+  rw [Array.getElem?_push] at h
+  split at h
+  · exact absurd (Option.some.inj h).symm hx
+  · exact h
+
+
+theorem Scopes.labelId_mem (ids : Scopes) (l : Nat) : ids.labelId l = 0 ∨ ids.labelId l ∈ ids := by
+  unfold Scopes.labelId
+  split
+  · exact .inl rfl
+  · cases h : ids[l - 1]? with
+    | none => exact .inl rfl
+    | some i => exact .inr (Array.mem_of_getElem? h)
+
+theorem Scopes.labelId_push (ids : Scopes) (x l : Nat) :
+    ∃ l', Scopes.labelId (ids.push x) l' = ids.labelId l := by
+  by_cases hl : l ≤ ids.size
+  · refine ⟨l, ?_⟩
+    unfold Scopes.labelId
+    split
+    · rfl
+    · rename_i h0
+      simp only [beq_iff_eq] at h0
+      rw [Array.getElem?_push, if_neg (by omega)]
+  · refine ⟨0, ?_⟩
+    unfold Scopes.labelId
+    simp only [beq_self_eq_true, ↓reduceIte]
+    rw [if_neg (by simp; omega), Array.getElem?_eq_none (by omega)]
+    rfl
 
 end Lean4Lean.ScopedEquivManager

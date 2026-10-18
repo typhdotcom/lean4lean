@@ -4,22 +4,59 @@ import Lean4Lean.Quot
 import Lean4Lean.Inductive.Reduce
 import Lean4Lean.Instantiate
 import Lean4Lean.ForEachExprV
-import Lean4Lean.EquivManager
+import Lean4Lean.ScopedEquivManager
 import Lean4Lean.FuelConfig
 
 namespace Lean4Lean
 open Lean hiding Environment Exception
 open Kernel
 
-abbrev InferCache := ExprMap Expr
+/-- A cached result, with the label `(level, id)` of the deepest scope whose facts it rests on
+(see `Scopes`). -/
+abbrev Cached := Expr × Nat × Nat
+abbrev InferCache := ExprMap Cached
 
+/-- The deepest open scope declaring a free variable of `e` (`0` for none), memoized in `memo`. -/
+def fvarLevel (scopes : Array FVarId) (e : Expr) (memo : ExprMap Nat) : Nat × ExprMap Nat :=
+  if !e.hasFVar then (0, memo) else
+  match memo[e]? with
+  | some l => (l, memo)
+  | none =>
+    let (l, memo) : Nat × ExprMap Nat := match e with
+      | .fvar id => ((scopes.findIdx? (· == id)).map (· + 1) |>.getD 0, memo)
+      | .app f a | .lam _ f a _ | .forallE _ f a _ =>
+        let (l1, memo) := fvarLevel scopes f memo
+        let (l2, memo) := fvarLevel scopes a memo
+        (max l1 l2, memo)
+      | .letE _ t v b _ =>
+        let (l1, memo) := fvarLevel scopes t memo
+        let (l2, memo) := fvarLevel scopes v memo
+        let (l3, memo) := fvarLevel scopes b memo
+        (max l1 (max l2 l3), memo)
+      | .mdata _ b | .proj _ _ b => fvarLevel scopes b memo
+      | _ => (0, memo)
+    (l, memo.insert e l)
+
+/-- The type checker's state. Facts learned under a binder (cached results and equivalences) may
+rest on the binder's variable even when their terms do not mention it, so each records the deepest
+scope it rests on, and is ignored once that scope ends. -/
 structure TypeChecker.State where
   ngen : NameGenerator := { namePrefix := `_kernel_fresh, idx := 0 }
   inferTypeI : InferCache := {}
   inferTypeC : InferCache := {}
-  whnfCoreCache : ExprMap Expr := {}
-  whnfCache : ExprMap Expr := {}
-  eqvManager : EquivManager := {}
+  whnfCoreCache : InferCache := {}
+  whnfCache : InferCache := {}
+  eqvManager : ScopedEquivManager := {}
+  /-- Equivalences of pairs of terms, labelled by the facts they rest on. -/
+  eqvPairs : Std.HashMap (Expr × Expr) (Nat × Nat) := {}
+  /-- The ids of the open scopes, outermost first. -/
+  scopeIds : Scopes := #[]
+  /-- The variable each open scope declares. -/
+  scopeFV : Array FVarId := #[]
+  /-- The deepest level of a fact the computation under way has used. -/
+  taint : Nat := 0
+  /-- `fvarLevel`'s memo. -/
+  fvLvl : ExprMap Nat := {}
   failure : Std.HashSet (Expr × Expr) := {}
   unfold : ExprMap Expr := {}
 
@@ -30,8 +67,67 @@ structure TypeChecker.Context where
   eagerReduce := false
   lparams : List Name := []
   fuel : FuelConfig := {}
+  /-- Facts resting on scopes deeper than this level are not used. Every run of the kernel has
+  `none`; the proofs run a computation again, as if in the context of an enclosing scope, with the
+  facts of the deeper scopes set aside. -/
+  ceiling : Option Nat := none
 
 namespace TypeChecker
+
+/-- Records that `t` and `s` are definitionally equal, by facts up to level `l`: as a link of the
+union-find at the current depth, and as a pair labelled by `l` and the terms' free variables. -/
+def State.recordEquiv (st : State) (t s : Expr) (l : Nat) : State :=
+  let (lt, memo) := fvarLevel st.scopeFV t st.fvLvl
+  let (ls, memo) := fvarLevel st.scopeFV s memo
+  let lab := max l (max lt ls)
+  { st with
+    fvLvl := memo
+    eqvPairs := st.eqvPairs.insert (t, s) (lab, st.scopeIds.labelId lab)
+    eqvManager := ((ScopedEquivManager.addEquiv st.scopeIds (fun _ => 0) t s
+      st.scopeIds.size).run st.eqvManager).2 }
+
+/-- The level of an equivalence of `t` and `s` that the recorded equivalences and the structure of
+the terms show, if any. -/
+def State.checkEquiv (st : State) (useHash : Bool) (t s : Expr) : Option Nat × State :=
+  let p := (ScopedEquivManager.isEquiv st.scopeIds (fun _ => 0) useHash t s).run st.eqvManager
+  let st := { st with eqvManager := p.2 }
+  match p.1 with
+  | some l => (some l, st)
+  | none =>
+    let pair (k : Expr × Expr) : Option Nat := match st.eqvPairs[k]? with
+      | some (l, id) => if st.scopeIds.valid l id then some l else none
+      | none => none
+    match pair (t, s) with
+    | some l => (some l, st)
+    | none => (pair (s, t), st)
+
+/-- A cached result, if the scope it rests on is still open and not beyond the ceiling. -/
+@[inline] def State.cached? (s : State) (ceil : Option Nat) : Option Cached → Option (Expr × Nat)
+  | some (r, l, id) => if s.scopeIds.valid l id && ceil.all (l ≤ ·) then some (r, l) else none
+  | none => none
+
+/-- The label of a result for the key `e` that rests on facts up to level `t`: the deeper of `t` and
+the scopes of `e`'s free variables. -/
+def State.keyLabel (s : State) (e : Expr) (t : Nat) : (Nat × Nat) × State :=
+  let (lk, memo) := fvarLevel s.scopeFV e s.fvLvl
+  let l := max t lk
+  ((l, s.scopeIds.labelId l), { s with fvLvl := memo })
+
+/-- A fact up to level `l` was used. -/
+def State.taintWith (s : State) (l : Nat) : State := { s with taint := max s.taint l }
+
+/-- Opens a scope declaring `fv`, the variable the name generator made last. The scope's id is the
+name generator's index, which no earlier scope has. -/
+def State.pushScope (s : State) (fv : FVarId) : State :=
+  { s with scopeFV := s.scopeFV.push fv, scopeIds := s.scopeIds.push s.ngen.idx, taint := 0 }
+
+/-- Closes a scope, restoring the enclosing scope's variables `fvs`, ids `ids` and taint `t₀`.
+What was used inside rests at most on the enclosing scope. -/
+def State.closeScope (fvs : Array FVarId) (ids : Scopes) (t₀ : Nat) (s : State) : State :=
+  { s with scopeFV := fvs, scopeIds := ids, taint := max t₀ (min s.taint ids.size) }
+
+/-- Closes the scope opened from `s₀`. -/
+abbrev State.popScope (s₀ s : State) : State := s.closeScope s₀.scopeFV s₀.scopeIds s₀.taint
 
 abbrev M := ReaderT Context <| StateT State <| Except Exception
 
@@ -55,13 +151,21 @@ instance [Monad m] : MonadNameGenerator (StateT State m) where
   getNGen := return (← get).ngen
   setNGen ngen := modify fun s => { s with ngen }
 
-/-- A fresh variable's scope keeps the equivalences and cached results found in it to itself: they
-may rest on the variable, and are not known to hold without it. -/
+/-- A fresh variable gets its own scope. What is learned in it stays, labelled by the scopes it
+rests on, and is ignored once one of them has ended: it may rest on the variable without
+mentioning it. The variable must not be declared already: callers may pass any local context. -/
 instance : MonadLocalNameGenerator M where
   withFreshId x := do
-    let { inferTypeI, inferTypeC, whnfCoreCache, whnfCache, eqvManager, .. } ← get
-    let r ← x (← mkFreshId)
-    modify fun s => { s with inferTypeI, inferTypeC, whnfCoreCache, whnfCache, eqvManager }
+    let id ← mkFreshId
+    if ((← read).lctx.find? ⟨id⟩).isSome then
+      throw <| .other s!"fresh variable '{id}' is already declared"
+    -- Only the scope fields are kept across `x`: holding the whole state would share its caches
+    -- and make every insertion into them copy.
+    let s₀ ← get
+    let fvs := s₀.scopeFV; let ids := s₀.scopeIds; let t₀ := s₀.taint
+    modify (·.pushScope ⟨id⟩)
+    let r ← x id
+    modify (State.closeScope fvs ids t₀)
     pure r
 
 instance (priority := low) : MonadWithReaderOf LocalContext M where
@@ -74,6 +178,16 @@ structure Methods where
   protected inferType (e : Expr) (inferOnly : Bool) : M Expr
 
 abbrev RecM := ReaderT Methods M
+
+/-- Runs `x` with the taint reset, returning its result and the level of the facts it used, and
+leaves the taint at the deeper of the two. -/
+@[inline] def withTaint (x : RecM α) : RecM (α × Nat) := do
+  let t0 := (← get).taint
+  modify fun s => { s with taint := 0 }
+  let r ← x
+  let t := (← get).taint
+  modify fun s => { s with taint := max t0 t }
+  return (r, t)
 
 inductive ReductionStatus where
   | continue (tn sn : Expr)
@@ -187,9 +301,9 @@ def isDefEqCore (t s : Expr) : RecM Bool := fun m => m.isDefEqCore t s
 
 @[inherit_doc isDefEqCore]
 def isDefEq (t s : Expr) : RecM Bool := do
-  let r ← isDefEqCore t s
+  let (r, l) ← withTaint (isDefEqCore t s)
   if r then
-    modify fun st => { st with eqvManager := st.eqvManager.addEquiv t s }
+    modify (·.recordEquiv t s l)
   pure r
 
 /-- Infers the type of application `e`, assuming that `e` is already well-typed. -/
@@ -268,6 +382,7 @@ def inferProj (typeName : Name) (idx : Nat) (struct structType : Expr) : RecM Ex
   if maybePropType then if !(← isProp dom) then fail
   return dom
 
+mutual
 @[inherit_doc inferType]
 def inferType' (e : Expr) (inferOnly : Bool) : RecM Expr := do
   if e.hasLooseBVars then
@@ -275,8 +390,21 @@ def inferType' (e : Expr) (inferOnly : Bool) : RecM Expr := do
       s!"type checker does not support loose bound variables, \
          replace them with free variables before invoking it"
   let state ← get
-  if let some r := (cond inferOnly state.inferTypeI state.inferTypeC)[e]? then
+  if let some (r, l) := state.cached? (← readThe Context).ceiling
+      (cond inferOnly state.inferTypeI state.inferTypeC)[e]? then
+    modify (·.taintWith l)
     return r
+  let (r, t) ← withTaint (inferTypeCore e inferOnly)
+  modify fun s =>
+    let (lab, s) := s.keyLabel e t
+    cond inferOnly
+      { s with inferTypeI := s.inferTypeI.insert e (r, lab) }
+      { s with inferTypeC := s.inferTypeC.insert e (r, lab) }
+  return r
+termination_by (e, 1)
+
+/-- Infers the type of `e`, without looking in the cache. -/
+def inferTypeCore (e : Expr) (inferOnly : Bool) : RecM Expr := do
   let r ← match e with
     | .lit l =>
       if !inferOnly then
@@ -313,10 +441,9 @@ def inferType' (e : Expr) (inferOnly : Bool) : RecM Expr := do
         if !ok then throw <| .appTypeMismatch (← getEnv) (← getLCtx) e fType aType
         pure <| fType.bindingBody!.instantiate1 a
     | .letE .. => inferLet e inferOnly
-  modify fun s => cond inferOnly
-    { s with inferTypeI := s.inferTypeI.insert e r }
-    { s with inferTypeC := s.inferTypeC.insert e r }
   return r
+termination_by (e, 0)
+end
 
 /-- Reduces `e` to its weak-head normal form, without unfolding definitions. This is a conservative
 version of `whnf` (which does unfold definitions), to be used for efficiency purposes.
@@ -372,23 +499,12 @@ def reduceProj (typeName : Name) (idx : Nat) (struct : Expr) (cheapProj : Bool) 
 def isLetFVar (lctx : LocalContext) (fvar : FVarId) : Bool :=
   lctx.find? fvar matches some (.ldecl ..)
 
-@[inherit_doc whnfCore]
-def whnfCore' (e : Expr) (cheapProj := false) : RecM Expr := do
-  match e with
-  | .bvar .. | .sort .. | .mvar .. | .forallE .. | .const .. | .lam .. | .lit .. => return e
-  | .mdata _ e => return ← whnfCore' e cheapProj
-  | .fvar id => if !isLetFVar (← getLCtx) id then return e
-  | .app .. | .letE .. | .proj .. => pure ()
-  if let some r := (← get).whnfCoreCache[e]? then
-    return r
-  let rec save r := do
-    if !cheapProj then
-      modify fun s => { s with whnfCoreCache := s.whnfCoreCache.insert e r }
-    return r
+/-- `whnfCore'` on a term not in the cache, returning whether to cache the result. -/
+def whnfCoreCore (e : Expr) (cheapProj : Bool) : RecM (Expr × Bool) := do
   match e with
   | .bvar .. | .sort .. | .mvar .. | .forallE .. | .const .. | .lam .. | .lit ..
   | .mdata .. => unreachable!
-  | .fvar _ => return ← whnfFVar e cheapProj
+  | .fvar _ => return (← whnfFVar e cheapProj, false)
   | .app .. =>
     -- beta-reduce at the head as much as possible, apply any remaining `rargs`
     -- to the resulting expression, and re-run `whnfCore`
@@ -396,11 +512,11 @@ def whnfCore' (e : Expr) (cheapProj := false) : RecM Expr := do
     -- the head may still be a let variable/binding, projection, or mdata-wrapped expression
     let f ← whnfCore f0 cheapProj
     if let .lam _ _ body _ := f then
-      let rec loop m (f : Expr) : RecM Expr :=
+      let rec loop m (f : Expr) : RecM (Expr × Bool) :=
         let rec cont := do
           let r := f.instantiateRange (rargs.size - m) rargs.size rargs
           let r := r.mkAppRevRange 0 (rargs.size - m) rargs
-          save <|← whnfCore r cheapProj
+          return (← whnfCore r cheapProj, true)
         if let .lam _ _ body _ := f then
           if m < rargs.size then loop (m + 1) body
           else cont
@@ -408,22 +524,41 @@ def whnfCore' (e : Expr) (cheapProj := false) : RecM Expr := do
       loop 1 body
     else if f == f0 then
       if let some r ← reduceRecursor e then
-        whnfCore r cheapProj
+        return (← whnfCore r cheapProj, false)
       else
-        pure e
+        return (e, false)
     else
       let r := f.mkAppRevRange 0 rargs.size rargs
       -- the recursive call re-decomposes `r` and reaches the `f == f0` branch above, so
       -- `reduceRecursor` is still applied; adding arguments can only enable further normalization
       -- if the head reduced to a partial recursor application
-      save <|← whnfCore r cheapProj
+      return (← whnfCore r cheapProj, true)
   | .letE _ _ val body _ =>
-    save <|← whnfCore (body.instantiate1 val) cheapProj
+    return (← whnfCore (body.instantiate1 val) cheapProj, true)
   | .proj n idx s =>
     if let some m ← reduceProj n idx s cheapProj then
-      save <|← whnfCore m cheapProj
+      return (← whnfCore m cheapProj, true)
     else
-      save e
+      return (e, true)
+
+
+@[inherit_doc whnfCore]
+def whnfCore' (e : Expr) (cheapProj := false) : RecM Expr := do
+  match e with
+  | .bvar .. | .sort .. | .mvar .. | .forallE .. | .const .. | .lam .. | .lit .. => return e
+  | .mdata _ e => return ← whnfCore' e cheapProj
+  | .fvar id => if !isLetFVar (← getLCtx) id then return e
+  | .app .. | .letE .. | .proj .. => pure ()
+  let st ← get
+  if let some (r, l) := st.cached? (← readThe Context).ceiling st.whnfCoreCache[e]? then
+    modify (·.taintWith l)
+    return r
+  let ((r, save), t) ← withTaint (whnfCoreCore e cheapProj)
+  if save && !cheapProj then
+    modify fun s =>
+      let (lab, s) := s.keyLabel e t
+      { s with whnfCoreCache := s.whnfCoreCache.insert e (r, lab) }
+  return r
 
 /-- Checks if the head of `e` is a constant that can be delta-reduced, applied to the right number
 of universe levels, returning its `ConstantInfo` if so. See `ConstantInfo.deltaValue?` for which
@@ -527,6 +662,17 @@ def reduceNat (e : Expr) : RecM (Option Expr) := do
     if f == ``Nat.shiftRight then return ← reduceBinNatOp Nat.shiftRight a b
   return none
 
+/-- `whnf'` on a term not in the cache, with fuel for the definitions it unfolds. -/
+def whnfLoop (t : Expr) : Nat → RecM Expr
+  | 0 => throw .deterministicTimeout
+  | fuel+1 => do
+    let env ← getEnv
+    let t ← whnfCore' t
+    if let some t ← reduceNative env t then return t
+    if let some t ← reduceNat t then return t
+    let some t ← unfoldDefinition t | return t
+    whnfLoop t fuel
+
 @[inherit_doc whnf]
 def whnf' (e : Expr) : RecM Expr := do
   -- Do not cache easy cases
@@ -538,20 +684,15 @@ def whnf' (e : Expr) : RecM Expr := do
       return e
   | .lam .. | .app .. | .const .. | .letE .. | .proj .. => pure ()
   -- check cache
-  if let some r := (← get).whnfCache[e]? then
+  let st ← get
+  if let some (r, l) := st.cached? (← readThe Context).ceiling st.whnfCache[e]? then
+    modify (·.taintWith l)
     return r
-  let rec loop t
-  | 0 => throw .deterministicTimeout
-  | fuel+1 => do
-    let env ← getEnv
-    let t ← whnfCore' t
-    if let some t ← reduceNative env t then return t
-    if let some t ← reduceNat t then return t
-    let some t ← unfoldDefinition t | return t
-    loop t fuel
   let ctx ← readThe Context
-  let r ← loop e <| if ctx.eagerReduce then ctx.fuel.whnfEager else ctx.fuel.whnf
-  modify fun s => { s with whnfCache := s.whnfCache.insert e r }
+  let (r, t) ← withTaint (whnfLoop e <| if ctx.eagerReduce then ctx.fuel.whnfEager else ctx.fuel.whnf)
+  modify fun s =>
+    let (lab, s) := s.keyLabel e t
+    { s with whnfCache := s.whnfCache.insert e (r, lab) }
   return r
 
 /-- If `t` and `s` are lambda expressions, checks that their domains are defeq and recurses on the
@@ -596,10 +737,10 @@ returning `.false` where these disagree. Two lambdas or two for-alls are handed 
 constants, two free variables, two applications and two projections — are deferred. -/
 def quickIsDefEq (t s : Expr) (useHash := false) : RecM LBool := do
   -- optimization for terms that are already α-equivalent or were previously checked
-  if ← modifyGet fun (.mk a1 a2 a3 a4 a5 a6 a7 (eqvManager := m)) =>
-    let (b, m) := m.isEquiv useHash t s
-    (b, .mk a1 a2 a3 a4 a5 a6 a7 (eqvManager := m))
-  then return .true
+  if let some l ← modifyGet (·.checkEquiv useHash t s) then
+    if (← readThe Context).ceiling.all (l ≤ ·) then
+      modify (·.taintWith l)
+      return .true
   match t, s with
   | .lam .., .lam .. => toLBoolM <| isDefEqLambda t s
   | .forallE .., .forallE .. => toLBoolM <| isDefEqForall t s

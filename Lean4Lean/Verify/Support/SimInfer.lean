@@ -163,11 +163,11 @@ theorem isDefEqCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree 
 theorem isDefEq.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (h₁ : Dom c₁ e₁) (h₂ : Dom c₁ e₂) (hs₁ : e₁.SuppIn S) (hs₂ : e₂.SuppIn S) :
     RecM.SS c₁ c₂ s (isDefEq e₁ e₂) (isDefEq e₁ e₂) fun _ _ => True := by
-  refine (isDefEqCore.SS hA hS h₁ h₂ hs₁ hs₂).bind fun b _ _ _ => ?_
+  refine (RecM.SS.withTaint fun _ => isDefEqCore.SS hA hS h₁ h₂ hs₁ hs₂).bind fun b _ _ _ => ?_
   simp; split
-  · refine fun m hm => ⟨?_, fun _ _ _ eq _ => eq⟩
+  · refine fun m hm => ⟨?_, fun _ _ _ eq _ _ => eq⟩
     rintro wf _ _ ⟨⟩
-    exact ⟨{ wf with }, .rfl, trivial⟩
+    exact ⟨wf.setAux rfl rfl rfl rfl rfl rfl, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
   · exact .pure trivial
 
 theorem ensureSortCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
@@ -202,12 +202,13 @@ theorem TeleAgree.nil {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂) 
 
 theorem TeleAgree.push {S : Supp} {c c₁ c₂ : Context} {xs : List FVarId} {s : State}
     (H : TeleAgree S c c₁ c₂ xs) (wf : SuppState c₁ s) {name ty bi}
-    (hty : ty.SuppIn (S.addFVars xs)) (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) :
+    (hty : ty.SuppIn (S.addFVars xs)) (f₁ : c₁.lctx.find? ⟨s.ngen.curr⟩ = none)
+    (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) :
     TeleAgree S c { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
       { c₂ with lctx := c₂.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi } (xs ++ [⟨s.ngen.curr⟩]) := by
-  have E := wf.ctxExt (name := name) (ty := ty) (bi := bi)
+  have E := wf.ctxExt f₁ (name := name) (ty := ty) (bi := bi)
   refine ⟨H.tele.push E, H.supp.push H.tele E fun d hd => ?_,
-    (H.agree.mkLocalDecl wf f₂).mono Supp.addFVars_append.1⟩
+    (H.agree.mkLocalDecl wf f₁ f₂).mono Supp.addFVars_append.1⟩
   simp only [LocalContext.find?_mkLocalDecl wf.lctxWF E.fresh, beq_self_eq_true, if_true,
     Option.some.injEq] at hd; subst hd
   exact hty
@@ -215,13 +216,13 @@ theorem TeleAgree.push {S : Supp} {c c₁ c₂ : Context} {xs : List FVarId} {s 
 theorem TeleAgree.pushLet {S : Supp} {c c₁ c₂ : Context} {xs : List FVarId} {s : State}
     (H : TeleAgree S c c₁ c₂ xs) (wf : SuppState c₁ s) {name ty val}
     (hty : ty.SuppIn (S.addFVars xs)) (hval : val.SuppIn (S.addFVars xs))
-    (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) :
+    (f₁ : c₁.lctx.find? ⟨s.ngen.curr⟩ = none) (f₂ : c₂.lctx.find? ⟨s.ngen.curr⟩ = none) :
     TeleAgree S c { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       { c₂ with lctx := c₂.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       (xs ++ [⟨s.ngen.curr⟩]) := by
-  have E := wf.ctxExtLet (name := name) (ty := ty) (val := val)
+  have E := wf.ctxExtLet f₁ (name := name) (ty := ty) (val := val)
   refine ⟨H.tele.push E, H.supp.push H.tele E fun d hd => ?_,
-    (H.agree.mkLetDecl wf f₂).mono Supp.addFVars_append.1⟩
+    (H.agree.mkLetDecl wf f₁ f₂).mono Supp.addFVars_append.1⟩
   simp only [LocalContext.find?_mkLetDecl wf.lctxWF E.fresh, beq_self_eq_true, if_true,
     Option.some.injEq] at hd; subst hd
   exact ⟨hty, hval⟩
@@ -253,14 +254,11 @@ theorem inferLambda.loop.SS {S : Supp} {c c₁ c₂ : Context} {s : State} {e : 
         (withLocalDecl name bi (dom.instantiateRev arr) fun fv =>
           inferLambda.loop inferOnly (arr.push fv) body) fun _ _ => True := by
       refine .stateWF fun wf => ?_
-      have E := wf.ctxExt (name := name) (ty := dom.instantiateRev arr) (bi := bi)
-      exact .withLocalDecl hd
-        (inferLambda.loop.SS ((T.self wf.lctxWF).push wf hds E.fresh) hS (by simp [harr])
-          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-          (hse.2.mono (Supp.addFVars_mono (by simp))))
-        (fun f₂ => inferLambda.loop.SS (T.push wf hds f₂) hS (by simp [harr])
-          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-          (hse.2.mono (Supp.addFVars_mono (by simp)))) T.agree.wf
+      refine .withLocalDecl hd (fun f₁ => ?_) (fun f₁ f₂ => ?_) T.agree.wf
+      all_goals
+        have E := wf.ctxExt f₁ (name := name) (ty := dom.instantiateRev arr) (bi := bi)
+      · exact inferLambda.loop.SS ((T.self wf.lctxWF).push wf hds E.fresh E.fresh) hS (by simp [harr]) (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))) (hse.2.mono (Supp.addFVars_mono (by simp)))
+      · exact inferLambda.loop.SS (T.push wf hds f₁ f₂) hS (by simp [harr]) (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))) (hse.2.mono (Supp.addFVars_mono (by simp)))
     split
     · refine .stateWF fun wf => ?_
       have hS' := T.tele.closed T.supp wf.lctxWF hS
@@ -301,14 +299,11 @@ theorem inferForall.loop.SS {S : Supp} {c c₁ c₂ : Context} {s : State} {e : 
     refine (inferType.SS T.agree hS' hd hds).bind fun ty _ _ hty => .stateWF fun wf' => ?_
     refine (ensureSortCore.SS T.agree hS' (hty.dom wf' hd) (hty _ hS' hds)).bind
       fun _ s₁ _ _ => .stateWF fun wf => ?_
-    have E := wf.ctxExt (name := name) (ty := dom.instantiateRev arr) (bi := bi) (s := s₁)
-    exact .withLocalDecl hd
-      (inferForall.loop.SS ((T.self wf.lctxWF).push wf hds E.fresh) hS (by simp [harr])
-        (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-        (hse.2.mono (Supp.addFVars_mono (by simp))))
-      (fun f₂ => inferForall.loop.SS (T.push wf hds f₂) hS (by simp [harr])
-        (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-        (hse.2.mono (Supp.addFVars_mono (by simp)))) T.agree.wf
+    refine .withLocalDecl hd (fun f₁ => ?_) (fun f₁ f₂ => ?_) T.agree.wf
+    all_goals
+      have E := wf.ctxExt f₁ (name := name) (ty := dom.instantiateRev arr) (bi := bi) (s := s₁)
+    · exact inferForall.loop.SS ((T.self wf.lctxWF).push wf hds E.fresh E.fresh) hS (by simp [harr]) (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))) (hse.2.mono (Supp.addFVars_mono (by simp)))
+    · exact inferForall.loop.SS (T.push wf hds f₁ f₂) hS (by simp [harr]) (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))) (hse.2.mono (Supp.addFVars_mono (by simp)))
   · refine .stateWF fun wf => ?_
     have hS' := T.tele.closed T.supp wf.lctxWF hS
     have hd := Dom.instantiateRev harr T.tele.dom hdom
@@ -343,15 +338,12 @@ theorem inferLet.loop.SS {S : Supp} {c c₁ c₂ : Context} {s : State} {e : Exp
         (withLetDecl name (type.instantiateRev arr) (val.instantiateRev arr) fun fv =>
           inferLet.loop inferOnly (arr.push fv) body) fun _ _ => True := by
       refine .stateWF fun wf => ?_
-      have E := wf.ctxExtLet (name := name) (ty := type.instantiateRev arr)
-        (val := val.instantiateRev arr)
-      exact .withLetDecl ht hv
-        (inferLet.loop.SS ((T.self wf.lctxWF).pushLet wf hts hvs E.fresh) hS (by simp [harr])
-          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-          (hse.2.2.mono (Supp.addFVars_mono (by simp))))
-        (fun f₂ => inferLet.loop.SS (T.pushLet wf hts hvs f₂) hS (by simp [harr])
-          (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h])))
-          (hse.2.2.mono (Supp.addFVars_mono (by simp)))) T.agree.wf
+      refine .withLetDecl ht hv (fun f₁ => ?_) (fun f₁ f₂ => ?_) T.agree.wf
+      all_goals
+        have E := wf.ctxExtLet f₁ (name := name) (ty := type.instantiateRev arr)
+          (val := val.instantiateRev arr)
+      · exact inferLet.loop.SS ((T.self wf.lctxWF).pushLet wf hts hvs E.fresh E.fresh) hS (by simp [harr]) (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))) (hse.2.2.mono (Supp.addFVars_mono (by simp)))
+      · exact inferLet.loop.SS (T.pushLet wf hts hvs f₁ f₂) hS (by simp [harr]) (fun fv h => E.dom_of (hdom fv (by simp [Expr.fvarsList, h]))) (hse.2.2.mono (Supp.addFVars_mono (by simp)))
     split
     · refine .stateWF fun wf => ?_
       have hS' := T.tele.closed T.supp wf.lctxWF hS
@@ -524,27 +516,20 @@ theorem inferProj.SS {S : Supp} {c₁ c₂ : Context} {s : State} {struct struct
     · exact .fail (.getLCtx .throw)
   · exact .fail (.getLCtx .throw)
 
-theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
+mutual
+theorem inferTypeCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
+    (hb : e.hasLooseBVars = false)
     (hA : Agree S c₁ c₂) (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
-    RecM.SS c₁ c₂ s (inferType' e inferOnly) (inferType' e inferOnly)
+    RecM.SS c₁ c₂ s (inferTypeCore e inferOnly) (inferTypeCore e inferOnly)
       fun ty _ => SuppBelow c₁ e ty := by
-  refine .of_swf (Q' := fun _ _ => True) (inferType'.SWF he) ?_
-  unfold inferType'; lift_lets; intro F F1
-  split <;> [exact .throw; refine .get <| .get ?_]
-  split
-  · exact .pure (Q := fun _ _ => True) trivial
+  refine .of_swf (Q' := fun _ _ => True) (inferTypeCore.SWF hb he) ?_
+  unfold inferTypeCore; lift_lets; intro F
   generalize hP : (fun _ (_ : State) => _) = P
-  have hF {ty s} (H : SuppBelow c₁ e ty) : RecM.SS c₁ c₂ s (F ty) (F ty) P := by
-    refine fun m hm => ⟨?_, fun _ _ _ eq _ => eq⟩
-    rintro wf a s' ⟨⟩
-    have hc := CondSupp.of wf he H
-    subst P; cases inferOnly
-    · exact ⟨{ wf with inferTypeC := CondSupp.insert wf.inferTypeC hc }, .rfl, trivial⟩
-    · exact ⟨{ wf with inferTypeI := CondSupp.insert wf.inferTypeI hc }, .rfl, trivial⟩
+  have hF {ty s} (H : SuppBelow c₁ e ty) : RecM.SS c₁ c₂ s (F ty) (F ty) P := .pure (hP ▸ trivial)
   have sub {e'} (h : ∀ fv ∈ e'.fvarsList, fv ∈ e.fvarsList) : Dom c₁ e' :=
     fun fv h' => he fv (h fv h')
   split
-  · rename_i l _ _
+  · rename_i l
     have H : SuppBelow c₁ (.lit l) (mkConst l.typeName) := by
       intro S _ h; cases l <;> exact ⟨h.1, nofun⟩
     extract_lets G1; split <;> [split; skip]
@@ -555,17 +540,17 @@ theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
       exact .getEnv <| (RecM.SS.liftExcept envGet.SWF (envGet_agree hA hs.2.1)).bind
         fun _ _ _ _ => hF H
     · exact hF H
-  · rename_i e _ _
+  · rename_i e
     exact (inferType'.SS (e := e) hA hS he hs).bind fun _ _ _ h => hF h
-  · rename_i st idx e _ _
+  · rename_i st idx e
     have he' : Dom c₁ e := he
     refine (inferType'.SS hA hS he' hs).bind fun ty _ _ h => .stateWF fun wf => ?_
     exact (inferProj.SS hA hS he' (h.dom wf he') h hs).bind fun _ _ _ h => hF h
   · exact .readThe <| (RecM.SS.liftExcept inferFVar.SWF (inferFVar_agree hA hs)).bind
       fun _ _ _ h => hF h
   · exact .throw
-  · rename_i h _; simp [Expr.hasLooseBVars, Expr.looseBVarRange'] at h
-  · rename_i u _ _
+  · simp [Expr.hasLooseBVars, Expr.looseBVarRange'] at hb
+  · rename_i u
     have H : SuppBelow c₁ (.sort u) (.sort (.succ u)) := fun S _ h =>
       (h : Level.LParamsIn S.lvl u)
     split
@@ -577,7 +562,7 @@ theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
       fun _ _ _ h => hF h
   · exact (inferLambda.SS hA hS he hs).bind fun _ _ _ h => hF h
   · exact (inferForall.SS hA hS he hs).bind fun _ _ _ h => hF h
-  · rename_i f a _ _
+  · rename_i f a
     have hf : Dom c₁ f := sub fun fv h => by simp [Expr.fvarsList, h]
     have ha : Dom c₁ a := sub fun fv h => by simp [Expr.fvarsList, h]
     split
@@ -603,6 +588,28 @@ theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
     · refine hF fun S hS h => ?_
       exact Expr.SuppIn.inst1 h.2 <| Expr.SuppIn.bindingBody! hS.2.dummy (hfty'' S hS h.1)
   · exact (inferLet.SS hA hS he hs).bind fun _ _ _ h => hF h
+
+
+theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
+    (hA : Agree S c₁ c₂) (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
+    RecM.SS c₁ c₂ s (inferType' e inferOnly) (inferType' e inferOnly)
+      fun ty _ => SuppBelow c₁ e ty := by
+  refine .of_swf (Q' := fun _ _ => True) (inferType'.SWF he) ?_
+  unfold inferType'
+  split <;> [exact .throw; (rename_i hb; refine .get <| .readThe ?_)]
+  generalize ho : (cond inferOnly s.inferTypeI s.inferTypeC)[e]? = o
+  refine RecM.SS.cached' hA (fun _ _ _ => ?_) (fun _ _ => ?_) (fun _ => ?_)
+  · exact RecM.SS.taintWith.bind fun _ _ _ _ => .pure (Q := fun _ _ => True) trivial
+  · exact RecM.SWF.taintWith'.bind fun _ _ _ h => .pure h
+  refine (RecM.SS.withTaint fun _ =>
+    inferTypeCore.SS (by simpa using hb) hA hS he hs).bind fun ⟨ty, t⟩ _ _ H => ?_
+  refine fun m hm => ⟨?_, fun _ _ _ eq _ _ => eq⟩
+  rintro wf a s' ⟨⟩
+  have hc := CondSupp.of wf he H
+  cases inferOnly
+  · exact ⟨{ wf with inferTypeC := CondSupp.insert wf.inferTypeC hc }, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
+  · exact ⟨{ wf with inferTypeI := CondSupp.insert wf.inferTypeI hc }, .rfl, ⟨Nat.le_refl _, rfl, .refl _ _⟩, trivial⟩
+end
 
 end Inner
 end TypeChecker
