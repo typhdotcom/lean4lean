@@ -44,7 +44,7 @@ theorem WShape.fitsPi_of_ctorOK {I : IndHead} {as l : List (WShape (n+1))} {c : 
     simp only [List.getD_eq_getElem?_getD, List.getElem?_map]
     cases as[I.nargs + i]? <;> rfl
   rw [e] at H
-  exact WShape.fitsPi_iff.1 H.2
+  exact WShape.fitsPi_iff.1 H.2.1
 
 /-- A constructor shape below a typed interpretation `m1` of a term of the inductive type `s`
 applied to `args`: `m1` is a constructor shape of the same constructor with larger fields `fs1`,

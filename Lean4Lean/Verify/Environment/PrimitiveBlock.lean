@@ -367,9 +367,11 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
           FieldsElab venvAx d d.params.reverse 0 Ds c.fields ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
             D.StripsToBy (· ∉ [type].map (·.name)) f.type) ∧
-          ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
+          (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvAx.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
-            (u ≈ .zero ↔ f.level ≈ .zero)) cts cvs →
+            (u ≈ .zero ↔ f.level ≈ .zero)) ∧
+          ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+            f.type = D.stripN ((ct.type.domStrips.drop 0)[k]?.getD 0)) cts cvs →
       List.Forall₂ (fun (ct : Constructor) (cv : VConstructor) => ∀ nm D b bi,
         ct.type = .forallE nm D b bi → D.consumeTypeAnnotations' = D → ∀ f, cv.fields[0]? = some f →
           TrExprS venvAx [] [] D f.type ∧
@@ -382,23 +384,25 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
           FieldsElab venvT d d.params.reverse 0 Ds c.fields ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
             D.StripsToBy (· ∉ [type].map (·.name)) f.type) ∧
-          ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
+          (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvT.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
-            (u ≈ .zero ↔ f.level ≈ .zero)) cts cvs := by
+            (u ≈ .zero ↔ f.level ≈ .zero)) ∧
+          ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+            f.type = D.stripN ((ct.type.domStrips.drop 0)[k]?.getD 0)) cts cvs := by
     intro cts cvs hp h1 h2
     induction h1 with
     | nil => exact .nil
     | @cons ct cv cts cvs h ht ih =>
       cases h2 with | cons hf2 ht2 => ?_
       refine .cons ?_ (ih (fun c hc => hp c (.tail _ hc)) ht2)
-      obtain ⟨hn, htrA, ps, Ds, hps, hDs, hsh, hFE, hstr, hlv⟩ := h
+      obtain ⟨hn, htrA, ps, Ds, hps, hDs, hsh, hFE, hstr, hlv, hviews⟩ := h
       have hpc := hp ct (.head _)
       obtain ⟨htrT, -, -⟩ := primCtor_tr hIT hpc
       obtain ⟨-, -, huA⟩ := primCtor_tr hIAx hpc
       have hcv := huA _ htrA
       obtain rfl : ps = [] := List.eq_nil_of_length_eq_zero hps
       refine ⟨hn, hcv ▸ htrT, [], Ds, rfl, hDs, hsh, ?_, hstr,
-        fun k D f h1 h2 u h3 => hlv k D f h1 h2 u (h3.mono hle)⟩
+        fun k D f h1 h2 u h3 => hlv k D f h1 h2 u (h3.mono hle), hviews⟩
       rcases hpc with he | ⟨nm, bi, he⟩
       · -- no field
         rw [he] at hcv

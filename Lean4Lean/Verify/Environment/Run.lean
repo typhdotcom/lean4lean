@@ -1,5 +1,4 @@
 import Lean4Lean.Verify.Environment.Inductive
-import Lean4Lean.Verify.Typing.Strengthen
 import Lean4Lean.Verify.Support.Bridge
 import Lean4Lean.Verify.Typing.Zeta
 
@@ -1255,6 +1254,53 @@ theorem FieldKept.append {venv : VEnv} {U : Nat} {params : List VExpr} {D : VExp
   refine imp_congr_left (forall_congr' fun i => forall_congr' fun hi => ?_)
   rw [e1 i hi]
 
+/-- The kernel's checks of a constructor's fields, run again in the contexts kept, give the
+specification's `FieldsKeptWF`, where its views are the fields' types. -/
+theorem _root_.Lean4Lean.VInductDecl.FieldsKeptWF.of_fieldKept {venv : VEnv} (henv : venv.WF)
+    {d : VInductDecl} {c : VConstructor} {Ds : List VExpr}
+    (hP0 : venv.IsTele d.uvars [] d.params) (hFW : d.FieldsWF venv d.params.reverse 0 Ds c.fields)
+    (hK : ∀ k D, Ds[k]? = some D → FieldKept venv d.uvars d.params D (c.fields.map VField.type) k) :
+    d.FieldsKeptWF venv c Ds := by
+  intro P k
+  induction k using Nat.strongRecOn with
+  | ind k IH =>
+  intro hk hs
+  have hlen := hFW.length
+  have hD : Ds[k]? = some Ds[k] := List.getElem?_eq_getElem (by omega)
+  have hget : ∀ i (hi : i < c.fields.length),
+      (c.fields.map VField.type)[i]?.getD default = c.fields[i].type := fun i hi => by simp [hi]
+  have hs' : ∀ i ≤ k, ∀ j < i, P j →
+      ((c.fields.map VField.type)[i]?.getD default).Skips 1 (i - 1 - j) := by
+    intro i hi j hj hPj
+    rw [hget i (by omega)]; exact hs i hi _ (List.getElem?_eq_getElem (by omega)) j hj hPj
+  obtain ⟨⟨u, hu⟩, hDK⟩ := hK k Ds[k] hD P hs'
+  rw [← c.keptFieldsBy_eq_keptTysBy, hget k hk] at hu hDK
+  refine ⟨fun f hf => ?_, fun D f hD' hf hDS => ?_⟩
+  · obtain rfl : c.fields[k] = f := Option.some.inj ((List.getElem?_eq_getElem hk).symm.trans hf)
+    -- the earlier fields kept are typed, which lifts the context kept to all the fields'
+    have hlow : VInductDecl.FieldsKept venv d c P k := fun i hi _ fi hfi =>
+      (IH i hi (by omega) fun i' hi' => hs i' (by omega)).1 fi hfi
+    have hPc : OnCtx d.params.reverse (venv.IsType d.uvars) := by simpa using hP0.onCtx trivial
+    obtain ⟨W, ht⟩ := hFW.keptTele (P := P) (Nat.le_of_lt hk)
+      (fun i hi _ fi hfi j hj hq => hs i (Nat.le_of_lt hi) fi hfi j hj hq) hlow
+    have hΓk := ht.onCtx hPc
+    have hctx : OnCtx (((c.fields.take k).map VField.type).reverse ++ d.params.reverse)
+        (venv.IsType d.uvars) := by
+      have := hFW.tele.1
+      rw [← List.take_append_drop k c.fields, List.map_append] at this
+      exact (VEnv.IsTele.append_inv this).1.onCtx hPc
+    have hl := hFW.level k _ hf
+    have hlift := hu.weak' henv.ordered W
+    rw [← VConstructor.strippedTypeBy_lift' fun j hj hq => hs k (Nat.le_refl _) _ hf j hj hq]
+      at hlift
+    have huv := (VEnv.IsDefEq.uniqU henv hctx hlift hl).sort_inv henv hctx
+    have hlWF := (hl.isType henv.ordered hctx).sort_inv henv.ordered
+    have huWF := (hu.isType henv.ordered hΓk).sort_inv henv.ordered
+    exact hu.defeqU_r henv hΓk ⟨_, .sortDF huWF hlWF huv⟩
+  · obtain rfl := Option.some.inj (hD.symm.trans hD')
+    obtain rfl : c.fields[k] = f := Option.some.inj ((List.getElem?_eq_getElem hk).symm.trans hf)
+    exact hDK hDS
+
 /-- What `checkConstructors` establishes about constructor `ct` of type `t`, for any translation
 of its type in `venv`: it is a type, and a telescope of parameters agreeing with the block's
 followed by fields, ending in `t` at the parameters and at indices that do not mention the
@@ -1374,9 +1420,12 @@ structure Elaborates (venv : VEnv) (U : List Name) (nparams : Nat) (level : VLev
         FieldsElab venv d d.params.reverse 0 Ds c.fields ∧
         (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
           D.StripsToBy (· ∉ types.map (·.name)) f.type) ∧
-        ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
+        (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
           venv.HasType U.length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
-          (u ≈ .zero ↔ f.level ≈ .zero)) t.ctors T.ctors) types d.types
+          (u ≈ .zero ↔ f.level ≈ .zero)) ∧
+        ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+          f.type = D.stripN ((ct.type.domStrips.drop nparams)[k]?.getD 0)) t.ctors T.ctors)
+    types d.types
 
 theorem VExpr.foralls_getElem_eq : ∀ {As As' : List VExpr} {B B' : VExpr},
     VExpr.foralls As B = VExpr.foralls As' B' →
@@ -1457,21 +1506,36 @@ theorem FieldsElab.within {venv : VEnv} {d : VInductDecl} {Γ k Ds fs}
     | zero => simp at hD hf; subst hD hf; exact hw
     | succ i => exact ih i D f (by simpa using hD) (by simpa using hf)
 
+theorem declareConstructors.arity_domStrips' : ∀ (i : Nat) (e : Expr),
+    declareConstructors.arity i e = i + e.domStrips.length
+  | i, .forallE _ _ b _ => by
+    simp only [declareConstructors.arity, Lean.Expr.domStrips, List.length_cons]
+    rw [arity_domStrips' (i + 1) b]; omega
+  | _, .bvar _ | _, .fvar _ | _, .mvar _ | _, .sort _ | _, .const .. | _, .app .. | _, .lam ..
+  | _, .letE .. | _, .lit _ | _, .mdata .. | _, .proj .. => by
+    simp [declareConstructors.arity, Lean.Expr.domStrips]
+
+theorem declareConstructors.arity_domStrips (e : Expr) :
+    declareConstructors.arity 0 e = e.domStrips.length := by
+  simp [arity_domStrips']
+
 /-- A constructor that `checkConstructors` checked, as `mkRecInfos` elaborated it. -/
 theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {d : VInductDecl}
     (hU : d.uvars = U.length) (hnp : d.params.length = nparams)
     (hparams : venv.IsTele d.uvars [] d.params)
     {t : InductiveType} {T : VInductiveType} {nidx : Nat} (hname : T.name = t.name)
     (hno : T.nested = none) (hnidx : nidx = T.indices.length) {ct : Constructor} {c : VConstructor}
-    {X : List VExpr → List VExpr → Prop}
+    {X Y : List VExpr → List VExpr → Prop}
     (hC : CtorChecked venv U d t nidx ct)
     (hE : c.name = ct.name ∧ TrExprS venv U [] ct.type c.type ∧ ∃ ps Ds, ps.length = nparams ∧
         Ds.length = c.fields.length ∧
         c.type = .foralls (ps ++ Ds) (.appN (.const t.name (VLevel.params U.length))
           (VExpr.bvars nparams Ds.length ++ c.indices)) ∧
-        FieldsElab venv d d.params.reverse 0 Ds c.fields ∧ X ps Ds) :
+        FieldsElab venv d d.params.reverse 0 Ds c.fields ∧ X ps Ds ∧ Y ps Ds ∧
+        ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+          f.type = D.stripN ((ct.type.domStrips.drop nparams)[k]?.getD 0)) :
     c.WF venv d T ∧ declareConstructors.arity 0 ct.type = nparams + c.fields.length := by
-  obtain ⟨-, htr, ps, Ds, hps, hDs, hty, hfe, -⟩ := hE
+  obtain ⟨-, htr, ps, Ds, hps, hDs, hty, hfe, -, -, hviews⟩ := hE
   obtain ⟨hT, ps', Ds', idx, hty', har, htele, hidx, hmen, hfc, hKC⟩ := hC _ htr
   rw [hty] at hty'
   have ⟨h1, h2⟩ := VExpr.foralls_inj_notPi (VExpr.appN_notPi (e := .const ..) _ trivial)
@@ -1486,8 +1550,25 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   simp only [List.append_nil] at hctx
   have hFW := FieldsWF.of_checked henv (by simpa using hparams.onCtx trivial)
     (hfc.defeqDFC henv.ordered hctx) hfe
-  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within, fun P k hk hs =>
-      VInductDecl.FieldsWF.kept_assumed henv hparams hFW (P := P) k hk hs⟩,
+  -- the fields' views are the declared domains, stripped as the kernel strips them
+  have hNl : ps.length + Ds.length ≤ ct.type.domStrips.length := by
+    rw [← har, declareConstructors.arity_domStrips]; omega
+  have hVs : (Ds.zip (ct.type.domStrips.drop ps.length)).map (fun p => p.1.stripN p.2) =
+      c.fields.map VField.type := by
+    refine List.ext_getElem? fun k => ?_
+    rcases Nat.lt_or_ge k Ds.length with hk | hk
+    · have hkf : k < c.fields.length := by omega
+      have hkN : k < (ct.type.domStrips.drop ps.length).length := by simp; omega
+      rw [List.getElem?_map, List.getElem?_eq_getElem (l := Ds.zip _) (by simp; omega),
+        List.getElem_zip, List.getElem?_map, List.getElem?_eq_getElem hkf]
+      simp only [Option.map_some, Option.some.injEq]
+      rw [hviews k _ _ (List.getElem?_eq_getElem hk) (List.getElem?_eq_getElem hkf), ← hps,
+        List.getElem?_eq_getElem hkN]
+      rfl
+    · rw [List.getElem?_eq_none (by simp; omega), List.getElem?_eq_none (by simp; omega)]
+  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within,
+      VInductDecl.FieldsKeptWF.of_fieldKept henv hparams hFW fun k D h => by
+        rw [hU, ← hVs]; exact hKC k D h⟩,
     ⟨hidx.trans hnidx, hmen⟩⟩, by rw [har, hps, hDs]⟩
   rw [hty, VInductiveType.typeApp_of_none hno, hname, hU, hnp, hDs]
 

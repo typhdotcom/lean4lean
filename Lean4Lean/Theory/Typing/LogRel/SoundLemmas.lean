@@ -338,17 +338,30 @@ theorem TeleSubst.snoc (H : TeleSubst env Γ Δ σs) (hQ : Q.ClosedN Δ.length)
         List.take_of_length_le (by rw [← H.len]; omega)]
       exact ha
 
+theorem MSpine.app_inv (H : MSpine env Γ (.app f a) T) :
+    ∃ A B u, SoundTy env Γ A (.sort u) ∧ MSpine env Γ f (.forallE A B) ∧
+      SoundTy env Γ a A ∧ SoundEq env Γ (B.inst a) T := by
+  cases H with | app h1 h2 h3 h4 => exact ⟨_, _, _, h1, h2, h3, h4⟩
+
+theorem MSpine.const_inv (H : MSpine env Γ (.const c ls) T) :
+    ∃ ci, env.constants c = some ci ∧ ls.length = ci.uvars ∧ SoundEq env Γ (ci.type.instL ls) T := by
+  cases H with | const h1 h2 h3 => exact ⟨_, h1, h2, h3⟩
+
+theorem StrongSound.mspine' (H : StrongSound env U Γ ((VExpr.const c ls).appN args) T) :
+    MSpine env Γ ((VExpr.const c ls).appN args) T := by
+  rw [← spine_eq_appN] at H ⊢; exact H.mspine
+
 /-- An application spine of a constant whose type the model cannot tell from a closed telescope
 `Qs` with result `R`: its arguments are typed along the telescope, and its type is the rest of
 the telescope at them. -/
-theorem StrongSound.spine (hM : ModelEnv env) {c : Name} {ls : List VLevel} {Qs : List VExpr}
+theorem MSpine.spine (hM : ModelEnv env) {c : Name} {ls : List VLevel} {Qs : List VExpr}
     {R : VExpr} (hQ : ∀ i (A : VExpr), Qs[i]? = some A → A.ClosedN i ∧
       ∃ u, SoundTy env (Qs.take i).reverse A (.sort u))
     (hR : (VExpr.foralls Qs R).ClosedN)
     (hX : ∀ ci, env.constants c = some ci → ls.length = ci.uvars →
       SoundEq env Γ (ci.type.instL ls) (.foralls Qs R)) :
     ∀ (n : Nat) (args : List VExpr) {T}, args.length = n → n ≤ Qs.length →
-    StrongSound env U Γ ((VExpr.const c ls).appN args) T →
+    MSpine env Γ ((VExpr.const c ls).appN args) T →
     TeleSubst env Γ (Qs.take n) args ∧
     SoundEq env Γ T ((VExpr.foralls (Qs.drop n) R).subst (VExpr.Subst.dflt.consList args))
   | 0, args, T, h0, _, H => by
@@ -364,7 +377,7 @@ theorem StrongSound.spine (hM : ModelEnv env) {c : Name} {ls : List VLevel} {Qs 
       Nat.add_right_cancel_iff] at h0 H ⊢
     rw [VExpr.appN_append] at H
     obtain ⟨A, B, u, hA, hf, ha, hT⟩ := H.app_inv
-    obtain ⟨hS, hE⟩ := StrongSound.spine hM hQ hR hX n args h0 (by omega) hf
+    obtain ⟨hS, hE⟩ := MSpine.spine hM hQ hR hX n args h0 (by omega) hf
     have hQn : Qs[n]? = some Qs[n] := List.getElem?_eq_getElem (by omega)
     obtain ⟨hcl, u', hQ'⟩ := hQ n _ hQn
     rw [List.drop_eq_getElem_cons (by omega)] at hE
@@ -374,10 +387,62 @@ theorem StrongSound.spine (hM : ModelEnv env) {c : Name} {ls : List VLevel} {Qs 
     refine ⟨?_, ?_⟩
     · rw [List.take_succ_eq_append_getElem (by omega)]
       refine hS.snoc (by rw [List.length_take, Nat.min_eq_left (by omega)]; exact hcl) hQ' ?_
-      exact ha.sound.defeq_r hAQ
+      exact ha.defeq_r hAQ
     · refine hT.symm.trans ?_
-      have := SoundEq.inst hM ha.sound hA hB
+      have := SoundEq.inst hM ha hA hB
       rwa [VExpr.inst_lift_cons, ← VExpr.Subst.consList_concat] at this
+
+/-- `MSpine.spine` for a `StrongSound` spine. -/
+theorem StrongSound.spine (hM : ModelEnv env) {c : Name} {ls : List VLevel} {Qs : List VExpr}
+    {R : VExpr} (hQ : ∀ i (A : VExpr), Qs[i]? = some A → A.ClosedN i ∧
+      ∃ u, SoundTy env (Qs.take i).reverse A (.sort u))
+    (hR : (VExpr.foralls Qs R).ClosedN)
+    (hX : ∀ ci, env.constants c = some ci → ls.length = ci.uvars →
+      SoundEq env Γ (ci.type.instL ls) (.foralls Qs R))
+    (n : Nat) (args : List VExpr) {T} (h0 : args.length = n) (hl : n ≤ Qs.length)
+    (H : StrongSound env U Γ ((VExpr.const c ls).appN args) T) :
+    TeleSubst env Γ (Qs.take n) args ∧
+    SoundEq env Γ T ((VExpr.foralls (Qs.drop n) R).subst (VExpr.Subst.dflt.consList args)) :=
+  MSpine.spine hM hQ hR hX n args h0 hl H.mspine'
+
+/-- Conversely, arguments typed along a constant's telescope make an `MSpine`. -/
+theorem MSpine.ofTele (hM : ModelEnv env) {c : Name} {ls : List VLevel} {Qs : List VExpr}
+    {R : VExpr} {ci : VConstant} (hc : env.constants c = some ci) (hls : ls.length = ci.uvars)
+    (hQ : ∀ i (A : VExpr), Qs[i]? = some A → A.ClosedN i ∧
+      ∃ u, SoundTy env (Qs.take i).reverse A (.sort u))
+    (hR : (VExpr.foralls Qs R).ClosedN)
+    (hX : SoundEq env Γ (ci.type.instL ls) (.foralls Qs R)) :
+    ∀ (n : Nat) (args : List VExpr), args.length = n → n ≤ Qs.length →
+    TeleSubst env Γ (Qs.take n) args →
+    MSpine env Γ ((VExpr.const c ls).appN args)
+      ((VExpr.foralls (Qs.drop n) R).subst (VExpr.Subst.dflt.consList args))
+  | 0, args, h0, _, _ => by
+    obtain rfl := List.eq_nil_of_length_eq_zero h0
+    simp only [List.drop_zero, VExpr.Subst.consList_nil, VExpr.appN]
+    rw [VExpr.ClosedN.subst_eq hR VExpr.Subst.Fixes.zero]
+    exact .const hc hls hX
+  | n+1, args, h0, hl, H => by
+    obtain ⟨args, a, rfl⟩ := List.eq_nil_or_concat args |>.resolve_left (by rintro rfl; cases h0)
+    simp only [List.concat_eq_append, List.length_append, List.length_singleton,
+      Nat.add_right_cancel_iff] at h0 H ⊢
+    rw [List.take_succ_eq_append_getElem (by omega)] at H
+    have hS : TeleSubst env Γ (Qs.take n) args := by
+      have := H.take n
+      rwa [List.take_left' (by simp; omega), List.take_left' (by omega)] at this
+    have hf := MSpine.ofTele hM hc hls hQ hR hX n args h0 (by omega) hS
+    rw [List.drop_eq_getElem_cons (by omega)] at hf
+    have hQn : Qs[n]? = some Qs[n] := List.getElem?_eq_getElem (by omega)
+    obtain ⟨hcl, u', hQ'⟩ := hQ n _ hQn
+    have hQs : SoundTy env Γ (Qs[n].subst (VExpr.Subst.dflt.consList args)) (.sort u') :=
+      SoundTy.substTele hM hS (by rwa [h0]) hQ'
+    have ha : SoundTy env Γ a (Qs[n].subst (VExpr.Subst.dflt.consList args)) := by
+      have := H.typed n Qs[n] a
+        (by rw [List.getElem?_append_right (by simp; omega)]; simp [Nat.min_eq_left (show n ≤ Qs.length by omega)])
+        (by rw [List.getElem?_append_right (by omega)]; simp [h0])
+      rwa [List.take_left' h0] at this
+    rw [VExpr.appN_append]
+    refine .app hQs hf ha ?_
+    rw [VExpr.inst_lift_cons, ← VExpr.Subst.consList_concat]; exact .rfl
 
 /-! ### Telescopes of pi type shapes -/
 
@@ -458,7 +523,7 @@ theorem LE_Interp.Const.indTy_inv (hR : ConstRoles env) {s : Name} {d : VInductD
       (∀ (i : Nat) (c' : VConstructor) (cty : WShape n), T.ctors[i]? = some c' →
         ctys[i]? = some cty → ∃ h, R h (c'.type.instL ls) ∧
           PiAppS h ((rargs.reverse.take d.params.length).map (·.T)) cty.T) ∧
-      y ≤ (WShape.indTy (n := n) (d.rel ls) ⟨s, rargs.length, T.ctors.map (·.name)⟩
+      y ≤ (WShape.indTy (n := n) (d.rel ls) ⟨s, rargs.length, T.ctors.map (·.name), T.ctors.map (·.fields.length)⟩
         (rargs.reverse ++ ctys)).T := by
   have A : ConstArity env s (.indTy d t) rargs.length := hl ▸ .indTy hs hT
   cases H with

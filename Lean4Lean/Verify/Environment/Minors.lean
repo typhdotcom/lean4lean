@@ -524,6 +524,12 @@ structure CtorArgsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
   first : params.length = 0 → ∀ nm D b bi, t₀ = .forallE nm D b bi →
     D.consumeTypeAnnotations' = D → ∀ h : 0 < fvs.length,
       (∃ dk, Mf.lctx.find? (fvs[0]'h) = some dk ∧ dk.type = D) ∧ ftys[0]? = Ds[0]?
+  /-- The annotations on the binders read so far, counted. -/
+  strips : t.domStrips = t₀.domStrips.drop i
+  /-- Each field's view is its declared domain with as many annotations stripped as the
+  constructor's type has on that binder. -/
+  views : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty →
+    fty = D.stripN ((t₀.domStrips.drop params.length)[j]?.getD 0)
 
 theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {pfvs : List FVarId} {params : List VExpr}
@@ -612,7 +618,11 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
         ⟨hI.tele, hI.base, hI.sub, hI.pred, hI.fvars, hI.rsLen, hI.le, ?_, ?_, hI.fields, hI.within,
           hI.comp,
           fun hz => let ⟨h1, h2, h3⟩ := hI.free hz; ⟨spineIn_inst1 trivial h1.2, h2, h3⟩,
-          fun h => absurd h (by omega), fun hp0 => absurd hi (by omega)⟩
+          fun h => absurd h (by omega), fun hp0 => absurd hi (by omega), by
+            have h := congrArg List.tail hI.strips
+            simp only [Lean.Expr.domStrips, List.tail_cons, List.tail_drop] at h
+            rw [Lean.Expr.instantiate1_eq, Lean.Expr.domStrips_instantiate1']; exact h,
+          hI.views⟩
       · rw [Lean.Expr.instantiate1_eq, declareConstructors.arity_instantiate1']; omega
       have hvl : (Mp.dropN (params.length - (i + 1)) hk').vlctx =
           (some (pfvs[i], ty_i.fvarsList), .vlam params[i]) :: Mi.vlctx := by rw [hm']; rfl
@@ -679,7 +689,8 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
           hP _ _ _ _ _ _ _ hI.pred, ?_, by simp [hI.rsLen], by simp; omega, ?_, .inr ⟨by simp; omega, ?_⟩,
           fun j D fty hD hf => ?_, fun j D fty hD hf => ?_,
           ⟨_, _, hE', by rw [List.length_append, List.length_singleton]; exact hW',
-          ?_, by simp [TypeChecker.MLCtx.length]; omega, ?_⟩, ?_, fun h => absurd h (by omega), ?_⟩
+          ?_, by simp [TypeChecker.MLCtx.length]; omega, ?_⟩, ?_, fun h => absurd h (by omega), ?_,
+          ?_, ?_⟩
       · simpa using hI.tele.vlam
       · show VLCtx.fvars (_ :: cb.mlctx.vlctx) = _
         simp [VLCtx.fvars_cons_some, hI.fvars]
@@ -763,6 +774,27 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
               rw [he] at h2
               rw [List.getElem_append_left hf0, hdk] at h2; cases h2
           · rw [List.getElem?_append_left (by omega)]; exact hft
+      · have h := congrArg List.tail hI.strips
+        simp only [Lean.Expr.domStrips, List.tail_cons, List.tail_drop] at h
+        rw [Lean.Expr.instantiate1_eq, Lean.Expr.domStrips_instantiate1']; exact h
+      · intro j D fty hD hf
+        rcases Nat.lt_or_ge j ftys.length with hj | hj
+        · rw [List.getElem?_append_left hj] at hf
+          exact hI.views j D fty hD hf
+        · rw [List.getElem?_append_right hj] at hf
+          obtain ⟨hj0, rfl⟩ : j - ftys.length = 0 ∧ ty' = fty := by
+            cases h : j - ftys.length <;> simp_all
+          have hfl : ftys.length = fvs.length := by
+            have := hI.tele.length_eq; simp [hlenp] at this; omega
+          have hjf : j = fvs.length := by omega
+          subst hjf
+          rw [List.getElem?_eq_getElem hn] at hD; cases hD
+          have hn₀ : dom.annStrips = (t₀.domStrips.drop params.length)[fvs.length]?.getD 0 := by
+            have h := congrArg List.head? hI.strips
+            simp only [Lean.Expr.domStrips, List.head?_cons, List.head?_drop] at h
+            rw [List.getElem?_drop, ← h]; rfl
+          rw [← hn₀]
+          exact TrExprS.unique (TrExprS.IsUnique.all _) hty hdom.consumeTypeAnnotations'_stripN
   · rename_i hnf
     have har := hI.arity
     have h0 : declareConstructors.arity 0 t = 0 := by
@@ -2516,6 +2548,10 @@ structure CtorOut (cT : VContext) (pre : List Name) (params : List VExpr) (d₀ 
       TrExprS cT.venv cT.lparams [] D f.type ∧
       ∀ n us ax ra, D = .const n us → cT.env.find? n = some (.axiomInfo ax) →
         f.recArg = some ra → ra.binders = []
+  /-- A field's view is its declared domain with as many annotations stripped as the constructor's
+  type has on its binder. -/
+  views : ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+    f.type = D.stripN ((ct.type.domStrips.drop params.length)[k]?.getD 0)
 
 /-- What the kernel opened for a constructor's minor premise: its fields `fvs`, inductive
 hypotheses `vfvs` and the minor premise itself, the small context `Mf` of the parameters and the
@@ -2661,7 +2697,9 @@ theorem ctorMinor.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} 
       comp := ⟨Mmin, ρmin, hEmin, hWmin, by simpa using hMminT, ⟨Nat.zero_le _, rfl⟩⟩
       free := fun hz => ⟨hz, nofun, hS.MpB⟩
       start := fun _ => rfl
-      first := fun _ _ _ _ _ _ _ h => absurd h (by simp) }
+      first := fun _ _ _ _ _ _ _ h => absurd h (by simp)
+      strips := by simp
+      views := by simp }
   case tr =>
     rcases Nat.eq_zero_or_pos params.length with h0 | h0
     · refine .inr ⟨by simp [h0], ?_⟩
@@ -3004,7 +3042,10 @@ theorem ctorMinor.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} 
       exact this
   have htake : ∀ k, (c.fields.take k).map (·.type) = ftys.take k := fun k => by
     rw [List.map_take, hU.types]
-  refine H _ _ _ c _ _ _ _ _ ⟨hcn', hcty, hcidx, by rw [hcl, hfD], ?_, ?_, ?_, ?_, hU.ctor, ?_, ?_⟩
+  refine H _ _ _ c _ _ _ _ _ ⟨hcn', hcty, hcidx, by rw [hcl, hfD], ?_, ?_, ?_, ?_, hU.ctor, ?_, ?_,
+    fun k D f hD hk => by
+      obtain ⟨hkl, hft, -⟩ := hfget k f hk
+      rw [hft]; exact hI.views k D _ hD (List.getElem?_eq_getElem hkl)⟩
     (hsubP.skip _ _) (hEm2.push htrM hTM) (hP _ _ _ _ _ _ _ hP2) ⟨_, hP2, rfl⟩ ?kd
   · intro k D f hD hk
     obtain ⟨hkl, hft, -⟩ := hfget k f hk

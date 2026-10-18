@@ -256,9 +256,11 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
       FieldsElab c.venv d d.params.reverse 0 Ds cv.fields ∧
       (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f →
         D.StripsToBy (· ∉ types.map (·.name)) f.type) ∧
-      ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f → ∀ u,
+      (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f → ∀ u,
         c.venv.HasType c.lparams.length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
-        (u ≈ .zero ↔ f.level ≈ .zero) := by
+        (u ≈ .zero ↔ f.level ≈ .zero)) ∧
+      ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f →
+        f.type = D.stripN ((ct.type.domStrips.drop params.length)[k]?.getD 0) := by
   obtain ⟨C', ps, Ds, idx, ⟨htr, -, hsh, -, htele⟩, hout⟩ := H
   have henv : c.venv.WF := c.envAt.tr.wf
   have hnm : d.names = d₀.names := by
@@ -269,7 +271,7 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
   refine ⟨hout.name, hout.type ▸ htr, ps, Ds, htele.length_eq, hout.len.symm,
     by rw [hout.type, hout.indices]; exact hsh, ?_, fun k D f hD hf =>
       (hout.within k D f hD hf).mono fun n ⟨v, hv⟩ hn => by
-        obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn; exact hnotDefn t ht v hv, ?_⟩
+        obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn; exact hnotDefn t ht v hv, ?_, hout.views⟩
   · rw [hdp]
     refine FieldsElab.of_getElem (by rw [hout.len]) fun k D f hD hf =>
       ⟨hdu ▸ hout.defeq k D f hD hf, fun _ h => (hout.within k D f hD hf).toStripsTo.skips h,
@@ -1644,9 +1646,10 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
         obtain rfl := Option.some.inj ((List.getElem?_eq_getElem hjc).symm.trans hcs)
         obtain rfl : types[j] = t := Option.some.inj ((List.getElem?_eq_getElem hj).symm.trans h1)
         refine ⟨rfl, Lean4Lean.List.Forall₂.imp (fun ct cv hcd => ?_) (hcss j hj hjc)⟩
-        obtain ⟨h1, h2, ps, Ds, h3, h4, h5, h6, h8, h7⟩ := hcd.elab hPT rfl rfl htys
+        obtain ⟨h1, h2, ps, Ds, h3, h4, h5, h6, h8, h7, h9⟩ := hcd.elab hPT rfl rfl htys
           (hdlen.trans hd₀len.symm) hnotDefnC
-        refine ⟨h1, h2, ps, Ds, by rw [h3, hT.nparams], h4, ?_, h6, h8, h7⟩
+        refine ⟨h1, h2, ps, Ds, by rw [h3, hT.nparams], h4, ?_, h6, h8, h7,
+          by rw [← hT.nparams]; exact h9⟩
         rw [h5, hT.nparams] }
     first := fun hn0 => List.forall₂_of_getElem? hdlen.symm fun j t T h1 h2 => by
       obtain ⟨t', T', td, nidx, cs, h1', -, -, -, hcs, rfl, -⟩ := hdty j T h2

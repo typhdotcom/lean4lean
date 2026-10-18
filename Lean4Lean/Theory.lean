@@ -12,6 +12,8 @@ import Lean4Lean.Theory.Typing.LogRel.SoundEnv
 import Lean4Lean.Theory.Typing.LogRel.SoundLemmas
 import Lean4Lean.Theory.Typing.LogRel.ProjSound
 import Lean4Lean.Theory.Typing.LogRel.Realize
+import Lean4Lean.Theory.Typing.LogRel.ProjEta
+import Lean4Lean.Theory.Typing.LogRel.SoundWF
 import Lean4Lean.Theory.Typing.LogRel.Inv
 import Lean4Lean.Theory.Typing.LogRel.RuleBodies
 import Lean4Lean.Theory.Typing.Telescope
@@ -28,3 +30,5 @@ import Lean4Lean.Theory.Typing.NestedEnv
 import Lean4Lean.Theory.Typing.NestedWF
 import Lean4Lean.Theory.Typing.NestedAux
 import Lean4Lean.Theory.Typing.LogRel.Shape
+import Lean4Lean.Theory.Typing.LogRel.BlockSound
+import Lean4Lean.Theory.Typing.LogRel.QuotSound

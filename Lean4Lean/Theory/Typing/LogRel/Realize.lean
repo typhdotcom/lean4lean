@@ -208,7 +208,8 @@ telescopes are types, is typed at it, and the inductive type shape is a type. -/
 theorem WShape.ctor'_typed {N : Nat} {h : IndHead} {pre ctys : List (WShape (N+1))} {c : Name}
     {i : Nat} {cty : WShape (N+1)} {l : List (WShape (N+1))}
     (hpre : pre.length = h.nargs) (hi : h.ctors.idxOf? c = some i) (hc : ctys[i]? = some cty)
-    (hcty : ∀ x ∈ ctys, x.HasType .type) (hfit : WShape.FitsPi cty l) :
+    (hcty : ∀ x ∈ ctys, x.HasType .type) (hfit : WShape.FitsPi cty l)
+    (har : h.arityOK c l.length = true) :
     (WShape.ctor' c l).HasType (.indTy true h (pre ++ ctys)) ∧
       (WShape.indTy true h (pre ++ ctys)).HasType (.sort true) := by
   have hok := WShape.ctysOK_of hpre hcty
@@ -218,7 +219,7 @@ theorem WShape.ctor'_typed {N : Nat} {h : IndHead} {pre ctys : List (WShape (N+1
   have e : ((pre ++ ctys).map (·.1)).getD (h.nargs + i) Shape.bot = cty.1 := by
     rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_append_right (by omega),
       hpre, Nat.add_sub_cancel_left, hc]; rfl
-  simp only [e, Shape.ctorFits]
+  simp only [e, Shape.ctorFits, List.length_map, har, Bool.and_true]
   exact WShape.fitsPi_iff.2 hfit
 
 
@@ -263,7 +264,7 @@ theorem typeSpine (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env) (h
     (hcT : env.constants s = some ⟨d.uvars, T.type⟩) {ls : List VLevel} {U : Nat}
     (hls : ∀ l ∈ ls, l.WF U) {Γ As I : List VExpr} {T' : VExpr}
     (hn : (As ++ I).length = d.params.length + T.indices.length)
-    (H : StrongSound env U Γ ((VExpr.const s ls).appN (As ++ I)) T') :
+    (H : MSpine env Γ ((VExpr.const s ls).appN (As ++ I)) T') :
     TeleSubst env Γ ((d.params ++ T.indices).map (·.instL ls)) (As ++ I) ∧
       SoundEq env Γ T' (.sort (d.level.inst ls)) := by
   have hQT : envT.IsTele U [] ((d.params ++ T.indices).map (·.instL ls)) := by
@@ -273,7 +274,7 @@ theorem typeSpine (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env) (h
   rw [VEnv.foralls_instL'] at hdef'
   have hRcl := (hdef'.closedN' hO.closed trivial).2.1
   have hTcl : (T.type.instL ls).ClosedN := (hdef'.closedN' hO.closed trivial).1
-  have := StrongSound.spine hM
+  have := MSpine.spine hM
     (Qs := (d.params ++ T.indices).map (·.instL ls)) (R := .sort (d.level.inst ls))
     (fun i A hA => ⟨by simpa using VEnv.IsTele.closedN hO hQT trivial i A hA,
       by simpa using IsTele.soundAt hM hX hle hO hQT trivial i A hA⟩)
@@ -346,8 +347,8 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
     {Γ₀ Γ : List VExpr} {ρ : Valuation} (W : Valuation.Fits env Γ₀ Γ ρ)
     {As fs I : List VExpr} {u : VLevel} (hAs : As.length = d.params.length)
     (hfs : fs.length = c.fields.length) (hI : I.length = T.indices.length)
-    (hTS : StrongSound env U Γ ((VExpr.const s ls).appN (As ++ I)) (.sort u))
-    (hCS : StrongSound env U Γ ((VExpr.const c.name ls).appN (As ++ fs))
+    (hTS : MSpine env Γ ((VExpr.const s ls).appN (As ++ I)) (.sort u))
+    (hCS : MSpine env Γ ((VExpr.const c.name ls).appN (As ++ fs))
       ((VExpr.const s ls).appN (As ++ I)))
     {ys : List TShape} (hys : List.Forall₂ (fun y x => LE_Interp env ρ y x) ys (As ++ fs)) :
     ∃ N, ∃ rf : List (WShape N), List.Forall₂ (fun y x => y ≤ x.T) (ys.drop d.params.length) rf ∧
@@ -372,7 +373,7 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
     simpa using this.instL hls (Γ := [])
   have hn : (As ++ fs).length = ((Ps ++ Ds).map (·.instL ls)).length := by
     simp [hAs, hfs, hPs, hDs]
-  have hTSc := (StrongSound.spine hM
+  have hTSc := (MSpine.spine hM
     (Qs := (Ps ++ Ds).map (·.instL ls)) (R := (T.typeApp (VLevel.params d.uvars)
         (VExpr.bvars d.params.length c.fields.length) c.indices).instL ls)
     (fun i A hA => ⟨by simpa using VEnv.IsTele.closedN hO hQc trivial i A hA,
@@ -426,7 +427,7 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
   let ctyK : WShape (K+1) := cty.2.lift (K+1)
   let ctys : List (WShape (K+1)) :=
     (List.range T.ctors.length).map fun j => if j = i then ctyK else .bot
-  let hd : IndHead := ⟨s, d.params.length + T.indices.length, T.ctors.map (·.name)⟩
+  let hd : IndHead := ⟨s, d.params.length + T.indices.length, T.ctors.map (·.name), T.ctors.map (·.fields.length)⟩
   have hil : i < T.ctors.length := (List.getElem?_eq_some_iff.1 hci).1
   have hplen : params.length = np := by
     simp [params, Lp, hL2]; omega
@@ -444,8 +445,11 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
       rw [hLf] at hx; exact List.mem_of_mem_drop hx))
     show WShape.FitsPi ctyK ((Lf.map (·.2)).map lft)
     rw [List.map_map]; exact this
+  have har : hd.arityOK c.name rfN.length = true := by
+    have : rfN.length = c.fields.length := by simp [rfN, Lf, hL2, hPs, hDs]; omega
+    simp [IndHead.arityOK, hd, hidx, this, hci]
   obtain ⟨hctorTy, hindTy⟩ := WShape.ctor'_typed (N := K) (h := hd) (pre := params ++ idx)
-    (by simp [hd, hplen, hidxl, np]) hidx hctysi hctysT hfit
+    (by simp [hd, hplen, hidxl, np]) hidx hctysi hctysT hfit har
   -- the arguments' shapes interpret them
   have hPa : List.Forall₂ (fun x A => LE_Interp env ρ (WShape.T x) A) params As := by
     have h1 := List.forall₂_take' (k := np) hP1
@@ -566,7 +570,7 @@ theorem projIota_ge (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
       · subst j; cases ha.symm.trans hx; exact hm
       · exact LE_Interp.bot (n := 0)
   obtain ⟨N, rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hs hT (i := 0) (by simp [hcs])
-    (by simp [hcs]) hTW hcW hPT hcT hcC hls hP W hAs hfs hI hTS hCS hys
+    (by simp [hcs]) hTW hcW hPT hcT hcC hls hP W hAs hfs hI hTS.mspine' hCS.mspine' hys
   rw [List.drop_left' (by simp [hAs])] at hrf
   have hk : k < fs.length := (List.getElem?_eq_some_iff.1 ha).1
   obtain ⟨y, hy⟩ : ∃ y, rf[k]? = some y :=

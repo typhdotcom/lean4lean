@@ -1884,7 +1884,7 @@ theorem isLargeEliminator.WF {c₀ c : VContext} {nparams : Nat} {types : List I
         rw [hd.uvars, hd.params, hU₀]; exact hT.params_tele.mono hle
       obtain ⟨-, har⟩ := ctor_WF henv hd.uvars hpar hps hTn (hd.nested T (by simp [hT1])) rfl
         (hC d hd 0 t rfl ct (by simp [hct]) _ (hd.indices 0 T (by simp [hT1]))) hrel
-      obtain ⟨-, htr, ps, Ds, hpsl, hDs, hty, -, -, hlvl⟩ := hrel
+      obtain ⟨-, htr, ps, Ds, hpsl, hDs, hty, -, -, hlvl, -⟩ := hrel
       refine .inr ⟨T, hT1, hd.aux, .inr ⟨c, hc1, ?_⟩⟩
       have hsize : stats.params.size = nparams := params_size hT
       have key : AddInductive.WF c' (do

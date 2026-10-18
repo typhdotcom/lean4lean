@@ -326,24 +326,48 @@ theorem LE_Interp.spine_inv (hR : ConstRoles env) :
       exact TShape.app_mono (hle.trans hle_lam) (TShape.lift_eqv hk_n).2
     · have := harity r _ hA; rw [hargs.length_eq] at this; simp at this; omega
 
+variable (env) in
+/-- An application spine of a constant typed in the model: the constant's type and each
+application's argument, at the model's level only. A `StrongSound` spine is one
+(`StrongSound.mspine`); so is a spine typed along its constant's telescope (`MSpine.ofTele`). -/
+inductive MSpine (Γ : List VExpr) : VExpr → VExpr → Prop where
+  | const : env.constants c = some ci → ls.length = ci.uvars →
+    SoundEq env Γ (ci.type.instL ls) T → MSpine Γ (.const c ls) T
+  | app : SoundTy env Γ A (.sort u) → MSpine Γ f (.forallE A B) → SoundTy env Γ a A →
+    SoundEq env Γ (B.inst a) T → MSpine Γ (.app f a) T
+
+theorem StrongSound.mspine : ∀ {rAs : List VExpr} {T : VExpr},
+    StrongSound env U Γ (spine c ls rAs) T → MSpine env Γ (spine c ls rAs) T
+  | [], _, H => by
+    obtain ⟨-, -, core, heq⟩ := H
+    cases core with | const h1 h2 => exact .const h1 h2 heq
+  | _ :: _, _, H => by
+    obtain ⟨-, -, core, heq⟩ := H
+    cases core with | app h1 h2 h3 => exact .app h1 (StrongSound.mspine h2) h3.sound heq
+
+theorem MSpine.retype (H : MSpine env Γ M T) (h : SoundEq env Γ T T') : MSpine env Γ M T' := by
+  cases H with
+  | const h1 h2 h3 => exact .const h1 h2 (h3.trans h)
+  | app h1 h2 h3 h4 => exact .app h1 h2 h3 (h4.trans h)
+
 /-- A constant's `Const` derivation at shapes of its arguments interprets the application spine,
 at a shape typed at an interpretation of the spine's type. -/
 theorem LE_Interp.apps_realize (hM : ModelEnv env) (W : Valuation.Fits env Γ₀ Γ ρ)
     (mty : m'.HasType a) (ha : LE_Interp env ρ a T)
-    (hTy_lhs : StrongSound env U Γ (spine c ls rAs) T)
+    (hTy_lhs : MSpine env Γ (spine c ls rAs) T)
     (hargs : List.Forall₂ (fun (x : WShape n) A => LE_Interp env ρ x.T A) rargs rAs)
     (hC : Const env c ls (LE_Interp env ρ) rargs m') :
     LE_Interp env ρ m' (spine c ls rAs) := by
   generalize h_len : rargs.length = k
   induction k generalizing m' a T rAs n with | succ k ih => ?_ | zero =>
     let .nil := hargs
-    have ⟨_, _, hTy, hType⟩ := hTy_lhs; have .const h1 h2 := hTy
+    have .const h1 h2 hType := hTy_lhs
     exact .const h1 h2 .rfl mty ((hType W).2 ha) hC fun _ _ => id
   let .cons (a := arg) (b := A) (l₁ := rest_r) (l₂ := rest_s) h_arg h_rest := hargs
   cases h_len
-  have ⟨_, _, hTy, hC_inst⟩ := hTy_lhs; have .app _ hMf hMa := hTy
+  have .app _ hMf hMa hC_inst := hTy_lhs
   obtain ⟨y, hya, hy⟩ := (LE_Interp.inst hM).1 ((hC_inst W).2 ha)
-  obtain ⟨n', arg', aT, _, jle, h_LE, ha', harg'⟩ := (hMa.sound W (h_arg.join' hM hy)).out
+  obtain ⟨n', arg', aT, _, jle, h_LE, ha', harg'⟩ := (hMa W (h_arg.join' hM hy)).out
   let k := max (max n m'.1) (max n' a.1)
   have hk := Nat.max_le.1 (Nat.le_refl k); simp only [Nat.max_le] at hk
   let arg'' := arg'.lift k; let m'' := m'.2.lift k

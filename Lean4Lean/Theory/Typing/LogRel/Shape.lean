@@ -35,14 +35,19 @@ inductive Shape0 : Type where
   | sort (rel : Bool) : Shape0
 
 /-- What an inductive type's shape records besides argument shapes: the type's name, how many
-of the argument shapes are the type's arguments, and its constructors' names. The argument
-shapes after the type's arguments are, constructor by constructor, the shape of the pi type of
-its fields at those arguments. -/
+of the argument shapes are the type's arguments, and its constructors' names and numbers of
+fields. The argument shapes after the type's arguments are, constructor by constructor, the shape
+of the pi type of its fields at those arguments. -/
 structure IndHead where
   name : Name
   nargs : Nat
   ctors : List Name
+  arities : List Nat
   deriving DecidableEq
+
+/-- A constructor shape of `c` with `k` fields has the constructor's number of fields. -/
+def IndHead.arityOK (h : IndHead) (c : Name) (k : Nat) : Bool :=
+  (h.ctors.idxOf? c).bind (h.arities[·]?) == some k
 
 inductive ShapeS (Shape : Type) : Type where
   | bot : ShapeS Shape
@@ -2523,11 +2528,13 @@ def Shape.ctorFits : ∀ {n}, (Shape n → Shape n → Bool) → Shape n → Lis
 def Shape.ctysOK (hT : Shape n → Shape n → Bool) (h : IndHead) (as : List (Shape n)) : Bool :=
   (as.drop h.nargs).all (hT · .type)
 
-/-- A constructor shape `c l` fits an inductive type shape: `c` is one of its constructors and
-the fields fit its field telescope. -/
+/-- A constructor shape `c l` fits an inductive type shape: `c` is one of its constructors, the
+fields fit its field telescope, and there are as many as the constructor has. -/
 def Shape.ctorOK (hT : Shape n → Shape n → Bool) (h : IndHead) (as : List (Shape n)) (c : Name)
     (l : List (Shape n)) : Bool :=
-  ctysOK hT h as && match ctorTy h as c with | some cty => ctorFits hT cty l | none => false
+  ctysOK hT h as && match ctorTy h as c with
+    | some cty => ctorFits hT cty l && h.arityOK c l.length
+    | none => false
 
 def Shape.hasType : ∀ {n}, Shape n → Shape n → Bool
   | _+1, .bot, .forallE a b => hasType.core hasType b a fun _ => .type
@@ -2917,9 +2924,10 @@ theorem Shape.ctorOK_mono
     simp only [ctorTy, Option.map_eq_some_iff] at e
     obtain ⟨i, hi, rfl⟩ := e
     have e' : ctorTy h as' c = some (as'.getD (h.nargs + i) .bot) := by simp [ctorTy, hi]
-    rw [e']
-    exact ctorFits_mono ih (wd _ was _) (wd _ was' _) (Shape.forall₂_getD Shape.bot_le hle _)
-      (ctorTy_type H' e') hl H
+    rw [e']; simp only at H ⊢
+    rw [Bool.and_eq_true_iff] at H ⊢
+    exact ⟨ctorFits_mono ih (wd _ was _) (wd _ was' _) (Shape.forall₂_getD Shape.bot_le hle _)
+      (ctorTy_type H' e') hl H.1, H.2⟩
 
 theorem List.forall₂_drop' {R : α → β → Prop} :
     ∀ {l : List α} {l' : List β} {k : Nat}, l.Forall₂ R l' → (l.drop k).Forall₂ R (l'.drop k)
@@ -3012,6 +3020,10 @@ theorem Shape.ctorOK_mono_l
     have wc : cty.WF := by
       simp only [ctorTy, Option.map_eq_some_iff] at e; obtain ⟨i, -, rfl⟩ := e
       exact getD_wf was _
+    rw [Bool.and_eq_true_iff] at H ⊢
+    rw [← h1.length_eq]
+    refine ⟨?_, H.2⟩
+    replace H := H.1
     cases n with
     | zero => cases h1 <;> cases h2 <;> simp_all [ctorFits]
     | succ k =>
@@ -3073,6 +3085,9 @@ theorem Shape.ctorOK_join
     have wc : cty.WF := by
       simp only [ctorTy, Option.map_eq_some_iff] at e; obtain ⟨i, -, rfl⟩ := e
       exact getD_wf was _
+    rw [Bool.and_eq_true_iff] at H₁ H₂ ⊢
+    refine ⟨?_, by rw [List.length_zipWith, hc.length_eq, Nat.min_self]; exact H₂.2⟩
+    replace H₁ := H₁.1; replace H₂ := H₂.1
     cases n with
     | zero => cases hc <;> simp_all [ctorFits]
     | succ k =>

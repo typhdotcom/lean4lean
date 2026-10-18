@@ -171,7 +171,7 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
     (∀ (i : Nat) (c' : VConstructor) (cty : WShape n), T.ctors[i]? = some c' → ctys[i]? = some cty →
       ∃ h, R h (c'.type.instL ls) ∧
       PiAppS h ((rargs.reverse.take d.params.length).map (·.T)) cty.T) →
-    m ≤ (WShape.indTy (n := n) (d.rel ls) ⟨c, rargs.length, T.ctors.map (·.name)⟩
+    m ≤ (WShape.indTy (n := n) (d.rel ls) ⟨c, rargs.length, T.ctors.map (·.name), T.ctors.map (·.fields.length)⟩
       (rargs.reverse ++ ctys)).T → Const rargs m
   /-- A constructor applied to its parameters and fields, of a type that is not a proposition: the
   shape of its fields. -/
@@ -206,7 +206,7 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
     env.defeqs quotDefEq → c = ``Quot → ls = [u] → rargs.length = 2 →
     env.constants ``Quot.mk = some ci → R h (ci.type.instL ls) →
     PiAppS h (rargs.reverse.map (·.T)) cty.T →
-    m ≤ (WShape.indTy (n := n) (levelRel u) ⟨c, 2, [``Quot.mk]⟩ (rargs.reverse ++ [cty])).T →
+    m ≤ (WShape.indTy (n := n) (levelRel u) ⟨c, 2, [``Quot.mk], [1]⟩ (rargs.reverse ++ [cty])).T →
     Const rargs m
   /-- `Quot.mk`, where the quotient is not a proposition. -/
   | quotMk {a r α : WShape n} : env.defeqs quotDefEq → c = ``Quot.mk → ls = [u] →
@@ -1489,6 +1489,7 @@ structure ModelEnv (env : VEnv) : Prop where
   roles : ConstRoles env
   stepUniq : StepUniq env
   struct : ∀ c, IsStruct c = true → env.IsEtaCtor c
+  structOf : ∀ c, env.IsEtaCtor c → IsStruct c = true
   etaCtor : EtaCtorUniq env
   closed : ClosedRules env
 
@@ -2042,6 +2043,7 @@ theorem _root_.Lean4Lean.VEnv.WF.modelEnv {env : VEnv} (henv : env.WF) :
   { roles := henv.constRoles
     stepUniq := henv.stepUniq
     struct := fun _ h => (env.shapeEnv_isStruct).1 h
+    structOf := fun _ h => (env.shapeEnv_isStruct).2 h
     etaCtor := henv.etaCtorUniq
     closed := ClosedRules.of_ordered henv.ordered henv.stepUniq fun {s d t T c} hs hT hc => by
       obtain ⟨_, envT, hwf₀, hd, hT₁, -⟩ := henv.inducts hs
