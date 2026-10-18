@@ -15,11 +15,7 @@ The rules are closed equations over the recursor's binders, the way `VDefEq` sta
 
 The kernel checks positivity, universe levels and a field's recursive view in separate passes
 over the constructor types, so `VInductDecl.WF` states each separately and up to definitional
-equality: each is then a consequence of the pass that checks it. Each is also stated in the
-environment that pass runs in. The constructors are checked against the block's types alone, so
-their types, universe bounds and positivity are stated there. The recursor is built with the
-constructors added as axioms too, so the index telescopes and the recursive views it reads off by
-normalizing are stated in that environment.
+equality: each is then a consequence of the pass that checks it.
 
 Two of the kernel's inductive reductions need no rule of their own here:
 * K-like reduction (`toCtorWhenK`) replaces a proof of a subsingleton by its constructor; proof
@@ -320,19 +316,14 @@ inductive FieldsWF (env : VEnv) : List VExpr → Nat → List VExpr → List VFi
     f.level.WF d.uvars →
     (∃ u, env.HasType d.uvars Γ f.type (.sort u) ∧ (d.level ≈ .zero ∨ u ≤ d.level)) →
     (d.isUnsafe = false → d.Positive env Γ k f.type) →
+    d.RecArgWF env Γ k f →
     FieldsWF env (f.type :: Γ) (k + 1) Ds fs →
     FieldsWF env Γ k (D :: Ds) (f :: fs)
 
-/-- The recursive views of constructor `c`'s fields, each under the parameters and the fields
-before it. -/
-def RecArgsWF (env : VEnv) (c : VConstructor) : Prop :=
-  ∀ k f, c.fields[k]? = some f →
-    d.RecArgWF env (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse) k f
-
 end VInductDecl
 
-/-- A type former's index telescope, read off its type as the recursor reads it: in the
-environment the recursor is built in, with the block's types and constructors. -/
+/-- A type former's index telescope, read off its type as the recursor reads it: in an environment
+with the block's types, which the kernel normalizes in. -/
 structure VInductiveType.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType) : Prop where
   indices : env.IsTele d.uvars d.params.reverse T.indices
   defeq : env.IsDefEqU d.uvars [] T.type (.foralls (d.params ++ T.indices) (.sort d.level))
@@ -355,10 +346,7 @@ structure VInductDecl.WF (env : VEnv) (d : VInductDecl) : Prop where
   params : env.IsTele d.uvars [] d.params
   types : ∀ T ∈ d.types, env.IsType d.uvars [] T.type
   ctors : ∀ env', env.addConstList d.typeConsts = some env' →
-    ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.WF env' d T
-  normalized : ∀ env' env'', env.addConstList d.typeConsts = some env' →
-    env'.addConstList d.ctorConsts = some env'' →
-    ∀ T ∈ d.types, T.WF env'' d ∧ ∀ c ∈ T.ctors, d.RecArgsWF env'' c
+    ∀ T ∈ d.types, T.WF env' d ∧ ∀ c ∈ T.ctors, c.WF env' d T
   isRec : d.isRec = false → ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ f ∈ c.fields, f.recArg = none
   largeElim : d.LargeElim → d.LargeElimOK
 

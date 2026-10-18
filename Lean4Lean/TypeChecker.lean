@@ -242,6 +242,7 @@ def inferProj (typeName : Name) (idx : Nat) (struct structType : Expr) : RecM Ex
   let [c] := I_val.ctors | fail
   if args.size != I_val.numParams + I_val.numIndices then fail
   let c_info ← env.get c
+  if c_info.levelParams.length != I_levels.length then fail
   let mut r := c_info.instantiateTypeLevelParams I_levels
   for i in [:I_val.numParams] do
     let .forallE _ _ b _ ← whnf r | fail

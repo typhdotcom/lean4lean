@@ -28,13 +28,12 @@ structure MinorInfo where
   fields : Array Expr
   ihs : Array IHInfo
 
-/-- A type's motive, with its type, and its minor premises. The recursor's indices and major
-premise are the motive's type's binders. -/
 structure RecInfo where
   motive : Expr
-  motiveType : Expr
   minors : Array Expr
   minorInfos : Array MinorInfo
+  indices : Array Expr
+  major : Expr
   deriving Inhabited
 
 structure InductiveStats where
@@ -346,21 +345,18 @@ variable (stats : InductiveStats) (indTypes : Array InductiveType) (elimLevel : 
 def loopInd1 (dIdx : Nat) (recInfos : Array RecInfo) (k : Array RecInfo → M α) : M α := do
   if _h : dIdx < indTypes.size then
     let ctx ← readThe Context
-    -- The indices and major premise are only in scope for the motive's type, so that the
-    -- motives follow the parameters directly in the local context, as in the recursor's type.
-    let motiveTy ← loopArgs1 stats (← whnf indTypes[dIdx].type) 0 #[] ctx.fuel.inductiveFuel
+    loopArgs1 stats (← whnf indTypes[dIdx].type) 0 #[] ctx.fuel.inductiveFuel
       fun r nparams indices => do
-      unless r.isSort && nparams == stats.params.size &&
-          some indices.size == stats.nindices[dIdx]? do
-        throw <| .other "invalid inductive datatype declaration, its type changed shape"
-      let tTy := mkAppN (mkAppN stats.indConsts[dIdx]! stats.params) indices
-      withLocalDecl `t .default tTy.consumeTypeAnnotations fun major => do
-      let lctx ← getLCtx
-      return lctx.mkForall indices <| lctx.mkForall #[major] <| .sort elimLevel
-    let motiveType := motiveTy.consumeTypeAnnotations
+    unless r.isSort && nparams == stats.params.size &&
+        some indices.size == stats.nindices[dIdx]? do
+      throw <| .other "invalid inductive datatype declaration, its type changed shape"
+    let tTy := mkAppN (mkAppN stats.indConsts[dIdx]! stats.params) indices
+    withLocalDecl `t .default tTy.consumeTypeAnnotations fun major => do
+    let lctx ← getLCtx
+    let motiveTy := lctx.mkForall indices <| lctx.mkForall #[major] <| .sort elimLevel
     let name := if indTypes.size > 1 then (`motive).appendIndexAfter (dIdx+1) else `motive
-    withLocalDecl name .default motiveType fun motive => do
-    loopInd1 (dIdx + 1) (recInfos.push { motive, motiveType, minors := #[], minorInfos := #[] }) k
+    withLocalDecl name .default motiveTy.consumeTypeAnnotations fun motive => do
+    loopInd1 (dIdx + 1) (recInfos.push { motive, minors := #[], minorInfos := #[], indices, major }) k
   else
     k recInfos
 termination_by indTypes.size - dIdx
@@ -378,8 +374,10 @@ where
       else
         withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
         let bu := bu.push arg
-        -- The `hasIndOcc` test never decides: `isRecArg` only normalizes, and no definition in
-        -- the environment can mention the block's fresh names.
+        -- A field is recursive only if its declared domain mentions the block, as `isRec` has it.
+        -- Normalizing mentions only what the domain and the environment do, and names the
+        -- kernel builds itself (literal expansions, `_inhabitedExprDummy` on a panic), which a
+        -- block may take.
         let u := if hasIndOcc stats.indConsts dom && (← isRecArg stats dom).isSome then u.push arg
           else u
         loop (body.instantiate1 arg) (i + 1) bu u fuel
@@ -457,19 +455,6 @@ def getRecLevels (elimLevel : Level) (levels : List Level) : List Level :=
 def getRecLevelParams (elimLevel : Level) (lparams : List Name) : List Name :=
   if let .param u := elimLevel then u :: lparams else lparams
 
-/-- The level parameters `mkRecInfos` runs at: the block's, then the motives' universe, if it is
-a new one. Expressions name their level parameters, so the order is the block's own business; the
-recursor puts the motives' universe first (`getRecLevelParams`). -/
-def mkRecInfosLevelParams (elimLevel : Level) (lparams : List Name) : List Name :=
-  if let .param u := elimLevel then lparams ++ [u] else lparams
-
-/-- `Π indices, Π major, motive indices major`, from the motive's type
-`Π indices, Π major, Sort u`, with `n` binders already passed. -/
-def recTypeTail (motive : Expr) : Expr → (n : Nat := 0) → Expr
-  | .forallE name dom body bi, n => .forallE name dom (recTypeTail motive body (n + 1)) bi
-  | _, n => .app (mkAppN motive ((List.range (n - 1)).reverse.map (.bvar <| · + 1)).toArray)
-    (.bvar 0)
-
 /-- The rules of the `dIdx`th recursor, from the fields and inductive hypotheses `mkRecInfos`
 recorded for each of its minor premises, whose index in `minors` starts at `minorIdx`. -/
 def mkRecRules (indTypes : Array InductiveType) (elimLevel : Level) (stats : InductiveStats)
@@ -516,7 +501,9 @@ def declareRecursors (env : Environment) (lparams : List Name) (stats : Inductiv
       lctx.mkForall stats.params <|
       lctx.mkForall motives <|
       lctx.mkForall minors <|
-      recTypeTail info.motive info.motiveType
+      lctx.mkForall info.indices <|
+      lctx.mkForall #[info.major] <|
+      .app (mkAppN info.motive info.indices) info.major
     let rules ← mkRecRules indTypes elimLevel stats dIdx motives minors info
     let name := mkRecName indType.name
     env.checkName name allowPrimitive
@@ -568,7 +555,7 @@ def run (nparams : Nat) (types : List InductiveType) (numNested : Nat) : M Envir
   let k ← isKTarget stats indTypes
   withEnv (← declareCtorAxioms indTypes isUnsafe) do
   -- The motives may live in a universe `elimLevel` that is not one of the block's.
-  withReader (fun ctx => { ctx with lparams := mkRecInfosLevelParams elimLevel ctx.lparams }) do
+  withReader (fun ctx => { ctx with lparams := getRecLevelParams elimLevel ctx.lparams }) do
   mkRecInfos stats indTypes elimLevel
     (declareRecursors envCtors lparams stats indTypes elimLevel k)
 

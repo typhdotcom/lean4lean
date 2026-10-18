@@ -155,7 +155,7 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
   have henvC : envC.WF := VEnv.WF.addConstList henvAx (fun p hp => by
     obtain ⟨⟨j, c'⟩, hc', rfl⟩ := List.mem_map.1 hp
     obtain ⟨T, hT', hcT⟩ := VInductDecl.mem_ctors hc'
-    exact (hdecl.ctors _ hAxd T hT' c' hcT).type) hCadd
+    exact ((hdecl.ctors _ hAxd T hT').2 c' hcT).type) hCadd
   have henvR : envR.WF := VEnv.WF.addConstList henvC
     (VInductDecl.recConsts_WF c.envAt.tr.wf hdecl hAxd hCadd) hRadd
   have hrecs := hRtr envC envR (VEnv.addConstList_le hCadd) henvC

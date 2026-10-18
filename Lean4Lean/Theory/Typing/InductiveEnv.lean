@@ -114,12 +114,9 @@ theorem VInductDecl.FieldsWF.mono (H : decl.FieldsWF env Γ k Ds fs) :
     decl.FieldsWF env' Γ k Ds fs := by
   induction H with
   | nil => exact .nil
-  | cons h1 h2 h3 h4 h5 _ ih =>
+  | cons h1 h2 h3 h4 h5 h6 _ ih =>
     exact .cons (h1.mono henv) (h2.mono henv) h3
-      (let ⟨u, a, b⟩ := h4; ⟨u, a.mono henv, b⟩) (fun h => (h5 h).mono henv) ih
-
-theorem VInductDecl.RecArgsWF.mono (H : decl.RecArgsWF env c) : decl.RecArgsWF env' c :=
-  fun k f hf => (H k f hf).mono henv
+      (let ⟨u, a, b⟩ := h4; ⟨u, a.mono henv, b⟩) (fun h => (h5 h).mono henv) (h6.mono henv) ih
 
 theorem VConstructor.WF.mono (H : c.WF env decl T) : c.WF env' decl T :=
   have ⟨ps, Ds, h1, h2, h3⟩ := H.shape
@@ -133,14 +130,9 @@ theorem VInductDecl.WF.mono (H : decl.WF env) : decl.WF env' where
   level := H.level
   params := H.params.mono henv
   types T hT := (H.types T hT).mono henv
-  ctors _ hT' T hT c hc :=
+  ctors _ hT' T hT :=
     let ⟨_, h, hle⟩ := VEnv.addConstList_of_le henv hT'
-    (H.ctors _ h T hT c hc).mono hle
-  normalized _ _ hT' hC' T hT :=
-    let ⟨_, h, hle⟩ := VEnv.addConstList_of_le henv hT'
-    let ⟨_, h', hle'⟩ := VEnv.addConstList_of_le hle hC'
-    ⟨(H.normalized _ _ h h' T hT).1.mono hle',
-      fun c hc => ((H.normalized _ _ h h' T hT).2 c hc).mono hle'⟩
+    ⟨(H.ctors _ h T hT).1.mono hle, fun c hc => ((H.ctors _ h T hT).2 c hc).mono hle⟩
   isRec := H.isRec
   largeElim := H.largeElim
 

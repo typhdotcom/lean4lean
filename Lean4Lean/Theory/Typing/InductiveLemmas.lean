@@ -90,7 +90,7 @@ theorem addInduct_WF (henv : Ordered env) (hdecl : decl.WF env) (hgen : decl.Gen
   have oC := addConstList_ordered oT (fun p hp => by
     obtain ⟨⟨j, c⟩, hc, rfl⟩ := List.mem_map.1 hp
     obtain ⟨T, hT', hc⟩ := VInductDecl.mem_ctors hc
-    exact (hdecl.ctors envT hT T hT' c hc).type) hC
+    exact ((hdecl.ctors envT hT T hT').2 c hc).type) hC
   obtain ⟨hrec, hiota, heta⟩ := hgen envT envC envR hT hC hR
   have oR := addConstList_ordered oC hrec hR
   exact addDefEqList_ordered (addDefEqList_ordered oR hiota) heta

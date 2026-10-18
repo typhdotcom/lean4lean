@@ -102,7 +102,20 @@ theorem FieldsWF.tele {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs) 
     env.IsTele d.uvars Γ (fs.map (·.type)) ∧ env.TeleDefEq d.uvars Γ Ds (fs.map (·.type)) := by
   induction H with
   | nil => exact ⟨.nil, .nil⟩
-  | cons h1 h2 _ _ _ _ ih => exact ⟨.cons ⟨_, h2⟩ ih.1, .cons h1 ih.2⟩
+  | cons h1 h2 _ _ _ _ _ ih => exact ⟨.cons ⟨_, h2⟩ ih.1, .cons h1 ih.2⟩
+
+theorem FieldsWF.recArg {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs) :
+    ∀ i f, fs[i]? = some f →
+      d.RecArgWF env (((fs.take i).map (·.type)).reverse ++ Γ) (k + i) f := by
+  induction H with
+  | nil => simp
+  | cons _ _ _ _ _ h6 _ ih =>
+    intro i f hf
+    cases i with
+    | zero => simp at hf; subst hf; simpa using h6
+    | succ i =>
+      have := ih i f (by simpa using hf)
+      simpa [List.take_succ_cons, Nat.add_right_comm, Nat.add_assoc] using this
 
 end VInductDecl
 end Lean4Lean
@@ -153,13 +166,10 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
   have henvC : envC.WF := VEnv.WF.addConstList henvT (fun p hp => by
     obtain ⟨⟨j, c⟩, hc, rfl⟩ := List.mem_map.1 hp
     obtain ⟨T, hT', hc⟩ := VInductDecl.mem_ctors hc
-    exact (hdecl.ctors envT hT T hT' c hc).type) hC
+    exact ((hdecl.ctors envT hT T hT').2 c hc).type) hC
   have hle₁ : env ≤ envT := VEnv.addConstList_le hT
   have hle : envT ≤ envC := VEnv.addConstList_le hC
-  have hTW {t : Nat} {T : VInductiveType} (h : d.types[t]? = some T) :=
-    hdecl.ctors envT hT T (List.mem_of_getElem? h)
-  have hTN {t : Nat} {T : VInductiveType} (h : d.types[t]? = some T) :=
-    hdecl.normalized envT envC hT hC T (List.mem_of_getElem? h)
+  have hTW {t : Nat} {T : VInductiveType} (h : d.types[t]? = some T) := hdecl.ctors envT hT T (List.mem_of_getElem? h)
   have hcT {t : Nat} {T : VInductiveType} (h : d.types[t]? = some T) : envC.constants T.name = some ⟨d.uvars, T.type⟩ :=
     hle.constants <| VEnv.addConstList_constants_of_mem hT
       (List.mem_map.2 ⟨T, List.mem_of_getElem? h, rfl⟩)
@@ -173,7 +183,7 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
           (bvars d.params.length c.fields.length ++ c.indices))) := by
     obtain ⟨T', hT', hcm⟩ := mem_ctors_iff.1 hc
     cases hj.symm.trans hT'
-    have hcW := hTW hj c hcm
+    have hcW := (hTW hj).2 c hcm
     obtain ⟨ps, Ds, hty, hps, hfs⟩ := hcW.shape
     have ⟨htele, hdeq⟩ := FieldsWF.tele hfs
     refine ⟨htele, ?_⟩
@@ -189,11 +199,11 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
     wf := henvC
     params := by simpa using (hdecl.params.instL hls).mono (hle₁.trans hle)
     indices := fun h => by
-      simpa [List.map_reverse] using (hTN h).1.indices.instL hls
+      simpa [List.map_reverse] using ((hTW h).1.indices.instL hls).mono hle
     type := fun {t T} h => by
       have hc : envC.HasType U [] (.const T.name ls) (T.type.instL ls) :=
         .const (hcT h) hls (by rw [hlen])
-      have hdef := (hTN h).1.defeq.instL hls
+      have hdef := ((hTW h).1.defeq.instL hls).mono hle
       simp only [List.map_nil, instL_foralls, List.map_append, instL] at hdef
       exact hc.defeqU_r henvC trivial hdef
     fields := fun {j c} hc => by
@@ -203,7 +213,7 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
     ctor := fun {j c T} hc hj => by
       obtain ⟨T', hT', hcm⟩ := mem_ctors_iff.1 hc
       cases hj.symm.trans hT'
-      refine ⟨(hTW hj c hcm).indices.1, ?_⟩
+      refine ⟨((hTW hj).2 c hcm).indices.1, ?_⟩
       have hcc : envC.HasType U [] (.const c.name ls) (c.type.instL ls) :=
         .const (hcC hc) hls (by rw [hlen])
       have hdef := ((hshape hc hj).2.instL hls).mono hle
@@ -212,12 +222,13 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
       exact hcc.defeqU_r henvC trivial hdef
     recArg := fun {j c k f ra} hc hf hra => by
       obtain ⟨T', hT', hcm⟩ := mem_ctors_iff.1 hc
-      have := (hTN hT').2 c hcm k f hf
+      obtain ⟨ps, Ds, hty, hps, hfs⟩ := ((hTW hT').2 c hcm).shape
+      have := FieldsWF.recArg hfs k f hf
       unfold RecArgWF at this
       rw [hra] at this
       obtain ⟨T, h1, h2, h3⟩ := this
       refine ⟨T, h1, h2, ?_⟩
-      have := h3.instL hls
+      have := (h3.instL hls).mono hle
       simp only [List.map_append, List.map_reverse, List.map_map, Function.comp_def, List.map_take,
         instL_foralls, instL_appN, instL, VLevel.params_inst hlen, instL_bvars, Nat.zero_add] at this
       simpa [List.map_take, Function.comp_def] using this }

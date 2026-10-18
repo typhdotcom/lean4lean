@@ -79,7 +79,7 @@ theorem VInductDecl.FieldsWF.getElem {d : VInductDecl} {env : VEnv} {Γ k Ds fs}
       f.level.WF d.uvars := by
   induction H with
   | nil => simp
-  | cons _ h2 h3 _ _ _ ih =>
+  | cons _ h2 h3 _ _ _ _ ih =>
     intro i f hf
     cases i with
     | zero => simp at hf; subst hf; simpa using ⟨h2, h3⟩
@@ -153,7 +153,8 @@ theorem VInductDecl.etaFacts {decl : VInductDecl} {env envT envC envR : VEnv}
   obtain ⟨hTs, hSi, hSc⟩ := VInductDecl.structCtor?_eq hs
   have hSmem : S ∈ decl.types := by simp [hTs]
   have hcmem : c ∈ S.ctors := by simp [hSc]
-  have hcW := hdecl.ctors envT hT S hSmem c hcmem
+  have hTW := hdecl.ctors envT hT S hSmem
+  have hcW := hTW.2 c hcmem
   obtain ⟨ps, Ds, hty, hps, hfs⟩ := hcW.shape
   have hci : c.indices = [] := List.eq_nil_of_length_eq_zero (by rw [hcW.indices.1, hSi]; rfl)
   have hrf : c.recFields = [] := by

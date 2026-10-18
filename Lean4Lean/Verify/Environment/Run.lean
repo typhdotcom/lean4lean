@@ -1211,7 +1211,8 @@ theorem declareConstructors.WF {c : Context} {stats : InductiveStats}
 
 /-- How a constructor's fields `fs` elaborate its declared field domains `Ds`, under the
 parameters and `k` earlier fields `Γ`: each field's type is its domain with annotations stripped,
-in the sort `f.level`. -/
+in the sort `f.level`, and a recursive field's view is what the recursor builds its inductive
+hypothesis from. -/
 inductive FieldsElab (venv : VEnv) (d : VInductDecl) : List VExpr → Nat → List VExpr →
     List VField → Prop
   | nil : FieldsElab venv d Γ k [] []
@@ -1219,6 +1220,7 @@ inductive FieldsElab (venv : VEnv) (d : VInductDecl) : List VExpr → Nat → Li
     venv.IsDefEqU d.uvars Γ D f.type →
     venv.HasType d.uvars Γ f.type (.sort f.level) →
     f.level.WF d.uvars →
+    d.RecArgWF venv Γ k f →
     FieldsElab venv d (f.type :: Γ) (k + 1) Ds fs →
     FieldsElab venv d Γ k (D :: Ds) (f :: fs)
 
@@ -1255,12 +1257,12 @@ theorem FieldsWF.of_checked {venv : VEnv} {d : VInductDecl} (henv : venv.WF) {Γ
     (H2 : FieldsElab venv d Γ k Ds fs) : d.FieldsWF venv Γ k Ds fs := by
   induction H2 with
   | nil => exact .nil
-  | cons hD hf hl _ ih =>
+  | cons hD hf hl hra _ ih =>
     cases H1 with
     | cons hu hpos hrest =>
     obtain ⟨u, hDu, hb⟩ := hu
     have hDf := hD.of_l henv hΓ hDu
-    exact .cons hD hf hl ⟨u, hDf.hasType.2, hb⟩ (fun h => (hpos h).defeq henv hΓ hD)
+    exact .cons hD hf hl ⟨u, hDf.hasType.2, hb⟩ (fun h => (hpos h).defeq henv hΓ hD) hra
       (ih ⟨hΓ, _, hf⟩ (hrest.defeqDFC henv.ordered (.succ .zero hDf)))
 
 /-- A constructor that `checkConstructors` checked, as `mkRecInfos` elaborated it. -/
@@ -1300,7 +1302,9 @@ def recTypeExpr (lctx : LocalContext) (stats : InductiveStats) (recInfos : Array
   lctx.mkForall stats.params <|
   lctx.mkForall (recInfos.map (·.motive)) <|
   lctx.mkForall (recInfos.flatMap (·.minors)) <|
-  recTypeTail info.motive info.motiveType
+  lctx.mkForall info.indices <|
+  lctx.mkForall #[info.major] <|
+  .app (mkAppN info.motive info.indices) info.major
 
 /-- What `mkRecInfos` establishes, for the continuation it calls with `recInfos` in `c`: the
 block elaborates to a declaration `d`, whose recursors' types are what the local variables
@@ -1310,9 +1314,9 @@ structure RecInfosData (c₂ : VContext) (nparams : Nat) (types : List Inductive
     (isUnsafe : Bool) (elimLevel : Level) (recInfos : Array RecInfo) (c : VContext)
     (d : VInductDecl) : Prop where
   venv : c₂.venv ≤ c.venv
-  /-- The motives may be at a universe that is not the block's, so the continuation runs with it
-  added to the block's level parameters. -/
-  lparams : c.lparams = mkRecInfosLevelParams elimLevel c₂.lparams
+  /-- The motives may be at a universe that is not the block's, so the continuation runs at the
+  recursor's level parameters. -/
+  lparams : c.lparams = getRecLevelParams elimLevel c₂.lparams
   allowPrimitive : c.allowPrimitive = c₂.allowPrimitive
   safety : c.safety = c₂.safety
   size : recInfos.size = types.length
@@ -1327,10 +1331,7 @@ structure RecInfosData (c₂ : VContext) (nparams : Nat) (types : List Inductive
   isRecArgs : d.isRec = false → ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ f ∈ c.fields, f.recArg = none
   largeElim : d.LargeElim ↔ elimLevel ≠ .zero
   typeTr : List.Forall₂ (fun (T : VInductiveType) T' => T.type = T') d.types typeTr
-  /-- The index telescopes and recursive views `mkRecInfos` normalizes, in the environment it
-  runs in, with the constructors. -/
-  normalized : ∀ envC, c₂.venv.addConstList d.ctorConsts = some envC →
-    ∀ T ∈ d.types, T.WF envC d ∧ ∀ c ∈ T.ctors, d.RecArgsWF envC c
+  indices : ∀ T ∈ d.types, T.WF c₂.venv d
   nindices : ∀ (i : Nat) (T : VInductiveType), d.types[i]? = some T →
     stats.nindices[i]? = some T.indices.length
   /-- The recursor's type mentions the constructors, which the checking environment does not
@@ -1358,7 +1359,7 @@ theorem mkRecInfos.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List Ind
       RecInfosData c nparams types stats params level typeTr isUnsafe elimLevel recInfos c' d →
       WF c' (k recInfos) Q) :
     WF c (do withEnv (← declareCtorAxioms types.toArray isUnsafe) <|
-      withReader (fun ctx => { ctx with lparams := mkRecInfosLevelParams elimLevel ctx.lparams }) <|
+      withReader (fun ctx => { ctx with lparams := getRecLevelParams elimLevel ctx.lparams }) <|
       mkRecInfos stats types.toArray elimLevel k) Q :=
   sorry
 
@@ -1433,29 +1434,27 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     obtain ⟨t, ht, -⟩ := List.Forall₂.getElem?_r hEl.types hj
     obtain ⟨T', hT', e⟩ := List.Forall₂.getElem?_l hR.typeTr hj
     exact ⟨j, t, hj, ht, e ▸ hT'⟩
-  have hd : d.typeConsts = typeConstsOf c.lparams.length types typeTr := by
-    rw [VInductDecl.typeConsts, hU]
-    exact typeConsts_eq (X := fun _ _ => _) hEl.types hR.typeTr
-  refine ⟨fun h => hne ?_, ?_, ?_, fun T hTm => ?_, fun env' h T hTm => ?_,
-    fun env' envC h hCC => ?_, hR.isRecArgs, fun h => hLE (hR.largeElim.1 h)⟩
+  refine ⟨fun h => hne ?_, ?_, ?_, fun T hTm => ?_, fun env' h T hTm => ?_, hR.isRecArgs,
+    fun h => hLE (hR.largeElim.1 h)⟩
   · exact List.eq_nil_of_length_eq_zero ((Lean4Lean.List.Forall₂.length_eq hEl.types).trans (by rw [h]; rfl))
   · rw [hR.level, hU, hU₀]; exact .of_ofLevel hT.resultLevel
   · rw [hR.params, hU, hU₀, hV₀]; exact hT.params_tele
   · obtain ⟨j, t, -, ht, hT'⟩ := htypes T hTm
     obtain ⟨_, _, -, h, -⟩ := hT.types j t _ ht hT'
     rw [hU, hU₀, hV₀]; exact h
-  · obtain rfl : env' = venvAx := Option.some.inj (h.symm.trans (hd ▸ hAx))
+  · have hd : d.typeConsts = typeConstsOf c.lparams.length types typeTr := by
+      rw [VInductDecl.typeConsts, hU]
+      exact typeConsts_eq (X := fun _ _ => _) hEl.types hR.typeTr
+    obtain rfl : env' = venvAx := Option.some.inj (h.symm.trans (hd ▸ hAx))
     obtain ⟨j, t, hj, ht, -⟩ := htypes T hTm
     obtain ⟨t', ht', hname, hcs⟩ := List.Forall₂.getElem?_r hEl.types hj
     obtain rfl : t = t' := Option.some.inj (ht.symm.trans ht')
-    intro c hc
+    refine ⟨hc₂ ▸ hR.indices T hTm, fun c hc => ?_⟩
     obtain ⟨ct, hct, hrel⟩ := Lean4Lean.List.Forall₂.forall_exists_r hcs c hc
     have hps : env'.IsTele d.uvars [] d.params := by
       rw [hR.params, hU, hU₀]; exact (hV₀ ▸ hT.params_tele).mono hle
     exact (ctor_WF henvAx hU hlen hps hname rfl
       (hC hcompat j t ht ct hct _ (hR.nindices j T hj)) hrel).1
-  · obtain rfl : env' = venvAx := Option.some.inj (h.symm.trans (hd ▸ hAx))
-    exact hR.normalized envC (hc₂ ▸ hCC)
 
 theorem inductVals_length {lparams : List Name} {stats : InductiveStats} {np nn : Nat}
     {types : List InductiveType} {isUnsafe : Bool} (h : stats.nindices.size = types.length) :
