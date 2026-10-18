@@ -175,7 +175,7 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
   | lam {f : WShapeFun n} : (∀ x y, (x, y) ∈ f → Const (x :: rargs) y.T) →
     m ≤ WShape.T (n := n + 1) (.lam' f) → Const rargs m
   /-- A constant interpreted by given shapes. -/
-  | ext {df : VDefEq} : AxInterp.dom c → env.defeqs df → df.lhs = .const c (VLevel.params df.uvars) →
+  | ext : AxInterp.dom c →
     AxInterp.I c ls₀ m' → List.Forall₂ (· ≈ ·) ls₀ ls → m ≤ m' → Const (n := n) [] m
   /-- A definition unfolds. -/
   | delta {df : VDefEq} : ¬AxInterp.dom c → env.defeqs df → df.lhs = .const c (VLevel.params df.uvars) → ls.length = df.uvars →
@@ -189,13 +189,13 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
       ∃ h, R h (c'.type.instL ls) ∧
       PiAppS h ((rargs.reverse.take d.params.length).map (·.T)) cty.T) →
     m ≤ (WShape.indTy (n := n) (d.rel ls) ⟨c, rargs.length, T.ctors.map (·.name), T.ctors.map (·.fields.length)⟩
-      (rargs.reverse ++ ctys)).T → Const rargs m
+      (rargs.reverse ++ ctys)).T → (hnd : ¬AxInterp.dom c := by assumption) → Const rargs m
   /-- A constructor applied to its parameters and fields, of a type that is not a proposition: the
   shape of its fields. -/
   | ctor {d : VInductDecl} {t t' : Nat} {T : VInductiveType} {c' : VConstructor}
     {rargs : List (WShape n)} : env.inducts s = some (d, t) → d.types[t']? = some T → c' ∈ T.ctors → c'.name = c →
     ¬d.PropAt ls → rargs.length = d.params.length + c'.fields.length →
-    m ≤ (WShape.ctor' (n := n) c (rargs.reverse.drop d.params.length)).T → Const rargs m
+    m ≤ (WShape.ctor' (n := n) c (rargs.reverse.drop d.params.length)).T → (hnd : ¬AxInterp.dom c := by assumption) → Const rargs m
   /-- A recursor on a constructor shape, at levels where its type is not a proposition. -/
   | iota {fs : List (WShape n)} {x : WShape (n+1)} {rest : List (WShape (n+1))}
     {T : VInductiveType}
@@ -206,7 +206,7 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
     R h (d.iotaRhs ls q j c') →
     AppS h ((rest.reverse.take (d.params.length + d.allTypes.length + d.allCtors.length)).map
       (·.T) ++ fs.map (·.T)) m → (WShape.ctor' c'.name fs).T ≤ x.T →
-    Const (x :: rest) m
+    (hnd : ¬AxInterp.dom c := by assumption) → Const (x :: rest) m
   /-- A recursor at levels where its type is a proposition with large elimination, on any major
   premise: the iota rule's right-hand side at the fields `kFieldShapes` reads off the indices. -/
   | kIota {d : VInductDecl} {t j q : Nat} {T : VInductiveType} {c' : VConstructor}
@@ -217,25 +217,25 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
     AppS h ((rargs.reverse.take (d.params.length + (d.allTypes.length + d.allCtors.length))).map
       (·.T) ++ kFieldShapes c' ((rargs.reverse.drop
         (d.params.length + (d.allTypes.length + d.allCtors.length))).map (·.T))) m →
-    Const (e :: rargs) m
+    (hnd : ¬AxInterp.dom c := by assumption) → Const (e :: rargs) m
   /-- The quotient type, with `Quot.mk`'s field telescope at its arguments. -/
   | quotTy {rargs : List (WShape n)} {cty : WShape n} {ci : VConstant} :
     env.defeqs quotDefEq → c = ``Quot → ls = [u] → rargs.length = 2 →
     env.constants ``Quot.mk = some ci → R h (ci.type.instL ls) →
     PiAppS h (rargs.reverse.map (·.T)) cty.T →
     m ≤ (WShape.indTy (n := n) (levelRel u) ⟨c, 2, [``Quot.mk], [1]⟩ (rargs.reverse ++ [cty])).T →
-    Const rargs m
+    (hnd : ¬AxInterp.dom c := by assumption) → Const rargs m
   /-- `Quot.mk`, where the quotient is not a proposition. -/
   | quotMk {a r α : WShape n} : env.defeqs quotDefEq → c = ``Quot.mk → ls = [u] →
-    ¬u ≈ .zero → m ≤ (WShape.ctor' (n := n) c [a]).T → Const [a, r, α] m
+    ¬u ≈ .zero → m ≤ (WShape.ctor' (n := n) c [a]).T → (hnd : ¬AxInterp.dom c := by assumption) → Const [a, r, α] m
   /-- `Quot.lift` on `Quot.mk`. -/
   | quot {a : WShape n} {x h f β r α : WShape (n+1)} : env.defeqs quotDefEq →
     c = ``Quot.lift →
     ls = [u, v] → ¬u ≈ .zero → AppS f.T [a.T] m → (WShape.ctor' ``Quot.mk [a]).T ≤ x.T →
-    Const (x :: [h, f, β, r, α]) m
+    (hnd : ¬AxInterp.dom c := by assumption) → Const (x :: [h, f, β, r, α]) m
   /-- `Quot.lift` on any proof of a quotient that is a proposition. -/
   | quotK {q h f β r α : WShape n} : env.defeqs quotDefEq → c = ``Quot.lift →
-    ls = [u, v] → u ≈ .zero → AppS f.T [TShape.bot] m → Const [q, h, f, β, r, α] m
+    ls = [u, v] → u ≈ .zero → AppS f.T [TShape.bot] m → (hnd : ¬AxInterp.dom c := by assumption) → Const [q, h, f, β, r, α] m
 
 inductive LE_Interp (env : VEnv) : Valuation → TShape → VExpr → Prop
   | bot : LE_Interp env ρ (WShape.T (n := n) .bot) M
@@ -331,7 +331,7 @@ theorem Const.mono (h : m ≤ m') (H : Const env c ls R rargs m') : Const env c 
   induction H generalizing m with
   | bot => exact TShape.le_bot'.1 (h.trans TShape.bot_eqv.1) ▸ .bot
   | lam _ h2 ih => exact .lam (ih · · · .rfl) (h.trans h2)
-  | ext h1 h2 h3 h4 h5 h6 => exact .ext h1 h2 h3 h4 h5 (h.trans h6)
+  | ext h1 h4 h5 h6 => exact .ext h1 h4 h5 (h.trans h6)
   | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 h4 (h.trans h5)
   | indTy h1 h2 h3 h4 h5 h6 => exact .indTy h1 h2 h3 h4 h5 (h.trans h6)
   | ctor h1 h2 h3 h4 h5 h6 h7 => exact .ctor h1 h2 h3 h4 h5 h6 (h.trans h7)
@@ -370,7 +370,7 @@ theorem Const.mono_l (h : rargs.Forall₂ (· ≤ ·) rargs') (H : Const env c l
   induction H with
   | bot => exact .bot
   | lam _ h2 ih => exact .lam (fun x y h' => ih _ _ h' (.cons .rfl h)) h2
-  | ext h1 h2 h3 h4 h5 h6 => cases h; exact .ext h1 h2 h3 h4 h5 h6
+  | ext h1 h4 h5 h6 => cases h; exact .ext h1 h4 h5 h6
   | delta h0 h1 h2 h3 h4 h5 => cases h; exact .delta h0 h1 h2 h3 h4 h5
   | indTy h1 h2 h3 h4 h5 h6 =>
     have hr := List.Forall₂.reverse.2 h
@@ -606,23 +606,24 @@ theorem ConstArity.determ (H1 : ConstArity env c r n) (H2 : ConstArity env c r n
 theorem Const.arity (H : Const env c ls R rargs m) :
     m ≤ (WShape.bot (n := 0)).T ∨ (∃ f, m ≤ WShape.T (n := _ + 1) (WShape.lam' f) ∧
       ∀ x y, (x, y) ∈ f → Const env c ls R (x :: rargs) y.T) ∨
-    ∃ r, ConstArity env c r rargs.length := by
+    (∃ r, ConstArity env c r rargs.length) ∨ (AxInterp.dom c ∧ rargs = []) := by
   cases H with
   | bot => exact .inl (TShape.bot_eqv.1.trans TShape.bot_eqv.2)
   | lam h1 h2 => exact .inr (.inl ⟨_, h2, h1⟩)
-  | ext _ h1 h2 => exact .inr (.inr ⟨_, ConstArity.delta h1 h2⟩)
-  | delta _ h1 h2 => exact .inr (.inr ⟨_, ConstArity.delta h1 h2⟩)
-  | indTy h1 h2 h3 => exact .inr (.inr ⟨_, by rw [h3]; exact ConstArity.indTy h1 h2⟩)
+  | ext h0 => exact .inr (.inr (.inr ⟨h0, rfl⟩))
+  | delta _ h1 h2 => exact .inr (.inr (.inl ⟨_, ConstArity.delta h1 h2⟩))
+  | indTy h1 h2 h3 => exact .inr (.inr (.inl ⟨_, by rw [h3]; exact ConstArity.indTy h1 h2⟩))
   | ctor h1 h2 h3 h4 h5 h6 =>
-    exact .inr (.inr ⟨_, by rw [h6]; exact ConstArity.ctor h1 h2 h3 h4⟩)
+    exact .inr (.inr (.inl ⟨_, by rw [h6]; exact ConstArity.ctor h1 h2 h3 h4⟩))
   | iota h1 h2 h3 h4 h5 h6 =>
-    exact .inr (.inr ⟨_, by rw [List.length_cons, h6]; exact ConstArity.recursor h1 h2 h4⟩)
+    exact .inr (.inr (.inl ⟨_, by rw [List.length_cons, h6]; exact ConstArity.recursor h1 h2 h4⟩))
   | kIota h1 h2 h3 h4 h5 h6 h7 h8 =>
-    exact .inr (.inr ⟨_, by rw [List.length_cons, h8]; exact ConstArity.recursor h1 h2 h4⟩)
-  | quotTy h1 h2 h3 h4 => exact .inr (.inr ⟨_, by rw [h4]; exact ConstArity.quotTy h1 h2⟩)
-  | quotMk h1 h2 => exact .inr (.inr ⟨_, ConstArity.quotMk h1 h2⟩)
-  | quot h1 h2 => exact .inr (.inr ⟨_, ConstArity.quotLift h1 h2⟩)
-  | quotK h1 h2 => exact .inr (.inr ⟨_, ConstArity.quotLift h1 h2⟩)
+    exact .inr (.inr (.inl ⟨_, by rw [List.length_cons, h8]; exact ConstArity.recursor h1 h2 h4⟩))
+  | quotTy h1 h2 h3 h4 =>
+    exact .inr (.inr (.inl ⟨_, by rw [h4]; exact ConstArity.quotTy h1 h2⟩))
+  | quotMk h1 h2 => exact .inr (.inr (.inl ⟨_, ConstArity.quotMk h1 h2⟩))
+  | quot h1 h2 => exact .inr (.inr (.inl ⟨_, ConstArity.quotLift h1 h2⟩))
+  | quotK h1 h2 => exact .inr (.inr (.inl ⟨_, ConstArity.quotLift h1 h2⟩))
 
 omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.WShape.lam'_le_bot {f : WShapeFun n}
@@ -662,7 +663,7 @@ theorem Const.mapR (hR : ∀ {h e}, R h e → R' h e) (H : Const env c ls R rarg
   induction H with
   | bot => exact .bot
   | lam _ h2 ih => exact .lam ih h2
-  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 hl h4
+  | ext h0 h3 hl h4 => exact .ext h0 h3 hl h4
   | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 (hR h4) h5
   | indTy h1 h2 h3 h4 h5 h6 =>
     refine .indTy h1 h2 h3 h4 (fun i c' cty a1 a2 => ?_) h6
@@ -688,6 +689,29 @@ theorem Const.lam_le_bot (hR : ConstRoles env) {f : WShapeFun n} {rargs : List (
     exact (hn (WShape.LE.T_iff.1 (this.trans TShape.bot_eqv.2))).elim
   · have := WShape.lam'_le_lam'.2 <| NonZero.not_iff.1 hf
     exact m_le.trans <| (WShape.lam'_bot ▸ this).T.trans TShape.bot_eqv.1
+
+/-- A constant the model interprets by given shapes is `bot` at any argument: only its bare
+interpretation is given. -/
+theorem Const.le_bot_of_dom (hd : AxInterp.dom c) (H : Const env c ls R rargs m)
+    (hr : rargs ≠ []) : m ≤ TShape.bot := by
+  induction H with
+  | bot => exact TShape.bot_eqv.1
+  | lam _ m_le ih =>
+    exact m_le.trans ((WShape.lam'_le_bot fun x y h => WShape.LE.T_iff.1
+      ((ih x y h (by simp)).trans TShape.bot_eqv.2)).T.trans TShape.bot_eqv.1)
+  | ext => exact (hr rfl).elim
+  | delta h0 => exact (h0 hd).elim
+  | indTy _ _ _ _ _ _ hnd | ctor _ _ _ _ _ _ _ hnd | iota _ _ _ _ _ _ _ _ _ _ hnd
+  | kIota _ _ _ _ _ _ _ _ _ _ hnd | quotTy _ _ _ _ _ _ _ _ hnd | quotMk _ _ _ _ _ hnd
+  | quot _ _ _ _ _ _ hnd | quotK _ _ _ _ _ hnd => exact (hnd hd).elim
+
+/-- A function shape of a constant the model interprets by given shapes is `bot`. -/
+theorem Const.lam_le_bot_dom (hd : AxInterp.dom c) {f : WShapeFun n} {rargs : List (WShape n)}
+    (he : ∀ x y, (x, y) ∈ f → Const env c ls R (x :: rargs) y.T)
+    (m_le : m ≤ WShape.T (n := n + 1) (.lam' f)) : m ≤ TShape.bot :=
+  m_le.trans ((WShape.lam'_le_bot fun x y h => WShape.LE.T_iff.1
+    ((Const.le_bot_of_dom hd (he x y h) (by simp)).trans TShape.bot_eqv.2)).T.trans
+    TShape.bot_eqv.1)
 
 /-- A structure's constructor is the only constructor of every type of a block it is a constructor
 of (the auxiliary types of a nested block included). -/
@@ -857,7 +881,9 @@ local macro "arity" : tactic => `(tactic| first
 
 set_option hygiene false in
 local macro "mismatch " h:term : tactic =>
-  `(tactic| exact absurd (hRo $h (by arity)) (by intro h; cases h))
+  `(tactic| first
+    | exact absurd ‹AxInterp.dom c› ‹¬AxInterp.dom c›
+    | exact absurd (hRo $h (by arity)) (by intro h; cases h))
 
 omit [ShapeEnv] [AxInterp] in
 theorem levels_equiv_trans : ∀ {l₁ l₂ l₃ : List VLevel}, List.Forall₂ (· ≈ ·) l₁ l₂ →
@@ -910,7 +936,7 @@ theorem Const.compat_join (hRo : ConstRoles env) (hU : StepUniq env) (hA : AxOK)
   induction H1 generalizing m' with
   | bot => exact bot_l TShape.bot_eqv.1 H2 hc
   | @lam n rargs m f he m_le ih =>
-    rcases Const.arity H2 with hb | ⟨f', m_le', he'⟩ | ⟨r, A⟩
+    rcases Const.arity H2 with hb | ⟨f', m_le', he'⟩ | ⟨r, A⟩ | ⟨hd, -⟩
     · exact bot_r hb (.lam he m_le) hc
     · have hfc : WShapeFun.Compat f f' := by
         simp only [WShapeFun.Compat.def, Prod.forall]
@@ -931,20 +957,20 @@ theorem Const.compat_join (hRo : ConstRoles env) (hU : StepUniq env) (hA : AxOK)
       exact ih.mono_l <| .cons ((WShape.Join.mk hxc' _).2 ⟨le, le'⟩) <|
         List.forall₂_refl' fun _ => .rfl
     · exact bot_l (Const.lam_le_bot hRo he m_le (hc.length_eq ▸ A)) H2 hc
-  | @ext _ _ _ n' _ h0 h1 h2 h3 hl h4 =>
-    have A1 := ConstArity.delta h1 h2
+    · exact bot_l (Const.lam_le_bot_dom hd he m_le) H2 hc
+  | @ext _ _ _ n' h0 h3 hl h4 =>
     cases hc
-    have H1 := Const.ext (R := R) (n := n') h0 h1 h2 h3 hl h4
+    have H1 := Const.ext (env := env) (R := R) (n := n') h0 h3 hl h4
     cases H2 with
     | bot => exact bot_r TShape.bot_eqv.1 H1 .nil
-    | lam he' m_le' => exact bot_r (Const.lam_le_bot hRo he' m_le' A1) H1 .nil
-    | ext _ _ _ a3 al a4 =>
+    | lam he' m_le' => exact bot_r (Const.lam_le_bot_dom h0 he' m_le') H1 .nil
+    | ext _ a3 al a4 =>
       have ⟨c₁, j₁⟩ := hA.join h3 a3 (levels_equiv_trans hl (levels_equiv_symm al))
       have jl := (TShape.Join.mk c₁).le
       have cm := TShape.Compat.mono h4 a4 c₁
-      exact ⟨cm, .ext h0 h1 h2 j₁ hl ((TShape.Join.mk cm _).2 ⟨h4.trans jl.1, a4.trans jl.2⟩)⟩
+      exact ⟨cm, .ext h0 j₁ hl ((TShape.Join.mk cm _).2 ⟨h4.trans jl.1, a4.trans jl.2⟩)⟩
     | delta a0 => exact (a0 h0).elim
-    | _ => clear H1 h0 h1 h2 h3 h4; mismatch A1
+    | _ => exact absurd h0 ‹¬AxInterp.dom c›
   | @delta _ _ n' _ h0 h1 h2 h3 h4 h5 =>
     have A1 := ConstArity.delta h1 h2
     have H1 := Const.delta (R := R) (n := n') h0 h1 h2 h3 h4 h5
@@ -1185,7 +1211,7 @@ theorem Const.lift (hn : n₁ ≤ n₂) (H : Const (n := n₁) env c ls R rargs 
     · obtain ⟨x, y, h', rfl, rfl⟩ := (WShapeFun.mem_lift hn).1 h
       exact (ih _ _ h' hn).mono (TShape.lift_eqv hn).1
     · exact WShape.lift_lam' hn ▸ h2.trans (TShape.lift_eqv (Nat.succ_le_succ hn)).2
-  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 hl h4
+  | ext h0 h3 hl h4 => exact .ext h0 h3 hl h4
   | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 h4 h5
   | @indTy _ _ d _ _ rargs ctys h1 h2 h3 h4 h5 h6 =>
     refine .indTy (ctys := ctys.map (WShape.lift n₂)) h1 h2 (by simpa using h3) (by simpa using h4)
@@ -1291,7 +1317,7 @@ theorem Const.closed (hcl : ClosedRules env) (H : Const env c ls R rargs m) :
   induction H with
   | bot => exact .bot
   | lam _ h2 ih => exact .lam ih h2
-  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 hl h4
+  | ext h0 h3 hl h4 => exact .ext h0 h3 hl h4
   | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 ⟨(hcl.defeq h1).instL, h4⟩ h5
   | indTy h1 h2 h3 h4 h5 h6 =>
     refine .indTy h1 h2 h3 h4 (fun i c' cty a1 a2 => ?_) h6
@@ -1558,11 +1584,22 @@ theorem compat_join (hRo : ConstRoles env) (hU : StepUniq env) (hA : AxOK)
         rw [List.getElem?_zipWith, g5, b5]
 
 
+/-- The roles a constant the model interprets by given shapes may have: a definition, an inductive
+type or a recursor, whose interpretations are what a proof by `GoodOver` gives. -/
+def Role.DomOK : Role → Prop
+  | .delta _ | .indTy .. | .recursor .. => True
+  | _ => False
+
+variable (env) in
+/-- The model interprets by given shapes only definitions, inductive types and recursors. -/
+def DomRole : Prop := ∀ {c r k}, AxInterp.dom c → ConstArity env c r k → r.DomOK
+
 /-- What the model needs of its environment: unique roles of constants and rule names, structures
 as the shapes see them, and closed rules. A well-formed environment has them
 (`VEnv.WF.modelEnv`). -/
 structure ModelEnv (env : VEnv) : Prop where
   roles : ConstRoles env
+  domRole : DomRole env
   stepUniq : StepUniq env
   struct : ∀ c, IsStruct c = true → env.IsEtaCtor c
   structOf : ∀ c, env.IsEtaCtor c → IsStruct c = true
@@ -2116,10 +2153,12 @@ theorem sound_forallE (hM : ModelEnv env)
 omit [ShapeEnv] [AxInterp] in
 /-- A well-formed environment is one the model can interpret, with its own structures. -/
 theorem _root_.Lean4Lean.VEnv.WF.modelEnv {env : VEnv} (henv : env.WF)
-    {ax : @AxInterp env.shapeEnv} (hA : @AxOK env.shapeEnv ax) :
+    {ax : @AxInterp env.shapeEnv} (hA : @AxOK env.shapeEnv ax)
+    (hD : @DomRole env.shapeEnv ax env) :
     @ModelEnv env.shapeEnv ax env :=
   letI := env.shapeEnv
   { ax := hA
+    domRole := hD
     roles := henv.constRoles
     stepUniq := henv.stepUniq
     struct := fun _ h => (env.shapeEnv_isStruct).1 h

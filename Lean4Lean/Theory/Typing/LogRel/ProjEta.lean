@@ -18,7 +18,7 @@ variable [ShapeEnv] [AxInterp] {env : VEnv}
 
 /-- A shape typed at an interpretation of an inductive type at its arity is `bot` or a
 constructor shape of one of the type's constructors. -/
-theorem typed_indTy_inv (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t : Nat}
+theorem typed_indTy_inv (hM : ModelEnv env) {s : Name} (hnd : ¬AxInterp.dom s) {d : VInductDecl} {t : Nat}
     {T : VInductiveType} (hs : env.inducts s = some (d, t)) (hT : d.types[t]? = some T)
     {ls : List VLevel} {args : List VExpr}
     (hargs : args.length = d.params.length + T.indices.length) {ρ : Valuation}
@@ -27,7 +27,7 @@ theorem typed_indTy_inv (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t : Na
       (IsStruct c'.name → WShape.ListNonZero l) ∧ l.length = c'.fields.length ∧
       m ≤ (WShape.ctor' c'.name l).T ∧ (WShape.ctor' c'.name l).T ≤ m := by
   rw [← spine_eq_appN] at ha
-  obtain ⟨n0, H0⟩ := ha.spine_inv hM.roles (fun r n' h => by
+  obtain ⟨n0, H0⟩ := ha.spine_inv hM.roles hnd (fun r n' h => by
     cases hM.roles h (ConstArity.indTy hs hT)
     rw [(ConstArity.indTy hs hT).determ h] at *; simp [hargs])
   obtain ⟨K, hK0, hK1, hK2⟩ : ∃ K, n0 ≤ K + 1 ∧ m.1 ≤ K + 1 ∧ a.1 ≤ K + 1 :=
@@ -40,7 +40,7 @@ theorem typed_indTy_inv (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t : Na
     ⟨(TShape.lift_eqv (by omega)).2, (TShape.lift_eqv (by omega)).1⟩
   have hbot (h : m.2.lift (K+1+1) = .bot) : m ≤ TShape.bot := by
     refine hmK.1.trans ?_; rw [h]; exact TShape.bot_eqv.1
-  obtain hy | ⟨ctys, -, -, hyY⟩ := Const.indTy_inv hM.roles hs hT hrl hC
+  obtain hy | ⟨ctys, -, -, hyY⟩ := Const.indTy_inv hM.roles hnd hs hT hrl hC
   · have := (TShape.LE.def (m := K+1+1) (b := TShape.bot) (by omega) (Nat.zero_le _)).1
       (hay.trans hy)
     simp only [TShape.bot, WShape.T, WShape.lift_bot] at this
@@ -123,8 +123,8 @@ theorem getElem?_projs {s : Name} {k j : Nat} {e : VExpr} :
 
 section projEta
 variable (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
-    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} {d : VInductDecl} {t : Nat}
-    {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
+    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} (hnd : ¬AxInterp.dom s) {d : VInductDecl}
+    {t : Nat} {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
     (hT : d.types[t]? = some T) (hcs : T.ctors = [c]) (hI0 : T.indices = [])
     (hTW : T.WF envT d) (hcW : c.WF envT d T) (hPT : envT.IsTele d.uvars [] d.params)
     (hcT : env.constants s = some ⟨d.uvars, T.type⟩)
@@ -136,7 +136,7 @@ variable (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
     (hCS : StrongSound env U Γ (.appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e))
       (.appN (.const s ls) As))
     {Γ₀ : List VExpr} {ρ : Valuation} (W : Valuation.Fits env Γ₀ Γ ρ)
-include hM hX hle hO hs hT hcs hI0 hTW hcW hPT hcT hcC hls hAs hTS heS hCS W
+include hM hX hle hO hnd hs hT hcs hI0 hTW hcW hPT hcT hcC hls hAs hTS heS hCS W
 
 /-- An interpretation of a structure-typed term is `bot` or a constructor shape interpreting it,
 whose fields interpret the projections. -/
@@ -156,7 +156,7 @@ theorem struct_interp_inv {m : TShape} (hm : LE_Interp env ρ m e) :
   obtain ⟨a', b, g1, g2, g3, g4⟩ := hTS.sound W h3
   have ha' : a'.HasType (.sort (levelRel u)) := .mono_r g3.le_sort .sort g4
   have hm' : m'.HasType a' := .mono_r g1 ha' h4
-  rcases typed_indTy_inv hM hs hT (by simpa using hn) hm' g2 with
+  rcases typed_indTy_inv hM hnd hs hT (by simpa using hn) hm' g2 with
     hb | ⟨N, c', hc', l, -, hl, hl1, hl2⟩
   · exact .inl (h1.trans hb)
   obtain rfl : c' = c := by simpa [hcs] using hc'
@@ -166,7 +166,7 @@ theorem struct_interp_inv {m : TShape} (hm : LE_Interp env ρ m e) :
 constructor applied to its projections. -/
 theorem projEta_le {m : TShape} (hm : LE_Interp env ρ m e) :
     LE_Interp env ρ m (.appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e)) := by
-  rcases struct_interp_inv hM hX hle hO hs hT hcs hI0 hTW hcW hPT hcT hcC hls hAs hTS heS hCS W
+  rcases struct_interp_inv hM hX hle hO hnd hs hT hcs hI0 hTW hcW hPT hcT hcC hls hAs hTS heS hCS W
     hm with hb | ⟨hP, N, l, hl, hml, hce⟩
   · exact LE_Interp.mono hb .bot
   let ys : List TShape := As.map (fun _ => TShape.bot) ++ l.map (·.T)
@@ -190,7 +190,7 @@ theorem projEta_le {m : TShape} (hm : LE_Interp env ρ m e) :
   have hCS' : StrongSound env U Γ ((VExpr.const c.name ls).appN
       (As ++ VExpr.projs s c.fields.length e)) ((VExpr.const s ls).appN (As ++ [])) := by
     simpa using hCS
-  obtain ⟨N', rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hs hT hci hidx hTW hcW hPT hcT hcC
+  obtain ⟨N', rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hnd hs hT hci hidx hTW hcW hPT hcT hcC
     hls hP W hAs (by simp) (by simp [hI0]) hTS'.mspine' hCS'.mspine' hys
   have : ys.drop d.params.length = l.map (·.T) := by simp [ys, hAs]
   rw [this, List.forall₂_map_left_iff] at hrf
@@ -248,7 +248,7 @@ theorem projEta_ge (hst : IsStruct c.name = true) {m : TShape}
         · exact hM2 j hj y hy hny
         · exact absurd ⟨y, hy, hny⟩ h
   obtain ⟨M, hM1, hM2⟩ := hacc rf.length
-  rcases struct_interp_inv hM hX hle hO hs hT hcs hI0 hTW hcW hPT hcT hcC hls hAs hTS heS hCS W
+  rcases struct_interp_inv hM hX hle hO hnd hs hT hcs hI0 hTW hcW hPT hcT hcC hls hAs hTS heS hCS W
     hM1 with hb | ⟨-, N, l, hl, hMl, hle'⟩
   · -- every field is `bot`, so the constructor shape collapses
     have hz : ¬WShape.ListNonZero rf := by
@@ -280,7 +280,8 @@ sound for the environment the block was declared in. -/
 theorem projSoundAt_block (hM : ModelEnv env) {E₁ E₂ : VEnv} (hE₁ : E₁.WF) {d : VInductDecl}
     (hd : d.WF E₁) (h1 : E₁.addInduct d = some E₂) (hle : E₂ ≤ env)
     (hX₁ : SoundHyps E₁ env) {U : Nat} {s : Name} {t : Nat} (hs₂ : E₂.inducts s = some (d, t))
-    (hname : ∃ T, d.types[t]? = some T ∧ T.name = s) : ProjSoundAt env U s d t := by
+    (hname : ∃ T, d.types[t]? = some T ∧ T.name = s) (hnd : ¬AxInterp.dom s) :
+    ProjSoundAt env U s d t := by
   simp only [VEnv.addInduct, Option.bind_eq_bind, Option.bind_eq_some_iff] at h1
   obtain ⟨envT, hTs, envC, hC, envR, hR', hB'⟩ := h1
   have hs : env.inducts s = some (d, t) := hle.inducts hs₂
@@ -307,19 +308,19 @@ theorem projSoundAt_block (hM : ModelEnv env) {E₁ E₂ : VEnv} (hE₁ : E₁.W
   refine ⟨?_, ?_, ?_⟩
   · intro Γ T' c k f ls As I e u hT' hcs hf hls hlen hAs hI _ hS he _
     obtain rfl := Option.some.inj (hT.symm.trans hT')
-    exact projSound_at hM hE₁ hd hTs hleT hX hs hT rfl hcs hf hls hlen hAs hI hS he
+    exact projSound_at hM hE₁ hnd hd hTs hleT hX hs hT rfl hcs hf hls hlen hAs hI hS he
   · intro Γ T' c k f fs a ls As I u hT' hcs hf ha hls _ hAs hfs hI hPA hTS hCS hPT' haS
     obtain rfl := Option.some.inj (hT.symm.trans hT')
     have hcW := hCW c (by simp [hcs])
     intro Γ₀ ρ W m
     exact ⟨fun hm => projIota_le hM hs hT hcs hAs hfs ha hm,
-      projIota_ge hM hX hleT hO hs hT hcs hTW hcW hPT hcT (hcC (by simp [hcs])) hf ha hls hAs hfs
+      projIota_ge hM hX hleT hO hnd hs hT hcs hTW hcW hPT hcT (hcC (by simp [hcs])) hf ha hls hAs hfs
         hI hPA hTS hCS hPT' haS W⟩
   · intro Γ T' c ls As e u hT' hcs hI0 hrec hls _ hAs hTS heS hCS
     obtain rfl := Option.some.inj (hT.symm.trans hT')
     have hcW := hCW c (by simp [hcs])
     intro Γ₀ ρ W m
-    exact ⟨projEta_le hM hX hleT hO hs hT hcs hI0 hTW hcW hPT hcT (hcC (by simp [hcs])) hls hAs
+    exact ⟨projEta_le hM hX hleT hO hnd hs hT hcs hI0 hTW hcW hPT hcT (hcC (by simp [hcs])) hls hAs
         hTS heS hCS W,
-      projEta_ge hM hX hleT hO hs hT hcs hI0 hTW hcW hPT hcT (hcC (by simp [hcs])) hls hAs
+      projEta_ge hM hX hleT hO hnd hs hT hcs hI0 hTW hcW hPT hcT (hcC (by simp [hcs])) hls hAs
         hTS heS hCS W (hM.structOf _ ⟨_, _, _, _, _, hs, hT, hcs, hI0, hrec, rfl⟩)⟩

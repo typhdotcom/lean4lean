@@ -121,27 +121,96 @@ private theorem LRS.LamDefEq.lift_aux
     · have ⟨r1, r2⟩ := hP.1 hqg ha v_lo; exact ⟨go r1, go r2⟩
     · exact go (hP.2 hqg ha v_lo)
 
+private theorem LRS.TyTyped.lift_aux {b : WShape n} {f : WShapeFun n} (le : n ≤ n')
+    (htpi_a : WShape.HasTypePi f b true)
+    (IH2 : ∀ {M N A : VExpr} {m a : WShape n}, WShape.HasType m a →
+      ((LR (U := U) (Γ := Γ) henv hU n').DefEq M N A (m.lift n') (a.lift _) ↔
+        (LR (U := U) (Γ := Γ) henv hU n).DefEq M N A m a))
+    (IH3 : ∀ {M : VExpr} {m : WShape n}, WShape.HasType m .type →
+      (LR (U := U) (Γ := Γ) henv hU n).TyDefEq M M m →
+      ((LR (U := U) (Γ := Γ) henv hU n').TyTy M (m.lift n') ↔
+        (LR (U := U) (Γ := Γ) henv hU n).TyTy M m))
+    (hEdge : LRS.PiDefEq (LR (U := U) (Γ := Γ) henv hU n) A₁ A₂ A₂ b f) :
+    (∀ x p, p.HasType (b.lift n') → env.HasType U Γ x A₁ →
+      (LR (U := U) (Γ := Γ) henv hU n').DefEq x x A₁ p (b.lift n') →
+      (LR (U := U) (Γ := Γ) henv hU n').TyTy (A₂.inst x) ((f.lift n').app p)) ↔
+    (∀ x p, p.HasType b → env.HasType U Γ x A₁ → (LR (U := U) (Γ := Γ) henv hU n).DefEq x x A₁ p b →
+      (LR (U := U) (Γ := Γ) henv hU n).TyTy (A₂.inst x) (f.app p)) := by
+  have htpi_w := WShape.HasTypePi.iff.1 htpi_a
+  constructor <;> intro H x p hp hx v
+  · have hp' := (WShape.HasType.lift le).2 hp
+    have v' := (IH2 hp).2 v
+    have := H x _ hp' hx v'
+    rw [← WShapeFun.lift_app le] at this
+    exact (IH3 (htpi_w.2 _ hp) (hEdge.2 hp hx v)).1 this
+  · obtain ⟨q, d1, d2⟩ := WShapeFun.app_eq (f.lift n') p
+    obtain ⟨q₀, y₀, d2₀, rfl, d3⟩ := (WShapeFun.mem_lift le).1 d2
+    obtain ⟨qx', qy', d2₀', qxle, qyle, hq⟩ := WShape.HasDom.def.1 htpi_a.1 _ _ d2₀
+    have v' := (IH2 hq).1 ((LR (U := U) (Γ := Γ) henv hU n').mono_l
+      (((WShape.lift_le_lift le).2 qxle).trans d1) ((WShape.HasType.lift le).2 hq) hp v)
+    have ht_q := (htpi_w.2 _ hq).toType
+    have ht_y₀ : (y₀ : WShape n).HasType WShape.type := (htpi_a.2 _ _ d2₀).toType
+    have y₀_le_fqx : y₀ ≤ f.app qx' := qyle.trans (f.app_of_mem d2₀').2
+    have T := hEdge.2 hq hx v'
+    have t' := (LR (U := U) (Γ := Γ) henv hU n).tyTy_mono y₀_le_fqx ht_y₀ ht_q T (H x qx' hq hx v')
+    have T' := (LR (U := U) (Γ := Γ) henv hU n).mono_r_2_ty y₀_le_fqx ht_y₀ ht_q T
+    rw [d3]
+    exact (IH3 ht_y₀ T').2 t'
+
 private theorem LR.lift_succ_aux :
     (∀ {M N : VExpr} {m : WShape n}, WShape.HasType m .type →
       (LRS.TyDefEq (LR (U := U) (Γ := Γ) henv hU n) M N (m.lift _) ↔ (LR (U := U) (Γ := Γ) henv hU n).TyDefEq M N m)) ∧
     (∀ {M N A : VExpr} {m a : WShape n}, WShape.HasType m a →
       (LRS.DefEq (LR (U := U) (Γ := Γ) henv hU n) M N A (m.lift _) (a.lift _) ↔
-        (LR (U := U) (Γ := Γ) henv hU n).DefEq M N A m a)) := by
+        (LR (U := U) (Γ := Γ) henv hU n).DefEq M N A m a)) ∧
+    (∀ {M : VExpr} {m : WShape n}, WShape.HasType m .type →
+      (LR (U := U) (Γ := Γ) henv hU n).TyDefEq M M m →
+      (LRS.TyTyped (LR (U := U) (Γ := Γ) henv hU n) M (m.lift _) ↔
+        (LR (U := U) (Γ := Γ) henv hU n).TyTy M m)) := by
   induction n with
   | zero =>
-    refine ⟨fun {M N m} _ => ?_, fun {M N A m a} _ => ?_⟩
+    refine ⟨fun {M N m} _ => ?_, fun {M N A m a} _ => ?_, fun {M m} _ _ => ?_⟩
     · cases m using WShape.casesOn <;> exact .rfl
-    · cases m using WShape.casesOn <;> cases a using WShape.casesOn <;> exact .rfl
+    · cases m using WShape.casesOn <;> cases a using WShape.casesOn <;>
+        first | exact .rfl | exact ⟨fun h => h.1, fun h => ⟨h, fun _ _ => ⟨trivial, trivial⟩⟩⟩
+    · cases m using WShape.casesOn <;> exact iff_of_true trivial trivial
   | succ k ih =>
-    refine have h1 := ?_; ⟨h1, ?_⟩
-    · intro M N m hmt
+    refine have h1 := ?h1; have h3 := ?h3; ⟨h1, ?h2, h3⟩
+    case h3 =>
+      intro M m hmt hT
+      cases m using WShape.casesOn' with
+      | forallE b f =>
+        rw [WShape.lift_forallE (Nat.le_succ k)]
+        have ⟨_, htpi, rfl⟩ := WShape.HasType.forallE_l.1 hmt
+        have tb := (WShape.HasTypePi.iff.1 htpi).1.isType
+        rw [show (LR (U := U) (Γ := Γ) henv hU (k+1)).TyTy M (b.forallE f) =
+          LRS.TyTyped (LR (U := U) (Γ := Γ) henv hU k) M (b.forallE f) from rfl]
+        rw [LRS.TyTyped.forallE_iff, LRS.TyTyped.forallE_iff]
+        change LRS.TyDefEq (LR (U := U) (Γ := Γ) henv hU k) M M (b.forallE f) at hT
+        rw [LRS.TyDefEq.forallE_iff] at hT
+        rcases hT with ⟨B₁, F₁, B₂, F₂, rM, rM', -, -, hValB, hE⟩ | ⟨hn, -⟩
+        · refine or_congr .rfl ⟨?_, ?_⟩ <;> rintro ⟨A₁, A₂, u, v, rA, eA, hA₁, hA₂, y, hY⟩ <;>
+            cases StepS.determ hU rA forallE_whnf rM forallE_whnf <;>
+            cases StepS.determ hU rA forallE_whnf rM' forallE_whnf
+          · exact ⟨_, _, u, v, rA, eA, hA₁, hA₂, (ih.2.2 tb ((LR _ _ _).left_ty hValB)).1 y,
+              (LRS.TyTyped.lift_aux (Nat.le_succ k) htpi ih.2.1 ih.2.2 hE).1 hY⟩
+          · exact ⟨_, _, u, v, rA, eA, hA₁, hA₂, (ih.2.2 tb ((LR _ _ _).left_ty hValB)).2 y,
+              (LRS.TyTyped.lift_aux (Nat.le_succ k) htpi ih.2.1 ih.2.2 hE).2 hY⟩
+        · exact iff_of_true (.inl hn) (.inl hn)
+      | indTy r c l => rw [WShape.lift_indTy (Nat.le_succ k)]; exact .rfl
+      | sort r => rw [WShape.lift_sort]; exact .rfl
+      | bot => rw [WShape.lift_bot]; exact .rfl
+      | lam f hf => rw [WShape.lift_lam (Nat.le_succ k)]; exact .rfl
+      | ctor c l hc => rw [WShape.lift_ctor (Nat.le_succ k)]; exact .rfl
+    case h1 =>
+      intro M N m hmt
       cases m using WShape.casesOn' with
       | forallE b f => ?_
       | sort r => rw [WShape.lift_sort]; exact .rfl
       | indTy r c l =>
         rw [WShape.lift_indTy (Nat.le_succ k), LRS.TyDefEq.indTy_iff, LR_succ]
         refine Iff.trans ?_ (LRS.TyDefEq.indTy_iff (IH := LR (U := U) (Γ := Γ) henv hU k) (r := r)).symm
-        exact or_congr (and_congr .rfl (IndTele.lift ih.1 ih.2 hmt.indTy_tels')) .rfl
+        exact or_congr (and_congr .rfl (IndTele.lift ih.1 ih.2.1 ih.2.2 hU hmt.indTy_tels')) .rfl
       | bot => rw [WShape.lift_bot]; exact .rfl
       | lam f hf => rw [WShape.lift_lam (Nat.le_succ k)]; exact .rfl
       | ctor c l hc => rw [WShape.lift_ctor (Nat.le_succ k)]; exact .rfl
@@ -152,10 +221,11 @@ private theorem LR.lift_succ_aux :
       constructor <;> intro ⟨B₁, F₁, B₂, F₂, rM, rN, hB, hF, hValB, hE⟩ <;>
         refine ⟨B₁, F₁, B₂, F₂, rM, rN, hB, hF, ?_, ?_⟩
       · exact (ih.1 (WShape.HasTypePi.iff.1 htpi).1.isType).1 hValB
-      · exact (LRS.PiDefEq.lift_aux (Nat.le_succ k) htpi ih.1 ih.2).1 hE
+      · exact (LRS.PiDefEq.lift_aux (Nat.le_succ k) htpi ih.1 ih.2.1).1 hE
       · exact (ih.1 (WShape.HasTypePi.iff.1 htpi).1.isType).2 hValB
-      · exact (LRS.PiDefEq.lift_aux (Nat.le_succ k) htpi ih.1 ih.2).2 hE
-    · intro M N A m a hma
+      · exact (LRS.PiDefEq.lift_aux (Nat.le_succ k) htpi ih.1 ih.2.1).2 hE
+    case h2 =>
+      intro M N A m a hma
       cases a using WShape.casesOn' with
       | bot => rw [WShape.lift_bot]; exact .rfl
       | indTy r c l =>
@@ -166,14 +236,26 @@ private theorem LR.lift_succ_aux :
           refine Iff.trans ?_ (LRS.DefEq.ctor_indTy (IH := LR (U := U) (Γ := Γ) henv hU k) (r := r) (hf := hf)).symm
           refine or_congr ?_ .rfl
           by_cases hs : IsStruct c' = true
-          · simp only [hs, if_true]; exact StructVal.lift ih.1 ih.2 hma.indTy_tels
-          · simp only [hs, if_false, Bool.false_eq_true]; exact CtorVal.lift ih.1 ih.2 hma.indTy_tels
+          · simp only [hs, if_true]; exact StructVal.lift ih.1 ih.2.1 ih.2.2 hU hma.indTy_tels
+          · simp only [hs, if_false, Bool.false_eq_true]
+            exact CtorVal.lift ih.1 ih.2.1 ih.2.2 hU hma.indTy_tels
         | bot => rw [WShape.lift_bot]; exact .rfl
         | sort => rw [WShape.lift_sort]; exact .rfl
         | forallE => rw [WShape.lift_forallE (Nat.le_succ k)]; exact .rfl
         | lam => rw [WShape.lift_lam (Nat.le_succ k)]; exact .rfl
         | indTy => rw [WShape.lift_indTy (Nat.le_succ k)]; exact .rfl
-      | sort => rw [WShape.lift_sort]; exact h1 hma.toType
+      | sort =>
+        rw [WShape.lift_sort]
+        show (LRS.TyDefEq _ M N _ ∧ ∀ u, TyEq env U Γ A (.sort u) → LRS.TyTyped _ M _ ∧ LRS.TyTyped _ N _) ↔
+          (LRS.TyDefEq _ M N _ ∧ ∀ u, TyEq env U Γ A (.sort u) → LRS.TyTyped _ M _ ∧ LRS.TyTyped _ N _)
+        constructor
+        · rintro ⟨h, y⟩
+          have h' := (h1 hma.toType).1 h
+          exact ⟨h', fun u e => ⟨(h3 hma.toType ((LR _ _ (k+1)).left_ty h')).1 (y u e).1,
+            (h3 hma.toType ((LR _ _ (k+1)).left_ty ((LR _ _ (k+1)).symm_ty h'))).1 (y u e).2⟩⟩
+        · rintro ⟨h, y⟩
+          exact ⟨(h1 hma.toType).2 h, fun u e => ⟨(h3 hma.toType ((LR _ _ (k+1)).left_ty h)).2 (y u e).1,
+            (h3 hma.toType ((LR _ _ (k+1)).left_ty ((LR _ _ (k+1)).symm_ty h))).2 (y u e).2⟩⟩
       | forallE a₁ a₂ => ?_
       | _ => cases hma.isType
       have ⟨_, htpi_a, _⟩ := WShape.HasType.forallE_l.1 hma.isType
@@ -183,13 +265,13 @@ private theorem LR.lift_succ_aux :
         simp only [LRS.DefEq.lam_forallE, LR_succ]
         refine or_congr ?_ .rfl
         constructor <;> intro ⟨A₁, A₂, u, v, rA, eA, hA1, hValA, hA₂, hEdge, hP⟩ <;>
-          [ have hEdge' := (LRS.PiDefEq.lift_aux (Nat.le_succ k) htm.1 ih.1 ih.2).1 hEdge;
-            have hEdge' := (LRS.PiDefEq.lift_aux (Nat.le_succ k) htm.1 ih.1 ih.2).2 hEdge ] <;>
+          [ have hEdge' := (LRS.PiDefEq.lift_aux (Nat.le_succ k) htm.1 ih.1 ih.2.1).1 hEdge;
+            have hEdge' := (LRS.PiDefEq.lift_aux (Nat.le_succ k) htm.1 ih.1 ih.2.1).2 hEdge ] <;>
           refine ⟨A₁, A₂, u, v, rA, eA, hA1, ?_, hA₂, hEdge', ?_⟩
         · exact (ih.1 (WShape.HasTypePi.iff.1 htpi_a).1.isType).1 hValA
-        · exact (LRS.LamDefEq.lift_aux (Nat.le_succ k) htm ih.2 hEdge').1 hP
+        · exact (LRS.LamDefEq.lift_aux (Nat.le_succ k) htm ih.2.1 hEdge').1 hP
         · exact (ih.1 (WShape.HasTypePi.iff.1 htpi_a).1.isType).2 hValA
-        · exact (LRS.LamDefEq.lift_aux (Nat.le_succ k) htm ih.2 hEdge).2 hP
+        · exact (LRS.LamDefEq.lift_aux (Nat.le_succ k) htm ih.2.1 hEdge).2 hP
       · rw [WShape.lift_bot, WShape.lift_forallE (Nat.le_succ k)]; exact .rfl
 
 theorem LR.DefEq.lift {m a : WShape n} (le : n ≤ n') (hma : WShape.HasType m a) :
@@ -197,7 +279,7 @@ theorem LR.DefEq.lift {m a : WShape n} (le : n ≤ n') (hma : WShape.HasType m a
       (LR (U := U) (Γ := Γ) henv hU n).DefEq M N A m a := by
   induction le with | refl => simp [WShape.lift_self] | step le ih
   rw [(WShape.lift_lift (.inl le)).symm, (WShape.lift_lift (s := a) (.inl le)).symm]
-  exact (LR.lift_succ_aux.2 ((WShape.HasType.lift le).2 hma)).trans ih
+  exact (LR.lift_succ_aux.2.1 ((WShape.HasType.lift le).2 hma)).trans ih
 
 theorem LR.TyDefEq.lift {m : WShape n} (le : n ≤ n') (hmt : WShape.HasType m .type) :
     (LR (U := U) (Γ := Γ) henv hU n').TyDefEq M N (m.lift _) ↔ (LR (U := U) (Γ := Γ) henv hU n).TyDefEq M N m := by
@@ -206,6 +288,15 @@ theorem LR.TyDefEq.lift {m : WShape n} (le : n ≤ n') (hmt : WShape.HasType m .
   have := (WShape.HasType.lift le).2 hmt
   simp [WShape.type] at this
   exact (LR.lift_succ_aux.1 this).trans ih
+
+theorem LR.TyTy.lift {m : WShape n} (le : n ≤ n') (hmt : WShape.HasType m .type)
+    (hT : (LR (U := U) (Γ := Γ) henv hU n).TyDefEq M M m) :
+    (LR (U := U) (Γ := Γ) henv hU n').TyTy M (m.lift n') ↔ (LR (U := U) (Γ := Γ) henv hU n).TyTy M m := by
+  induction le with | refl => simp [WShape.lift_self] | step le ih
+  rw [(WShape.lift_lift (.inl le)).symm]
+  have := (WShape.HasType.lift le).2 hmt
+  simp [WShape.type] at this
+  exact (LR.lift_succ_aux.2.2 this ((LR.TyDefEq.lift le hmt).2 hT)).trans ih
 
 end LogRel
 end Lean4Lean

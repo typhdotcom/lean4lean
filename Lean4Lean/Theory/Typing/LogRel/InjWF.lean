@@ -37,12 +37,12 @@ theorem _root_.Lean4Lean.VEnv.WF'.addConstList : ∀ {E E' : VEnv} {ds : List VD
 environment before it and of the one its rules are typed in. -/
 def IndStep : Prop :=
   ∀ {env : VEnv} (henvW : env.WF) {U : Nat} {Γ₀ : List VExpr}, OnCtx Γ₀ (env.IsType U) →
-    ∀ (X : @AxInterp env.shapeEnv) {ds E E' d}, @AxOK env.shapeEnv X → VEnv.WF' ds E →
-    E.Inj →
+    ∀ (X : @AxInterp env.shapeEnv) {ds E E' d}, @AxOK env.shapeEnv X →
+    @DomRole env.shapeEnv X env → VEnv.WF' ds E → E.Inj →
     (∀ envT envC envR, E.addConstList d.typeConsts = some envT →
       envT.addConstList d.ctorConsts = some envC →
       envC.addConstList d.recConsts = some envR → envR.Inj) →
-    VDecl.WF E (.induct d) E' → E' ≤ env → (∀ c, X.dom c → E'.constants c = none) →
+    VDecl.WF E (.induct d) E' → Extends E' env → (∀ c, X.dom c → E'.constants c = none) →
     @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E Γ₀ →
     @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E' Γ₀
 
@@ -50,8 +50,8 @@ def IndStep : Prop :=
 environment before it. -/
 def QuotStep : Prop :=
   ∀ {env : VEnv} (henvW : env.WF) {U : Nat} {Γ₀ : List VExpr}, OnCtx Γ₀ (env.IsType U) →
-    ∀ (X : @AxInterp env.shapeEnv) {ds E E'}, @AxOK env.shapeEnv X → VEnv.WF' ds E →
-    E.Inj → VDecl.WF E .quot E' → E' ≤ env → (∀ c, X.dom c → E'.constants c = none) →
+    ∀ (X : @AxInterp env.shapeEnv) {ds E E'}, @AxOK env.shapeEnv X →
+    @DomRole env.shapeEnv X env → VEnv.WF' ds E → E.Inj → VDecl.WF E .quot E' → Extends E' env → (∀ c, X.dom c → E'.constants c = none) →
     @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E Γ₀ →
     @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E' Γ₀
 
@@ -100,13 +100,15 @@ theorem _root_.Lean4Lean.VEnv.WF'.inj_of (hInd : IndStep) (hQuot : QuotStep)
       @AdequacyHyps env U env.shapeEnv (@AxInterp.none env.shapeEnv) henvW.ordered
         henvW.stepUniq env Γ := by
     intro U Γ hΓ
-    refine AdequacyHyps.of_WF' henvW N (fun X hX => henvW.modelEnv hX) hΓ
-      (fun X _ _ _ hX hW' hr hD hle hdom IH₀ =>
-        hQuot henvW hΓ X hX hW' (hsmall hW' hr) hD hle hdom IH₀)
-      (fun X _ _ _ _ hX hW' hr hD hle hdom IH₀ => ?_) hW hN .refl _ AxOK.none (fun _ h => h.elim)
+    refine AdequacyHyps.of_WF' henvW N (fun X hX hXD => henvW.modelEnv hX hXD) hΓ
+      (fun X _ _ _ hX hXD hW' hr hD hle hdom IH₀ =>
+        hQuot henvW hΓ X hX hXD hW' (hsmall hW' hr) hD hle hdom IH₀)
+      (fun X _ _ _ _ hX hXD hW' hr hD hle hdom IH₀ => ?_) hW hN .refl _ AxOK.none nofun
+      (fun _ h => h.elim)
     cases hD with
     | induct h0 h1 h2 =>
-      exact hInd henvW hΓ X hX hW' (hsmall hW' hr) (hR hW' hr h0 h1) (.induct h0 h1 h2) hle hdom IH₀
+      exact hInd henvW hΓ X hX hXD hW' (hsmall hW' hr) (hR hW' hr h0 h1) (.induct h0 h1 h2) hle
+        hdom IH₀
   exact VEnv.Inj.of_chainInv henvW fun U =>
     ChainInv.of_adequacy henvW (hAdeq U) (hProj henvW hAdeq U)
 

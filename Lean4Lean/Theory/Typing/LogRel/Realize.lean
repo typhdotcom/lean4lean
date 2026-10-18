@@ -351,8 +351,8 @@ theorem le_maxLvl : ∀ {l : List TShape} {x : TShape}, x ∈ l → x.1 ≤ maxL
 proposition, has an interpretation that is a constructor shape, with fields interpreting the
 fields and above any given interpretations of them. -/
 theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
-    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} {d : VInductDecl} {t i : Nat}
-    {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
+    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} (hnd : ¬AxInterp.dom s) {d : VInductDecl}
+    {t i : Nat} {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
     (hT : d.types[t]? = some T) (hci : T.ctors[i]? = some c)
     (hidx : (T.ctors.map (·.name)).idxOf? c.name = some i)
     (hTW : T.WF envT d) (hcW : c.WF envT d T) (hPT : envT.IsTele d.uvars [] d.params)
@@ -513,6 +513,7 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
   have hCC : Const env c.name ls (LE_Interp env ρ) (params ++ rfN).reverse
       (WShape.ctor' c.name rfN).T := by
     refine .ctor hs hT (List.mem_of_getElem? hci) rfl hP (by simp [hplen, rfN, Lf, hL2]; omega) ?_
+      (fun h => hM.domRole h (ConstArity.ctor hs hT (List.mem_of_getElem? hci) rfl))
     rw [List.reverse_reverse, List.drop_left' hplen]; exact .rfl
   have hCI : LE_Interp env ρ (WShape.ctor' c.name rfN).T
       ((VExpr.const c.name ls).appN (As ++ fs)) := by
@@ -542,7 +543,7 @@ theorem StrongSound.proof_le_bot {U : Nat} {Γ₀ Γ : List VExpr} {ρ : Valuati
 
 /-- A field's interpretations interpret its projection out of the constructor application. -/
 theorem projIota_ge (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
-    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} {d : VInductDecl} {t : Nat}
+    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} (hnd : ¬AxInterp.dom s) {d : VInductDecl} {t : Nat}
     {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
     (hT : d.types[t]? = some T) (hcs : T.ctors = [c])
     (hTW : T.WF envT d) (hcW : c.WF envT d T) (hPT : envT.IsTele d.uvars [] d.params)
@@ -584,7 +585,7 @@ theorem projIota_ge (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
       split
       · subst j; cases ha.symm.trans hx; exact hm
       · exact LE_Interp.bot (n := 0)
-  obtain ⟨N, rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hs hT (i := 0) (by simp [hcs])
+  obtain ⟨N, rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hnd hs hT (i := 0) (by simp [hcs])
     (by simp [hcs]) hTW hcW hPT hcT hcC hls hP W hAs hfs hI hTS.mspine' hCS.mspine' hys
   rw [List.drop_left' (by simp [hAs])] at hrf
   have hk : k < fs.length := (List.getElem?_eq_some_iff.1 ha).1

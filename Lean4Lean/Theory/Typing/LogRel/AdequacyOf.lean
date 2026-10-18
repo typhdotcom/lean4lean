@@ -438,11 +438,22 @@ theorem LR.adequacy_of (hM : ModelEnv env) {E : VEnv} (hE : E ≤ env)
       exact LR.toValTy le_n le_a aty.1.isType hSort hmem' ((ihA hΓ hA' hSort hmem').2 W)
     have mkPi {B₁ F₁ B₂ F₂ X} (hB : TyEq env U Γ₀ B₁ B₂) (hF : TyEq env U (B₁::Γ₀) F₁ F₂)
         (hV : (LR (U := U) (Γ := Γ₀) henv hU k).TyDefEq B₁ B₂ a₁)
-        (hE : LRS.PiDefEq (LR (U := U) (Γ := Γ₀) henv hU k) B₁ F₁ F₂ a₁ a₂) :
+        (hE : LRS.PiDefEq (LR (U := U) (Γ := Γ₀) henv hU k) B₁ F₁ F₂ a₁ a₂)
+        (hT1 : ∀ w, TyEq env U Γ₀ X (.sort w) →
+          LRS.TyTyped (LR (U := U) (Γ := Γ₀) henv hU k) (.forallE B₁ F₁) (WShape.forallE a₁ a₂) ∧
+          LRS.TyTyped (LR (U := U) (Γ := Γ₀) henv hU k) (.forallE B₂ F₂) (WShape.forallE a₁ a₂)) :
         (LR (U := U) (Γ := Γ₀) henv hU (k+1)).DefEq (.forallE B₁ F₁) (.forallE B₂ F₂) X
           (WShape.forallE a₁ a₂) (.sort r) := by
       simp only [LR, LRS, LRS.DefEq.sort_a, LRS.TyDefEq.forallE_iff]
-      exact .inl ⟨_, _, _, _, .rfl, .rfl, hB, hF, hV, hE⟩
+      exact ⟨.inl ⟨_, _, _, _, .rfl, .rfl, hB, hF, hV, hE⟩, hT1⟩
+    have mkTy {B F : VExpr} {u' v'} (hBt : env.HasType U Γ₀ B (.sort u'))
+        (hFt : env.HasType U (B::Γ₀) F (.sort v'))
+        (y : (LR (U := U) (Γ := Γ₀) henv hU k).TyTy B a₁)
+        (hY : ∀ x p, p.HasType a₁ → env.HasType U Γ₀ x B →
+          (LR (U := U) (Γ := Γ₀) henv hU k).DefEq x x B p a₁ →
+          (LR (U := U) (Γ := Γ₀) henv hU k).TyTy (F.inst x) (a₂.app p)) :
+        LRS.TyTyped (LR (U := U) (Γ := Γ₀) henv hU k) (.forallE B F) (WShape.forallE a₁ a₂) :=
+      (LRS.TyTyped.forallE_iff).2 (.inr ⟨B, F, u', v', .rfl, .refl (.forallE hBt hFt), hBt, hFt, y, hY⟩)
     have hAt := (HA.defeq.mono hE).hasType.1
     have hA't := (HA.defeq.mono hE).hasType.2
     have SΓ {σ σ' : VExpr.Subst} (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' Γ ρ) :=
@@ -458,10 +469,48 @@ theorem LR.adequacy_of (hM : ModelEnv env) {E : VEnv} (hE : E ≤ env)
     have hΓ₀A' {σ σ' : VExpr.Subst} (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' Γ ρ) :
         OnCtx (A'.subst σ :: Γ₀) (env.IsType U) := ⟨hΓ₀, _, (hA'σ W).hasType.1⟩
     have hΓA' : OnCtx (A'::Γ) (env.IsType U) := ⟨hΓ, _, hA't⟩
+    have huWF := (HA.defeq.mono hE).sort_r henv hΓ
+    have hvWF := (HB.defeq.mono hE).sort_r henv hΓA
+    have domTy {σ σ' : VExpr.Subst} (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' Γ ρ) :
+        (LR (U := U) (Γ := Γ₀) henv hU k).TyTy (A.subst σ) a₁ ∧
+        (LR (U := U) (Γ := Γ₀) henv hU k).TyTy (A'.subst σ) a₁ := by
+      have ⟨_, _, _, le_n, le_a, hA', hSort, hmem'⟩ := ((hS HA).left.sound W.fits hA1).out
+      have I := (ihA hΓ hA' hSort hmem').1 W
+      have hu : TyEq env U Γ₀ (.sort u) (.sort u) := .refl (.sort huWF)
+      exact ⟨(LR.toTyTy le_n le_a aty.1.isType hSort hmem' hu I.1).1,
+        (LR.toTyTy le_n le_a aty.1.isType hSort hmem' hu I.2).1⟩
+    have codTy {σ₁ σ₂ : VExpr.Subst} {x x' p} (hp : p.HasType a₁)
+        (W' : LR.SubstWF (U := U) henv hU Γ₀ (σ₁.cons x) (σ₂.cons x') (A::Γ) (ρ.push p.T)) :
+        (LR (U := U) (Γ := Γ₀) henv hU k).TyTy (body.subst (σ₁.cons x)) (a₂.app p) ∧
+        (LR (U := U) (Γ := Γ₀) henv hU k).TyTy (body'.subst (σ₁.cons x)) (a₂.app p) := by
+      have hB := (hM'.forallE_inv' hM).2 p
+      have ⟨_, _, _, le, le', iB, iv, hmb⟩ := ((hS HB).left.sound W'.fits hB).out
+      have I := (ihB hΓA iB iv hmb).1 W'
+      have hv : TyEq env U Γ₀ (.sort v) (.sort v) := .refl (.sort hvWF)
+      exact ⟨(LR.toTyTy le le' (aty.2 _ hp).toType iv hmb hv I.1).1,
+        (LR.toTyTy le le' (aty.2 _ hp).toType iv hmb hv I.2).1⟩
+    have tyL {σ σ' : VExpr.Subst} (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' Γ ρ) :
+        LRS.TyTyped (LR (U := U) (Γ := Γ₀) henv hU k) (.forallE (A.subst σ) (body.subst σ.lift))
+          (WShape.forallE a₁ a₂) :=
+      mkTy (hAσ W).hasType.1
+        ((HB.defeq.mono hE).hasType.1.substDF henv hΓA (hΓ₀A W) ((SΓ W).lift henv hAt)).hasType.1
+        (domTy W).1 fun x p hp hx hv => by
+          simp only [inst_lift_cons]; exact (codTy hp (cons hp hA1 hx hv W.left)).1
+    have tyR {σ σ' : VExpr.Subst} (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' Γ ρ) :
+        LRS.TyTyped (LR (U := U) (Γ := Γ₀) henv hU k) (.forallE (A'.subst σ) (body'.subst σ.lift))
+          (WShape.forallE a₁ a₂) :=
+      mkTy (hA'σ W).hasType.1
+        ((HB'.defeq.mono hE).hasType.2.substDF henv hΓA' (hΓ₀A' W) ((SΓ W).lift henv hA't)).hasType.1
+        (domTy W).2 fun x p hp hx hv => by
+          simp only [inst_lift_cons]
+          have hc := (LR _ _ _).symm_ty (hdom' W.left)
+          exact (codTy hp (cons hp hA1 ((hAA'σ W.left).symm.defeqDF hx)
+            ((LR _ _ _).conv (.base (hAA'σ W.left).symm) hc hv) W.left)).2
     refine ⟨fun σ σ' W => ⟨?_, ?_⟩, fun σ W => ?_⟩
     · refine mkPi (.base (hAσ W))
         (.base ((HB.defeq.mono hE).hasType.1.substDF henv hΓA (hΓ₀A W) ((SΓ W).lift henv hAt))) (hdom W).1
-        ⟨fun x x' p hp hx hv => ?_, fun x p hp hx hv => ?_⟩ <;> simp only [inst_lift_cons]
+        ⟨fun x x' p hp hx hv => ?_, fun x p hp hx hv => ?_⟩ (fun _ _ => ⟨tyL W, tyL W.symm⟩) <;>
+        simp only [inst_lift_cons]
       · refine ⟨(body_rel hp (cons hp hA1 hx hv W.left)).1, ?_⟩
         have hv' := (LR _ _ _).conv (.base (hAσ W)) (hdom W).1 hv
         exact (body_rel hp (cons hp hA1 ((hAσ W).defeqDF hx) hv' W.symm.left)).1
@@ -469,7 +518,8 @@ theorem LR.adequacy_of (hM : ModelEnv env) {E : VEnv} (hE : E ≤ env)
     · have hc := (LR _ _ _).symm_ty (hdom' W.left)
       refine mkPi (.base (hA'σ W))
         (.base ((HB'.defeq.mono hE).hasType.2.substDF henv hΓA' (hΓ₀A' W) ((SΓ W).lift henv hA't))) (hdom W).2
-        ⟨fun x x' p hp hx hv => ?_, fun x p hp hx hv => ?_⟩ <;> simp only [inst_lift_cons]
+        ⟨fun x x' p hp hx hv => ?_, fun x p hp hx hv => ?_⟩ (fun _ _ => ⟨tyR W, tyR W.symm⟩) <;>
+        simp only [inst_lift_cons]
       · have hx₁ := (hAA'σ W.left).symm.defeqDF hx
         have hv₁ := (LR _ _ _).conv (.base (hAA'σ W.left).symm) hc hv
         refine ⟨(body_rel hp (cons hp hA1 hx₁ hv₁ W.left)).2, ?_⟩
@@ -479,7 +529,8 @@ theorem LR.adequacy_of (hM : ModelEnv env) {E : VEnv} (hE : E ≤ env)
         exact (body_rel hp (cons hp hA1 hx₁ ((LR _ _ _).conv (.base (hAA'σ W.left).symm) hc hv) W)).2
     · refine mkPi (.base (hAA'σ W))
         (.base ((HB.defeq.mono hE).substDF henv hΓA (hΓ₀A W) ((SΓ W).lift henv hAt))) (hdom' W)
-        ⟨fun x x' p hp hx hv => ?_, fun x p hp hx hv => ?_⟩ <;> simp only [inst_lift_cons]
+        ⟨fun x x' p hp hx hv => ?_, fun x p hp hx hv => ?_⟩ (fun _ _ => ⟨tyL W, tyR W⟩) <;>
+        simp only [inst_lift_cons]
       · exact body_rel hp (cons hp hA1 hx hv W)
       · exact body_rel' hp (cons hp hA1 hx hv W)
   | @lamDF Γ A A' u B v body body' _ _ HA HB HB' HBody HBody' ihA ihB _ ihBody _ =>

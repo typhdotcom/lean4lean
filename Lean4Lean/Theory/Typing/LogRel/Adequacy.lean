@@ -103,15 +103,6 @@ theorem trans :
   | ⟨a1, a2⟩, ⟨b1, b2⟩ =>
     ⟨fun _ _ W => ⟨(a1 W).1, (b1 W).2⟩, fun _ W => (LR _ _ _).trans (a2 W) (b2 W)⟩
 
-theorem trans' : Adequate (U := U) henv hU Γ₀ Γ ρ A₁ A₂ (.sort u) a (.sort r') →
-    Adequate (U := U) henv hU Γ₀ Γ ρ A₂ A₃ (.sort v) a (.sort r) →
-    Adequate (U := U) henv hU Γ₀ Γ ρ A₁ A₃ (.sort u) a (.sort r')
-  | ⟨a1, a2⟩, ⟨b1, b2⟩ => by
-    refine ⟨fun σ σ' W => ⟨(a1 W).1, ?_⟩, fun _ W => (LR _ _ _).trans' (a2 W) (b2 W)⟩
-    have h1 := (LR _ _ _).trans' (a1 W.left).2 (b2 W.left)
-    have h2 := (LR _ _ _).trans' (a1 W.symm.left).2 (b2 W.symm.left)
-    exact (LR _ _ _).trans ((LR _ _ _).symm h1) <| (LR _ _ _).trans (a1 W).2 h2
-
 end LR.Adequate
 
 omit [AxInterp] in
@@ -197,6 +188,27 @@ theorem LR.toValTy {m : WShape n'} {b : WShape n} (le_n : n ≤ n') (le_a : b.T 
   exact (LR _ _ _).toType <| (LR _ _ _).mono_r_1 hle hmem'
     (.mono_r hle .sort hmem')
     ((LR _ _ _).sort_iff_ty.2 (.inl ⟨_, _, .rfl, .rfl, (rfl : VLevel.Equiv _ _)⟩)) H
+
+/-- What the relation knows of the typing of two related types, read at a smaller shape. -/
+theorem LR.toTyTy {m : WShape n'} {b : WShape n} (le_n : n ≤ n') (le_a : b.T ≤ m.T)
+    (ht : b.HasType .type) (hSort : LE_Interp env ρ a.T (.sort u)) (hmem' : m.HasType a)
+    (hu : TyEq env U Γ₀ (.sort u) (.sort u))
+    (H : (LR (U := U) (Γ := Γ₀) henv hU n').DefEq M N (.sort u) m a) :
+    (LR (U := U) (Γ := Γ₀) henv hU n).TyTy M b ∧ (LR (U := U) (Γ := Γ₀) henv hU n).TyTy N b := by
+  have hle := hSort.le_sort'
+  have H' := (LR _ _ _).mono_r_1 hle hmem' (.mono_r hle .sort hmem')
+    ((LR _ _ _).sort_iff_ty.2 (.inl ⟨_, _, .rfl, .rfl, (rfl : VLevel.Equiv _ _)⟩)) H
+  have ⟨hT, hY⟩ := (LR _ _ _).sort_a_iff.1 H'
+  have ⟨y1, y2⟩ := hY u hu
+  have hmt := (WShape.HasType.mono_r hle .sort hmem').toType
+  have hbt : (b.lift n').HasType .type := WShape.lift_type ▸ (WShape.HasType.lift le_n).2 ht
+  have le := (TShape.LE.lift_l le_n).1 le_a
+  refine ⟨(LR.TyTy.lift le_n ht ?_).1
+      ((LR _ _ _).tyTy_mono le hbt hmt ((LR _ _ _).left_ty hT) y1),
+    (LR.TyTy.lift le_n ht ?_).1
+      ((LR _ _ _).tyTy_mono le hbt hmt ((LR _ _ _).left_ty ((LR _ _ _).symm_ty hT)) y2)⟩
+  · exact LR.toValTy le_n le_a ht hSort hmem' ((LR _ _ _).left H)
+  · exact LR.toValTy le_n le_a ht hSort hmem' ((LR _ _ _).left ((LR _ _ _).symm H))
 
 end LogRel
 end Lean4Lean

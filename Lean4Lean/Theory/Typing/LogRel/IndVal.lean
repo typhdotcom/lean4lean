@@ -306,6 +306,27 @@ theorem WShape.HasType.indTy_cases {m : WShape (n+1)} {h : IndHead} {l : List (W
   | ctor => exact .inr ⟨_, _, _, rfl⟩
   | _ => cases congrArg (·.1) ea
 
+/-- A constructor shape typed at an inductive type shape has the constructor's number of
+fields. -/
+theorem WShape.HasType.ctor_arity {h : IndHead} {l : List (WShape n)} {fs : List (WShape n)}
+    {hf} (H : (WShape.ctor c fs hf).HasType (.indTy r h l)) :
+    ∃ i, h.ctors.idxOf? c = some i ∧ h.arities[i]? = some fs.length := by
+  generalize em : WShape.ctor c fs hf = m at H
+  generalize ea : WShape.indTy r h l = a at H
+  cases H.unfold with
+  | ctor hc =>
+    obtain ⟨rfl, rfl⟩ := WShape.ctor.inj.1 em
+    obtain ⟨-, rfl, rfl⟩ := WShape.indTy.inj.1 ea
+    unfold Shape.ctorOK Shape.ctorTy at hc
+    cases hi : h.ctors.idxOf? c with
+    | none => simp [hi] at hc
+    | some i =>
+      refine ⟨i, rfl, ?_⟩
+      simp only [hi, Option.map_some, Bool.and_eq_true, IndHead.arityOK, Option.bind_some,
+        beq_iff_eq] at hc
+      simpa using hc.2.2
+  | _ => first | cases congrArg (·.1) em | cases congrArg (·.1) ea
+
 /-- A constructor shape typed at an inductive type shape fits its telescope. -/
 theorem WShape.HasType.ctor_fits {h : IndHead} {l : List (WShape n)} {fs : List (WShape n)}
     {hf} (H : (WShape.ctor c fs hf).HasType (.indTy r h l)) :
@@ -342,7 +363,7 @@ def TeleRel : Nat → VExpr → VExpr → WShape n → Prop
   | 0, _, _, _ => True
   | k+1, T, T', tel => tel.piView = none ∨ ∃ D B D' B' b g, tel.piView = some (b, g) ∧
     StepS env U Γ T (.forallE D B) ∧ StepS env U Γ T' (.forallE D' B') ∧
-    TyEq env U Γ D D' ∧ IH.TyDefEq D D' b ∧
+    TyEq env U Γ D D' ∧ IH.TyDefEq D D' b ∧ IH.TyTy D b ∧ IH.TyTy D' b ∧
     ∀ a a' p, p.HasType b → env.IsDefEq U Γ a a' D → IH.DefEq a a' D p b →
       TeleRel k (B.inst a) (B'.inst a') (g.app p)
 
@@ -367,8 +388,8 @@ namespace TeleRel
 theorem symm : ∀ {k T T'} {tel : WShape n}, TeleRel IH k T T' tel → TeleRel IH k T' T tel
   | 0, _, _, _, _ => trivial
   | _+1, _, _, _, .inl h => .inl h
-  | _+1, _, _, _, .inr ⟨D, B, D', B', b, g, hv, r, r', hD, hDD, H⟩ =>
-    .inr ⟨D', B', D, B, b, g, hv, r', r, hD.symm, IH.symm_ty hDD, fun a a' p hp ha hr =>
+  | _+1, _, _, _, .inr ⟨D, B, D', B', b, g, hv, r, r', hD, hDD, y1, y2, H⟩ =>
+    .inr ⟨D', B', D, B, b, g, hv, r', r, hD.symm, IH.symm_ty hDD, y2, y1, fun a a' p hp ha hr =>
       symm (H a' a p hp (hD.symm.defeqDF ha.symm) (IH.conv hD.symm (IH.symm_ty hDD) (IH.symm hr)))⟩
 
 theorem trans (hU : StepUniq env) : ∀ {k T T' T''} {tel : WShape n},
@@ -376,12 +397,12 @@ theorem trans (hU : StepUniq env) : ∀ {k T T' T''} {tel : WShape n},
   | 0, _, _, _, _, _, _ => trivial
   | _+1, _, _, _, _, .inl h, _ => .inl h
   | _+1, _, _, _, _, .inr ⟨_, _, _, _, _, _, hv, _⟩, .inl h => by rw [hv] at h; cases h
-  | _+1, _, _, _, _, .inr ⟨D, B, D', B', b, g, hv, r, r', hD, hDD, H⟩,
-      .inr ⟨D₂, B₂, D'', B'', b₂, g₂, hv2, r2, r'', hD2, hDD2, H2⟩ => by
+  | _+1, _, _, _, _, .inr ⟨D, B, D', B', b, g, hv, r, r', hD, hDD, y1, _, H⟩,
+      .inr ⟨D₂, B₂, D'', B'', b₂, g₂, hv2, r2, r'', hD2, hDD2, _, y2, H2⟩ => by
     obtain ⟨rfl, rfl⟩ : D₂ = D' ∧ B₂ = B' := by
       have := StepS.determ hU r2 forallE_whnf' r' forallE_whnf'; simpa using this
     obtain ⟨rfl, rfl⟩ : b = b₂ ∧ g = g₂ := by rw [hv] at hv2; simpa using hv2
-    refine .inr ⟨D, B, D'', B'', b, g, hv, r, r'', .trans hD hD2, IH.trans_ty hDD hDD2,
+    refine .inr ⟨D, B, D'', B'', b, g, hv, r, r'', .trans hD hD2, IH.trans_ty hDD hDD2, y1, y2,
       fun a a'' p hp ha hr => trans hU (H a a'' p hp ha hr) (H2 a'' a'' p hp ?_ ?_)⟩
     · exact hD.defeqDF ha.hasType.2
     · exact IH.conv hD hDD (IH.left (IH.symm hr))
@@ -409,17 +430,31 @@ theorem of_piView (H : TeleRel IH (k+1) T T' tel) (hv : tel.piView = some (b, g)
     TyEq env U Γ D D' ∧ IH.TyDefEq D D' b ∧
     ∀ a a' p, p.HasType b → env.IsDefEq U Γ a a' D → IH.DefEq a a' D p b →
       TeleRel IH k (B.inst a) (B'.inst a') (g.app p) := by
-  rcases H with h | ⟨D, B, D', B', b', g', hv', r, r', rest⟩
+  rcases H with h | ⟨D, B, D', B', b', g', hv', r, r', h1, h2, -, -, rest⟩
   · rw [hv] at h; cases h
   · obtain ⟨rfl, rfl⟩ : b = b' ∧ g = g' := by rw [hv] at hv'; simpa using hv'
-    exact ⟨D, B, D', B', r, r', rest⟩
+    exact ⟨D, B, D', B', r, r', h1, h2, rest⟩
+
+/-- At a pi shape, a telescope relation gives what is known of its domains' typing. -/
+theorem of_piView_ty (hU : StepUniq env) (H : TeleRel IH (k+1) T T' tel)
+    (hv : tel.piView = some (b, g)) (r : StepS env U Γ T (.forallE D B))
+    (r' : StepS env U Γ T' (.forallE D' B')) : IH.TyTy D b ∧ IH.TyTy D' b := by
+  rcases H with h | ⟨D₁, B₁, D₁', B₁', b', g', hv', r₁, r₁', -, -, y1, y2, -⟩
+  · rw [hv] at h; cases h
+  · obtain ⟨rfl, rfl⟩ : b = b' ∧ g = g' := by rw [hv] at hv'; simpa using hv'
+    obtain ⟨rfl, rfl⟩ : D = D₁ ∧ B = B₁ := by
+      have := StepS.determ hU r forallE_whnf' r₁ forallE_whnf'; simpa using this
+    obtain ⟨rfl, rfl⟩ : D' = D₁' ∧ B' = B₁' := by
+      have := StepS.determ hU r' forallE_whnf' r₁' forallE_whnf'; simpa using this
+    exact ⟨y1, y2⟩
 
 end TeleRel
 
 namespace TeleRel
 
 /-- A telescope relation at a shape holds at a smaller one. -/
-theorem mono (hle : tel ≤ tel') (ht : tel.HasType .type) (ht' : tel'.HasType .type) :
+theorem mono (hU : StepUniq env) (hle : tel ≤ tel') (ht : tel.HasType .type)
+    (ht' : tel'.HasType .type) :
     ∀ {k T T'}, TeleRel IH k T T' tel' → TeleRel IH k T T' tel
   | 0, _, _, _ => trivial
   | k+1, T, T', H => by
@@ -428,14 +463,16 @@ theorem mono (hle : tel ≤ tel') (ht : tel.HasType .type) (ht' : tel'.HasType .
     | some bg =>
       obtain ⟨b, g⟩ := bg
       obtain ⟨b', g', hv', hb, hg, hgm, -⟩ := WShape.piView_mono hle hv
-      obtain ⟨D, B, D', B', r, r', hD, hDD, H⟩ := H.of_piView hv'
+      obtain ⟨D, B, D', B', r, r', hD, hDD, Hq⟩ := H.of_piView hv'
+      have ⟨y1, y2⟩ := H.of_piView_ty hU hv' r r'
       have ⟨tb, tg⟩ := WShape.piView_type ht hv
       have ⟨tb', tg'⟩ := WShape.piView_type ht' hv'
       refine .inr ⟨D, B, D', B', b, g, hv, r, r', hD, IH.mono_r_2_ty hb tb tb' hDD,
-        fun a a' p hp ha hr => ?_⟩
+        IH.tyTy_mono hb tb tb' (IH.left_ty hDD) y1,
+        IH.tyTy_mono hb tb tb' (IH.left_ty (IH.symm_ty hDD)) y2, fun a a' p hp ha hr => ?_⟩
       have hp' := WShape.HasType.mono_r hb tb' hp
       have hr' := IH.mono_r_1 hb hp hp' (IH.left_ty hDD) hr
-      exact mono (hg p) (tg p) (tg' p) (H a a' p hp' ha hr')
+      exact mono hU (hg p) (tg p) (tg' p) (Hq a a' p hp' ha hr')
 
 /-- Telescope relations at compatible shapes hold at their join. -/
 theorem join (hU : StepUniq env) {k T T'} {tel₁ tel₂ : WShape n} (hC : tel₁.Compat tel₂)
@@ -466,6 +503,8 @@ theorem join (hU : StepUniq env) {k T T'} {tel₁ tel₂ : WShape n} (hC : tel�
         have := StepS.determ hU r forallE_whnf' r₂ forallE_whnf'; simpa using this
       obtain ⟨rfl, rfl⟩ : D' = D₂' ∧ B' = B₂' := by
         have := StepS.determ hU r' forallE_whnf' r₂' forallE_whnf'; simpa using this
+      have ⟨y1, y1'⟩ := H1.of_piView_ty hU WShape.piView_forallE r r'
+      have ⟨y2, y2'⟩ := H2.of_piView_ty hU WShape.piView_forallE r r'
       have hpi₁ := WShape.piView_pi ht₁
       have hpi₂ := WShape.piView_pi ht₂
       have htJ := ht₁.join hC ht₂
@@ -481,9 +520,13 @@ theorem join (hU : StepUniq env) {k T T'} {tel₁ tel₂ : WShape n} (hC : tel�
         WShape.lift_join (Nat.le_succ _)
       have ef : (f₁.join f₂).lift (n+1) = (f₁.lift (n+1)).join (f₂.lift (n+1)) :=
         WShapeFun.lift_join' (Nat.le_succ _)
-      refine .inr ⟨D, B, D', B', _, _, WShape.piView_forallE, r, r', hD, ?_,
+      refine .inr ⟨D, B, D', B', _, _, WShape.piView_forallE, r, r', hD, ?_, ?_, ?_,
         fun a a' p hp ha hr => ?_⟩
       · rw [es]; exact IH.join_ty hCl hpi₁.dom_isType hpi₂.dom_isType hDD1 hDD2
+      · rw [es]; exact IH.tyTy_join hCl hpi₁.dom_isType hpi₂.dom_isType (IH.left_ty hDD1)
+          (IH.left_ty hDD2) y1 y2
+      · rw [es]; exact IH.tyTy_join hCl hpi₁.dom_isType hpi₂.dom_isType
+          (IH.left_ty (IH.symm_ty hDD1)) (IH.left_ty (IH.symm_ty hDD2)) y1' y2'
       have hsJ := hpiJ.dom_isType
       rw [es] at hp hr hsJ
       have go {s₀ : WShape n} {f₀ : WShapeFun n} (hpi : WShape.HasTypePi (f₀.lift (n+1)) (s₀.lift (n+1)) true)
@@ -494,14 +537,14 @@ theorem join (hU : StepUniq env) {k T T'} {tel₁ tel₂ : WShape n} (hC : tel�
         obtain ⟨d, hdle, hdt, hfd⟩ := WShape.HasDom.iff.1 hpi.1 p
         have hd1 := IH.mono_l hdle (WShape.HasType.mono_r hle hsJ hdt) hp hr
         have hd2 := IH.mono_r_2 hle hdt hsJ hd1
-        exact mono hfd (hpi.app_isType p) (hpi.app_isType d) (Hh a a' d hdt ha hd2)
+        exact mono hU hfd (hpi.app_isType p) (hpi.app_isType d) (Hh a a' d hdt ha hd2)
       have T1 := go hpi₁ hJs.le.1 H1'
       have T2 := go hpi₂ hJs.le.2 H2'
       have hJp := hJf.app_l p
       obtain ⟨hCp, -, hle'⟩ := WShape.Join.iff.1 hJp
       have TJ := join hCp (hpi₁.app_isType p) (hpi₂.app_isType p) T1 T2
       rw [ef]
-      exact mono hle' (hJf.app_l p |> fun _ => by rw [← ef]; exact hpiJ.app_isType p)
+      exact mono hU hle' (hJf.app_l p |> fun _ => by rw [← ef]; exact hpiJ.app_isType p)
         ((hpi₁.app_isType p).join hCp (hpi₂.app_isType p)) TJ
 
 end TeleRel
@@ -743,11 +786,11 @@ theorem whr (hU : StepUniq env) (hn : Inert env h.name) (hM : StepS env U Γ M M
     exact H _ _ _ _ (StepS.determ_l hU hM r1 hn.whnf) (StepS.determ_l hU hN r2 hn.whnf)
 
 
-theorem mono (hl : l.Forall₂ (· ≤ ·) l')
+theorem mono (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
     (htel : ∀ i, (ctorTel h l i).HasType .type) (htel' : ∀ i, (ctorTel h l' i).HasType .type)
     (H : IndTele IH h l' M N) : IndTele IH h l M N :=
   fun _ _ _ _ r1 r2 _ i _ _ hi hk hci =>
-    (H _ _ _ _ r1 r2 _ i _ _ hi hk hci).mono (ctorTel_mono hl i) (htel i) (htel' i)
+    (H _ _ _ _ r1 r2 _ i _ _ hi hk hci).mono hU (ctorTel_mono hl i) (htel i) (htel' i)
 
 theorem join (hU : StepUniq env) (hl : l.Forall₂ WShape.Compat l')
     (htel : ∀ i, (ctorTel h l i).HasType .type) (htel' : ∀ i, (ctorTel h l' i).HasType .type)
@@ -848,7 +891,7 @@ theorem red_A (H : CtorVal IH h l A M N c fs) :
   let ⟨_, _, _, _, _, _, lsA, AsA, _, _, _, _, _, _, _, _, _, h4, _⟩ := H; ⟨lsA, AsA, h4⟩
 
 
-theorem mono_r (hl : l.Forall₂ (· ≤ ·) l')
+theorem mono_r (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
     (htel : ∀ i, (ctorTel h l i).HasType .type) (htel' : ∀ i, (ctorTel h l' i).HasType .type)
     (hfit : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l i) fs)
     (H : CtorVal IH h l' A M N c fs) : CtorVal IH h l A M N c fs := by
@@ -856,7 +899,7 @@ theorem mono_r (hl : l.Forall₂ (· ≤ ·) l')
     hF, hp, hp'⟩ := H
   refine ⟨hn, hc, fun _ _ _ _ r1 r2 _ i' _ _ hi hk hci => ?_, i, k, ci, lsA, AsA, ls, qs, ms, ls',
     qs', ns, h1, h2, h3, h4, h5, h6, h7, ?_, hp, hp'⟩
-  · exact (hT _ _ _ _ r1 r2 _ i' _ _ hi hk hci).mono (ctorTel_mono hl i') (htel i') (htel' i')
+  · exact (hT _ _ _ _ r1 r2 _ i' _ _ hi hk hci).mono hU (ctorTel_mono hl i') (htel i') (htel' i')
   · exact hF.mono (ctorTel_mono hl i) (htel i) (htel' i)
       (forall₂_le_refl fs) (hfit i h1)
 
@@ -954,14 +997,14 @@ theorem red_A (H : StructVal IH h l A M N c fs) :
     ∃ ls As, StepS env U Γ A ((VExpr.const h.name ls).appN As) :=
   let ⟨_, _, _, _, _, lsA, AsA, _, _, _, _, _, h4, _⟩ := H; ⟨lsA, AsA, h4⟩
 
-theorem mono_r (hl : l.Forall₂ (· ≤ ·) l')
+theorem mono_r (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
     (htel : ∀ i, (ctorTel h l i).HasType .type) (htel' : ∀ i, (ctorTel h l' i).HasType .type)
     (hfit : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l i) fs)
     (H : StructVal IH h l' A M N c fs) : StructVal IH h l A M N c fs := by
   obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, h9, hF, ha⟩ := H
   refine ⟨hn, fun _ _ _ _ r1 r2 _ i' _ _ hi hk hci => ?_, i, k, ci, lsA, AsA, M', N',
     h1, h2, h3, h4, h5, h6, h7, h8, h9, ?_, ha⟩
-  · exact (hT _ _ _ _ r1 r2 _ i' _ _ hi hk hci).mono (ctorTel_mono hl i') (htel i') (htel' i')
+  · exact (hT _ _ _ _ r1 r2 _ i' _ _ hi hk hci).mono hU (ctorTel_mono hl i') (htel i') (htel' i')
   · exact hF.mono (ctorTel_mono hl i) (htel i) (htel' i) (forall₂_le_refl fs) (hfit i h1)
 
 theorem mono_up (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
@@ -1044,7 +1087,10 @@ variable {IH : LogRel env U Γ n} {IH' : LogRel env U Γ (n+1)}
     (IH'.TyDefEq M N (m.lift (n+1)) ↔ IH.TyDefEq M N m))
   (hD : ∀ {M N A} {m a : WShape n}, m.HasType a →
     (IH'.DefEq M N A (m.lift (n+1)) (a.lift (n+1)) ↔ IH.DefEq M N A m a))
-include hT hD
+  (hY : ∀ {A} {m : WShape n}, m.HasType .type → IH.TyDefEq A A m →
+    (IH'.TyTy A (m.lift (n+1)) ↔ IH.TyTy A m))
+  (hU : StepUniq env)
+include hT hD hY hU
 
 theorem TeleRel.lift : ∀ {k T T'} {tel : WShape n}, tel.HasType .type →
     (TeleRel IH' k T T' (tel.lift (n+1)) ↔ TeleRel IH k T T' tel)
@@ -1063,7 +1109,10 @@ theorem TeleRel.lift : ∀ {k T T'} {tel : WShape n}, tel.HasType .type →
       constructor
       · intro H
         obtain ⟨D, B, D', B', r, r', hDD, hTy, Hq⟩ := H.of_piView hv'
-        refine .inr ⟨D, B, D', B', b, g, hv, r, r', hDD, (hT tb).1 hTy,
+        have ⟨y1, y2⟩ := H.of_piView_ty hU hv' r r'
+        have hTy0 := (hT tb).1 hTy
+        refine .inr ⟨D, B, D', B', b, g, hv, r, r', hDD, hTy0, (hY tb (IH.left_ty hTy0)).1 y1,
+          (hY tb (IH.left_ty (IH.symm_ty hTy0))).1 y2,
           fun a a' p hp ha hr => ?_⟩
         have hp' := (WShape.HasType.lift (Nat.le_succ n)).2 hp
         have := Hq a a' _ hp' ha ((hD hp).2 hr)
@@ -1071,9 +1120,11 @@ theorem TeleRel.lift : ∀ {k T T'} {tel : WShape n}, tel.HasType .type →
         exact (TeleRel.lift (tg p)).1 this
       · intro H
         obtain ⟨D, B, D', B', r, r', hDD, hTy, Hq⟩ := H.of_piView hv
+        have ⟨y1, y2⟩ := H.of_piView_ty hU hv r r'
         have tb' : (b.lift (n+1)).HasType .type := by
           have := (WShape.HasType.lift (Nat.le_succ n)).2 tb; rwa [WShape.lift_sort] at this
         refine .inr ⟨D, B, D', B', _, _, hv', r, r', hDD, (hT tb).2 hTy,
+          (hY tb (IH.left_ty hTy)).2 y1, (hY tb (IH.left_ty (IH.symm_ty hTy))).2 y2,
           fun a a' p' hp' ha hr => ?_⟩
         obtain ⟨q, hq, hmem⟩ := WShapeFun.app_eq (g.lift (n+1)) p'
         obtain ⟨q₀, y₀, hmem₀, rfl, hy⟩ := (WShapeFun.mem_lift (Nat.le_succ n)).1 hmem
@@ -1089,9 +1140,9 @@ theorem TeleRel.lift : ∀ {k T T'} {tel : WShape n}, tel.HasType .type →
           have := (WShape.HasType.lift (Nat.le_succ n)).2 hy0; rwa [WShape.lift_sort] at this
         have t2 : ((g.app qx).lift (n+1)).HasType .type := by
           have := (WShape.HasType.lift (Nat.le_succ n)).2 (tg qx); rwa [WShape.lift_sort] at this
-        exact T1.mono ((WShape.lift_le_lift (Nat.le_succ n)).2 hle) t1 t2
+        exact T1.mono hU ((WShape.lift_le_lift (Nat.le_succ n)).2 hle) t1 t2
 
-omit hT in
+omit hT hY hU in
 theorem FieldsRel.lift : ∀ {T} {tel : WShape n} {ms ns fs},
     FieldsRel IH' T (tel.lift (n+1)) ms ns (fs.map (·.lift (n+1))) ↔ FieldsRel IH T tel ms ns fs
   | _, _, [], [], [] => .rfl
@@ -1126,14 +1177,14 @@ theorem IndTele.lift {h : IndHead} {l : List (WShape n)}
   exact forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun _ =>
     forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun i =>
     forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun _ =>
-    forall_congr' fun _ => TeleRel.lift hT hD (htel i)
+    forall_congr' fun _ => TeleRel.lift hT hD hY hU (htel i)
 
 theorem CtorVal.lift {h : IndHead} {l : List (WShape n)} {fs : List (WShape n)}
     (htel : ∀ i, (ctorTel h l i).HasType .type) :
     CtorVal IH' h (l.map (·.lift (n+1))) A M N c (fs.map (·.lift (n+1))) ↔
       CtorVal IH h l A M N c fs := by
   unfold CtorVal
-  simp only [ctorTel_lift, List.length_map, IndTele.lift hT hD htel]
+  simp only [ctorTel_lift, List.length_map, IndTele.lift hT hD hY hU htel]
   exact and_congr .rfl <| and_congr .rfl <| and_congr .rfl <|
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>
@@ -1146,7 +1197,7 @@ theorem StructVal.lift {h : IndHead} {l : List (WShape n)} {fs : List (WShape n)
     StructVal IH' h (l.map (·.lift (n+1))) A M N c (fs.map (·.lift (n+1))) ↔
       StructVal IH h l A M N c fs := by
   unfold StructVal
-  simp only [ctorTel_lift, List.length_map, IndTele.lift hT hD htel]
+  simp only [ctorTel_lift, List.length_map, IndTele.lift hT hD hY hU htel]
   exact and_congr .rfl <| and_congr .rfl <|
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>

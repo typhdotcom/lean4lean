@@ -91,24 +91,27 @@ every model interpreting none of its constants by given shapes, given the quotie
 blocks' steps. The steps are given the rank bound `N` of the declarations so far, so that they may
 use what an induction on rank gives for environments of smaller rank. -/
 theorem AdequacyHyps.of_WF' (henvW : env.WF) (N : Nat)
-    (hModel : ∀ X : AxInterp, @AxOK _ X → @ModelEnv _ X env)
+    (hModel : ∀ X : AxInterp, @AxOK _ X → @DomRole _ X env → @ModelEnv _ X env)
     (hΓ₀ : OnCtx Γ₀ (env.IsType U))
-    (hQuot : ∀ (X : AxInterp) {ds E E'}, @AxOK _ X → VEnv.WF' ds E → VDecl.listRank ds < N →
+    (hQuot : ∀ (X : AxInterp) {ds E E'}, @AxOK _ X → @DomRole _ X env → VEnv.WF' ds E →
+      VDecl.listRank ds < N →
       VDecl.WF E .quot E' →
-      E' ≤ env → (∀ c, X.dom c → E'.constants c = none) →
+      Extends E' env → (∀ c, X.dom c → E'.constants c = none) →
       @AdequacyHyps env U _ X henv hU E Γ₀ → @AdequacyHyps env U _ X henv hU E' Γ₀)
-    (hInd : ∀ (X : AxInterp) {ds E E' d}, @AxOK _ X → VEnv.WF' ds E → VDecl.listRank ds < N →
+    (hInd : ∀ (X : AxInterp) {ds E E' d}, @AxOK _ X → @DomRole _ X env → VEnv.WF' ds E →
+      VDecl.listRank ds < N →
       VDecl.WF E (.induct d) E' →
-      E' ≤ env → (∀ c, X.dom c → E'.constants c = none) →
+      Extends E' env → (∀ c, X.dom c → E'.constants c = none) →
       @AdequacyHyps env U _ X henv hU E Γ₀ → @AdequacyHyps env U _ X henv hU E' Γ₀) :
     ∀ {ds E}, VEnv.WF' ds E → VDecl.listRank ds ≤ N → Extends E env → ∀ X : AxInterp, @AxOK _ X →
-      (∀ c, X.dom c → E.constants c = none) → @AdequacyHyps env U _ X henv hU E Γ₀ := by
+      @DomRole _ X env → (∀ c, X.dom c → E.constants c = none) →
+      @AdequacyHyps env U _ X henv hU E Γ₀ := by
   have hJ : LRJoin (U := U) henv hU Γ₀ := fun hc h1 h2 d1 d2 => (LR henv hU _).join hc h1 h2 d1 d2
   intro ds E H
   induction H with
-  | empty => intro _ _ X _ _; exact AdequacyHyps.empty X
+  | empty => intro _ _ X _ _ _; exact AdequacyHyps.empty X
   | @decl d E₂ ds E hD hW ih =>
-    intro hN hext X hX hdom
+    intro hN hext X hX hXD hdom
     rw [VDecl.listRank_cons] at hN
     have hN₁ : VDecl.listRank ds ≤ N := by omega
     have hle : E₂ ≤ env := hext.le
@@ -116,26 +119,30 @@ theorem AdequacyHyps.of_WF' (henvW : env.WF) (N : Nat)
     have hle₁ : E ≤ env := hext₁.le
     have hdom₁ : ∀ c, X.dom c → E.constants c = none :=
       fun c h => VEnv.constants_none_of_le hD.le (hdom c h)
-    have IH := ih hN₁ hext₁ X hX hdom₁
-    have hMX := hModel X hX
+    have IH := ih hN₁ hext₁ X hX hXD hdom₁
+    have hMX := hModel X hX hXD
     have hEo : E.Ordered := VEnv.WF.ordered ⟨_, hW⟩
     have hnd {ds' : List VDecl} {E' : VEnv} (hW' : VEnv.WF' ds' E')
         (hd : ∀ c, X.dom c → E'.constants c = none) : NoDom E' :=
       fun hdf e hx => VEnv.WF.rule_head ⟨_, hW'⟩ hdf e (hd _ hx)
     have hS : ∀ {Γ M N A}, E.IsDefEqStrong U Γ M N A → StrongSoundEq env U Γ M N A :=
       fun D => (soundHyps_of hMX (quotRuleSound hMX henvW) (henvW.blockSound hMX) hW hle₁
-        (hnd hW hdom₁)).strongSound hMX hle₁ D
+        (hnd hW hdom₁) (VEnv.WF.noDomI ⟨_, hW⟩ hdom₁)).strongSound hMX hle₁ D
     cases hD with
-    | «axiom» _ h1 => exact IH.addNoRole h1 (Extends.noRole hW h1 hext)
-    | «opaque» _ h1 => exact IH.addNoRole h1 (Extends.noRole hW h1 hext)
+    | «axiom» _ h1 =>
+      exact IH.addNoRole h1 (Extends.noRole hW h1 hext) fun hx => by
+        have h := hdom _ hx; rw [VEnv.addConst_self h1] at h; cases h
+    | «opaque» _ h1 =>
+      exact IH.addNoRole h1 (Extends.noRole hW h1 hext) fun hx => by
+        have h := hdom _ hx; rw [VEnv.addConst_self h1] at h; cases h
     | «example» => exact IH
     | «def» hv h1 =>
       refine IH.addDef hMX hEo (fun hx => ?_) hv h1 hle hS hΓ₀
       have h := hdom _ hx
       rw [VEnv.addDefEq_le.constants (VEnv.addConst_self h1)] at h; cases h
-    | quot h0 h1 => exact hQuot X hX hW (by simp [VDecl.rank] at hN; omega) (.quot h0 h1) hle hdom IH
+    | quot h0 h1 => exact hQuot X hX hXD hW (by simp [VDecl.rank] at hN; omega) (.quot h0 h1) hext hdom IH
     | induct h0 h1 h2 =>
-      exact hInd X hX hW (by simp [VDecl.rank] at hN; omega) (.induct h0 h1 h2) hle hdom IH
+      exact hInd X hX hXD hW (by simp [VDecl.rank] at hN; omega) (.induct h0 h1 h2) hext hdom IH
     | @mutualDef cis E' _ hT h1 hV =>
       obtain ⟨hnd₁, hfr₁, hcs₁⟩ := VEnv.addConstList_spec ((VEnv.addConsts_eq (env := E) cis).symm.trans h1)
       simp only [List.map_map] at hnd₁ hcs₁
@@ -153,12 +160,16 @@ theorem AdequacyHyps.of_WF' (henvW : env.WF) (N : Nat)
           ci.type.ConstsSat (E.constants · ≠ none) := fun ci hci =>
         ⟨hle.defeqs (VEnv.addDefEqs_defeqs_self hci), hcon ci hci, VConstant.WF.constsSat hEo (hT ci hci)⟩
       have hGax := GoodOver.axOK (cis := cis) X hX hMX hJ hndup
-      have hMG := hModel _ hGax
+      have hGD : @DomRole _ (GoodOver (U := U) henv hU X Γ₀ cis) env := fun hc A =>
+        hc.elim (fun hx => hXD hx A) fun hc' => by
+          obtain ⟨ci, hci, rfl⟩ := List.mem_map.1 hc'
+          cases hMX.roles A (.delta (hdecl ci hci).1 rfl); trivial
+      have hMG := hModel _ hGax hGD
       have hdomG : ∀ c, (GoodOver (U := U) henv hU X Γ₀ cis).dom c → E.constants c = none := by
         rintro c (hc | hc)
         · exact hdom₁ c hc
         · obtain ⟨ci, hci, rfl⟩ := List.mem_map.1 hc; exact hfresh ci hci
-      have IHG := ih hN₁ hext₁ _ hGax hdomG
+      have IHG := ih hN₁ hext₁ _ hGax hGD hdomG
       have hsXG := hext₁.sameOn hW X _ hdom₁ hdomG
       have hsGX := hext₁.sameOn hW _ X hdomG hdom₁
       obtain ⟨ds', hW'⟩ : E'.WF := VEnv.WF.addConstList ⟨_, hW⟩ (fun p hp => by
@@ -173,7 +184,8 @@ theorem AdequacyHyps.of_WF' (henvW : env.WF) (N : Nat)
           exact VEnv.WF.rule_head ⟨_, hW⟩ hdf e (hdomG _ hx)
         intro Γ M N A D
         exact (soundHyps_of hMG (quotRuleSound hMG henvW) (henvW.blockSound hMG) hW'
-          hE'le hndG).strongSound hMG hE'le D
+          hE'le hndG (NoDomI.mono (VEnv.WF.noDomI ⟨_, hW⟩ hdomG)
+            fun h => (VEnv.addConsts_inducts h1) ▸ h)).strongSound hMG hE'le D
       have hG' := AdequacyHyps.addGood X hMX hMG hndup hsGX hdecl IHG h1
       have HM := MutualOK.of X hMX hMG hndup hdomX hsXG hdecl hEo' hE'le
         (fun ci hci => (hT ci hci).mono (VEnv.addConsts_le h1)) hV hS' hΓ₀ hG'

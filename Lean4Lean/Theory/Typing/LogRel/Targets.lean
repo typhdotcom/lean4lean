@@ -52,7 +52,7 @@ theorem sort_inv_of {env : VEnv} (henvW : env.WF) {U : Nat} {Γ : List VExpr} {u
     ((hS H).left.sound W.fits (LE_Interp.sort' (l := u) (ρ := .nil))).out
   cases sort_shape_of_le hm' le_m
   cases WShape.HasType.sort_l_inv hty
-  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
+  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none nofun) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
   simp only [subst_id] at R
   rcases (LR _ _ _).sort_iff.1 R with ⟨u', v', h1, h2, h⟩ | ⟨h1, -⟩
   · cases StepS.of_whnf sort_whnf h1; cases StepS.of_whnf sort_whnf h2; exact h
@@ -66,7 +66,7 @@ theorem forallE_inv_of {env : VEnv} (henvW : env.WF) {U : Nat} {Γ : List VExpr}
     (d : env.IsDefEq U Γ (.forallE A B) (.forallE A' B') V) :
     TyEq env U Γ A A' ∧ TyEq env U (A::Γ) B B' := by
   letI := env.shapeEnv
-  have hM := (henvW.modelEnv AxOK.none)
+  have hM := (henvW.modelEnv AxOK.none nofun)
   have H := d.strong henvW.ordered hΓ
   have hS : ∀ {Γ M N A}, env.IsDefEqStrong U Γ M N A → StrongSoundEq env U Γ M N A :=
     henvW.modelSound

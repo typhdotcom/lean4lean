@@ -21,7 +21,7 @@ theorem quot_body_le (hM : ModelEnv env) (hq : env.defeqs quotDefEq) {u v : VLev
     LE_Interp env σ y (.app (.bvar 2) (.bvar 0)) := by
   have hA : ConstArity env ``Quot.lift .quotLift 6 := .quotLift hq rfl
   rw [← spine_eq_appN] at H
-  obtain ⟨n0, H0⟩ := H.spine_inv hM.roles (fun r n' h => by
+  obtain ⟨n0, H0⟩ := H.spine_inv hM.roles (fun h => hM.domRole h hA) (fun r n' h => by
     cases hM.roles h hA; have := hA.determ h; simp; omega)
   obtain ⟨rargs, y', hra, hyy, hC⟩ := H0 n0 (Nat.le_refl _)
   have hrl : rargs.length = 6 := by rw [List.Forall₂.length_eq hra]; simp
@@ -29,7 +29,7 @@ theorem quot_body_le (hM : ModelEnv env) (hq : env.defeqs quotDefEq) {u v : VLev
   cases hC with
   | bot => exact .bot
   | lam he hle => exact LE_Interp.mono (Const.lam_le_bot hM.roles he hle (hrl ▸ hA)) .bot
-  | ext _ h1 h2 => cases hM.roles (.delta h1 h2) hA
+  | ext h0 => exact (hM.domRole h0 hA).elim
   | delta _ h1 h2 => cases hM.roles (.delta h1 h2) hA
   | indTy h1 h2 => cases hM.roles (.indTy h1 h2) hA
   | ctor h1 h2 h3 h4 => cases hM.roles (.ctor h1 h2 h3 h4) hA
@@ -45,7 +45,7 @@ theorem quot_body_le (hM : ModelEnv env) (hq : env.defeqs quotDefEq) {u v : VLev
     let .cons (f := f') (x := x0) h6 h7 h8 := h5
     let .nil h9 := h8
     exact .app (hf.mono h6) (.mono h7 .bot) h9
-  | quot h1 h2 h3 h4 h5 h6 =>
+  | quot h1 h2 h3 h4 h5 h6 _g =>
     rename_i a x hh f β r α
     simp only [List.reverse_cons, List.reverse_nil, List.nil_append, List.cons_append] at hra
     cases hra with | cons hx hra =>
@@ -59,13 +59,13 @@ theorem quot_body_le (hM : ModelEnv env) (hq : env.defeqs quotDefEq) {u v : VLev
     by_cases hne : IsStruct ``Quot.mk → WShape.ListNonZero [a]
     · have hB : ConstArity env ``Quot.mk .quotMk 3 := .quotMk hq rfl
       rw [← spine_eq_appN] at hx
-      obtain ⟨n1, H1⟩ := hx.spine_inv hM.roles (fun r n' h => by
+      obtain ⟨n1, H1⟩ := hx.spine_inv hM.roles (fun h => hM.domRole h hB) (fun r n' h => by
         cases hM.roles h hB; have := hB.determ h; simp; omega)
       obtain ⟨rargs', y'', hra', hyy', hC'⟩ := H1 n1 (Nat.le_refl _)
       have hrl' : rargs'.length = 3 := by rw [List.Forall₂.length_eq hra']; simp
       have hxy := h6.trans hyy'
       cases hC' with
-      | quotMk g1 g2 g3 g4 g5 =>
+      | quotMk g1 g2 g3 g4 g5 g6 =>
         rename_i a' r' α'
         simp only [List.reverse_cons, List.reverse_nil, List.nil_append, List.cons_append]
           at hra'
@@ -82,7 +82,7 @@ theorem quot_body_le (hM : ModelEnv env) (hq : env.defeqs quotDefEq) {u v : VLev
         obtain ⟨l', h', heq, -⟩ := WShape.ctor'_le.1
           (WShape.LE.of_T ((hxy.trans this).trans TShape.bot_eqv.2)) hne
         simp [WShape.ext_iff, WShape.ctor, WShape.bot, Shape.bot] at heq
-      | ext _ g1 g2 => cases hM.roles (.delta g1 g2) hB
+      | ext g0 => exact (hM.domRole g0 hB).elim
       | delta _ g1 g2 => cases hM.roles (.delta g1 g2) hB
       | indTy g1 g2 => cases hM.roles (.indTy g1 g2) hB
       | ctor g1 g2 g3 g4 => cases hM.roles (.ctor g1 g2 g3 g4) hB
@@ -142,6 +142,9 @@ theorem quotMk_realize (hM : ModelEnv env) (hq : env.defeqs quotDefEq)
       List.Forall₂ (fun x A => LE_Interp env ρ x.T A) rf [a] ∧
       LE_Interp env ρ (WShape.ctor' ``Quot.mk rf).T
         ((VExpr.const ``Quot.mk [u]).appN [α, r, a]) := by
+  have hnQ : ¬AxInterp.dom ``Quot := fun h => hM.domRole h (ConstArity.quotTy hq rfl)
+  have hnM : ¬AxInterp.dom ``Quot.mk := fun h => hM.domRole h (ConstArity.quotMk hq rfl)
+  have hnL : ¬AxInterp.dom ``Quot.lift := fun h => hM.domRole h (ConstArity.quotLift hq rfl)
   have hrel : levelRel u = true := by simpa [levelRel] using hP
   have hQf := quotMkTele_facts hM (env := env) hu
   have hccl : (quotMkConst.type.instL [u]).ClosedN := (hM.closed.constType hmk).instL
@@ -290,6 +293,9 @@ theorem quot_body_ge (hM : ModelEnv env) (hq : env.defeqs quotDefEq)
     (hLS : StrongSound env U Γ (quotL u v) B) (hRT : SoundTy env Γ (.app (.bvar 2) (.bvar 0)) B)
     {y : TShape} (hy : LE_Interp env ρ y (.app (.bvar 2) (.bvar 0))) :
     LE_Interp env ρ y (quotL u v) := by
+  have hnQ : ¬AxInterp.dom ``Quot := fun h => hM.domRole h (ConstArity.quotTy hq rfl)
+  have hnM : ¬AxInterp.dom ``Quot.mk := fun h => hM.domRole h (ConstArity.quotMk hq rfl)
+  have hnL : ¬AxInterp.dom ``Quot.lift := fun h => hM.domRole h (ConstArity.quotLift hq rfl)
   obtain ⟨y'', b, hyle, hy'', hb, hty⟩ := hRT W hy
   suffices LE_Interp env ρ y'' (quotL u v) from this.mono hyle
   -- the major premise, typed along `Quot.mk`'s telescope
@@ -426,8 +432,8 @@ theorem _root_.Lean4Lean.VEnv.WF.modelSound {env : VEnv} (henv : env.WF)
     (H : env.IsDefEqStrong U Γ M N A) :
     @StrongSoundEq env.shapeEnv (@AxInterp.none env.shapeEnv) env U Γ M N A :=
   letI := env.shapeEnv
-  henv.strongSound (quotRuleSound (henv.modelEnv AxOK.none) henv)
-    (henv.blockSound (henv.modelEnv AxOK.none)) H
+  henv.strongSound (quotRuleSound (henv.modelEnv AxOK.none nofun) henv)
+    (henv.blockSound (henv.modelEnv AxOK.none nofun)) H
 
 end LogRel
 end Lean4Lean

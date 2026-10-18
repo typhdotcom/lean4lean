@@ -231,7 +231,7 @@ of the recursor applied to the binders before the fields, indices `idx` and a ma
 interpretations are constructor shapes of `c` with fields below the fields' values, interprets the
 rule's right-hand side body. -/
 theorem iota_body_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q : Nat}
-    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀))
+    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀)) (hnr : ¬AxInterp.dom (d.recName j))
     (hj : d.allTypes[j]? = some Tj) (hq : d.allCtors[q]? = some (j, c)) {ls : List VLevel}
     {Bs : List VExpr} {R : VExpr} (hR : d.iotaRhs ls q j c = .lams Bs R)
     (hBs : Bs.length = d.params.length + d.allTypes.length + d.allCtors.length + c.fields.length)
@@ -255,7 +255,7 @@ theorem iota_body_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q 
     simp only [VInductDecl.majorIdx, List.length_append, VExpr.length_bvars, hidxl,
       List.length_singleton, ← hN]; omega
   rw [← spine_eq_appN] at H
-  obtain ⟨n0, H0⟩ := H.spine_inv hM.roles (fun r n' h => by
+  obtain ⟨n0, H0⟩ := H.spine_inv hM.roles hnr (fun r n' h => by
     cases hM.roles h hA; have := hA.determ h; rw [List.length_reverse, hlen]; omega)
   obtain ⟨rargs, y', hra, hyy, hC⟩ := H0 n0 (Nat.le_refl _)
   have hrl : rargs.length = d.majorIdx Tj + 1 := by
@@ -267,7 +267,7 @@ theorem iota_body_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q 
   cases hC with
   | bot => exact .bot
   | lam he hle => exact LE_Interp.mono (Const.lam_le_bot hM.roles he hle (hrl ▸ hA)) .bot
-  | ext _ h1 h2 => cases hM.roles (.delta h1 h2) hA
+  | ext h0 => exact absurd h0 hnr
   | delta _ h1 h2 => cases hM.roles (.delta h1 h2) hA
   | indTy h1 h2 => cases hM.roles (.indTy h1 h2) hA
   | ctor h1 h2 h3 h4 => cases hM.roles (.ctor h1 h2 h3 h4) hA
@@ -275,7 +275,7 @@ theorem iota_body_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q 
   | quotMk h1 h2 => cases hM.roles (.quotMk h1 h2) hA
   | quot h1 h2 => cases hM.roles (.quotLift h1 h2) hA
   | quotK h1 h2 => cases hM.roles (.quotLift h1 h2) hA
-  | iota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 =>
+  | iota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 hg =>
     rename_i s' hh fs x rest T' c' d' t' j' q'
     cases hM.roles hA (.recursor h1 h2 h4)
     obtain rfl := Option.some.inj (hj.symm.trans h4)
@@ -321,7 +321,7 @@ theorem iota_body_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q 
     have := forall₂_bvars_le ((List.forall₂_map_left_iff (f := WShape.T)).2 hpre) i
       (by simpa using h)
     simpa using this
-  | kIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 =>
+  | kIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _g =>
     rename_i s' hh d' t' j' q' T' c' rargs' e'
     cases hM.roles hA (.recursor h1 h2 h4)
     obtain rfl := Option.some.inj (hj.symm.trans h4)
@@ -379,7 +379,7 @@ its binders, at a valuation fitting them: an interpretation of the rule's right-
 interprets the recursor applied to the binders before the fields, indices `idx` and a major
 premise, given that the major premise has a constructor shape of `c` above the fields' values. -/
 theorem iota_body_ge (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q : Nat}
-    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀))
+    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀)) (hnr : ¬AxInterp.dom (d.recName j))
     (hj : d.allTypes[j]? = some Tj) (hq : d.allCtors[q]? = some (j, c)) {ls : List VLevel}
     (hP : ¬d.PropAt (d.blockLevels ls))
     {Bs : List VExpr} {R : VExpr} (hR : d.iotaRhs ls q j c = .lams Bs R)
@@ -463,7 +463,7 @@ theorem iota_body_ge (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q 
 elimination: the recursor reduces on any major premise, at fields read off the indices, and the
 fields that are not indices are proofs, whose values are `bot`. -/
 theorem iota_body_ge_k (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q : Nat}
-    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀))
+    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀)) (hnr : ¬AxInterp.dom (d.recName j))
     (hj : d.allTypes[j]? = some Tj) (hq : d.allCtors[q]? = some (j, c)) (hTc : Tj.ctors = [c])
     {ls : List VLevel} (hPA : d.PropAt (d.blockLevels ls)) (hlarge : d.largeElim = true)
     {Bs : List VExpr} {R : VExpr} (hR : d.iotaRhs ls q j c = .lams Bs R)
@@ -1015,7 +1015,7 @@ forward, that the major premise's interpretations are constructor shapes of the 
 (`hfwd`); backward, the right body's interpretations interpreting the left body at valuations
 fitting the binders (`hbwd`). -/
 theorem iotaRuleSound_of (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q : Nat}
-    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀))
+    {Tj : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t₀)) (hnr : ¬AxInterp.dom (d.recName j))
     (hj : d.allTypes[j]? = some Tj) (hq : d.allCtors[q]? = some (j, c))
     (hcidx : c.indices.length = Tj.indices.length)
     (hcl : (d.iotaRule d.recLevels d.motiveLevel (VLevel.params d.recUVars) q j c).lhs.ClosedN ∧
@@ -1071,7 +1071,7 @@ theorem iotaRuleSound_of (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ 
     rw [VInductDecl.iotaRhs, hR, hRe]
   refine SoundEq.lams_fit hTel fun {Γ₀ ρ} xs W0 hF W' y => ⟨fun hy => ?_, fun hy => ?_⟩
   · rw [iotaL_eq] at hy
-    exact iota_body_le hM hs hj hq hiR (length_iotaBinders ..) (by simp [hcidx])
+    exact iota_body_le hM hs hnr hj hq hiR (length_iotaBinders ..) (by simp [hcidx])
       (fun k i hk hi => iotaIdx_spec hk hi) (hfwd lsB (pushAll ρ xs)) hy
   · subst hlsB hv
     exact hbwd ls hls hlen' R hRe hF (by simpa using W') hLS hRS hBB hBC hTel W0 y hy
@@ -1153,7 +1153,7 @@ proposition, at a valuation fitting the rule's binders: it has a constructor sha
 with fields above the fields' values. -/
 theorem iota_major_own (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
     (hle : envT ≤ env) (hO : envT.Ordered) {d : VInductDecl} {j : Nat} {Tj : VInductiveType}
-    {c : VConstructor} (hsT : env.inducts Tj.name = some (d, j)) (hTj : d.types[j]? = some Tj)
+    {c : VConstructor} (hsT : env.inducts Tj.name = some (d, j)) (hnd : ¬AxInterp.dom Tj.name) (hTj : d.types[j]? = some Tj)
     (hj : d.allTypes[j]? = some Tj) (hTn : Tj.nested = none) {i : Nat}
     (hci : Tj.ctors[i]? = some c)
     (hidxc : (Tj.ctors.map (·.name)).idxOf? c.name = some i)
@@ -1338,7 +1338,7 @@ theorem iota_major_own (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT en
   rw [show N + c.fields.length - 0 - d.params.length =
     d.allTypes.length + d.allCtors.length + c.fields.length by omega] at hps
   rw [show N + c.fields.length - N - c.fields.length = 0 by omega] at hfs
-  obtain ⟨N', rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hsT hTj hci hidxc hTW hcW hPT
+  obtain ⟨N', rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hnd hsT hTj hci hidxc hTW hcW hPT
     hcT hcC hlsB hP W (by simp) (by simp) hidxl hTS hCS (List.forall₂_append' hps hfs)
   rw [List.drop_left' (by simp [hzl]; omega)] at hrf
   exact ⟨N', rf, hCI, hrf⟩

@@ -161,13 +161,14 @@ theorem AdequacyHyps.addDef (hM : ModelEnv env) {E E₁ : VEnv} (hEo : E.Ordered
 
 /-- A constant with no role in the environment is interpreted only by `bot`. -/
 theorem LE_Interp.Const.le_bot_of_noRole (hnr : ∀ r k, ¬ConstArity env c r k)
+    (hnd : ¬AxInterp.dom c)
     (H : Const env c ls R rargs m) : m ≤ TShape.bot := by
   induction H with
   | bot => exact TShape.bot_eqv.1
   | lam _ m_le ih =>
     exact m_le.trans ((WShape.lam'_le_bot fun x y h => WShape.LE.T_iff.1
       ((ih x y h).trans TShape.bot_eqv.2)).T.trans TShape.bot_eqv.1)
-  | ext _ h1 h2 => exact (hnr _ _ (.delta h1 h2)).elim
+  | ext h0 => exact (hnd h0).elim
   | delta _ h1 h2 => exact (hnr _ _ (.delta h1 h2)).elim
   | indTy h1 h2 => exact (hnr _ _ (.indTy h1 h2)).elim
   | ctor h1 h2 h3 h4 => exact (hnr _ _ (.ctor h1 h2 h3 h4)).elim
@@ -179,19 +180,20 @@ theorem LE_Interp.Const.le_bot_of_noRole (hnr : ∀ r k, ¬ConstArity env c r k)
   | quotK h1 h2 => exact (hnr _ _ (.quotLift h1 h2)).elim
 
 /-- A constant with no role is related everywhere it is interpreted: only at `bot`. -/
-theorem AdeqStmt.noRole (hnr : ∀ r k, ¬ConstArity env c r k) :
+theorem AdeqStmt.noRole (hnr : ∀ r k, ¬ConstArity env c r k) (hnd : ¬AxInterp.dom c) :
     AdeqStmt (U := U) henv hU Γ₀ Γ (.const c ls) (.const c ls') A := by
   intro ρ n m a hm _ hmem
   have : m.T ≤ TShape.bot := by
     cases hm with
     | bot => exact TShape.bot_eqv.1
-    | const _ _ h3 _ _ h6 => exact h3.trans (h6.le_bot_of_noRole hnr)
+    | const _ _ h3 _ _ h6 => exact h3.trans (h6.le_bot_of_noRole hnr hnd)
   cases show m = .bot from TShape.le_bot.1 (this.trans TShape.bot_le)
   exact .bot hmem.isType
 
 /-- Adding a constant with no rules and no role keeps adequacy's environment cases. -/
 theorem AdequacyHyps.addNoRole (H : AdequacyHyps (U := U) henv hU E Γ₀) {E₁ : VEnv}
-    (h1 : E.addConst c ci = some E₁) (hnr : ∀ r k, ¬ConstArity env c r k) :
+    (h1 : E.addConst c ci = some E₁) (hnr : ∀ r k, ¬ConstArity env c r k)
+    (hnd : ¬AxInterp.dom c) :
     AdequacyHyps (U := U) henv hU E₁ Γ₀ := by
   have hinds : E₁.inducts = E.inducts := VEnv.addConst_inducts h1
   refine ⟨fun {Γ c' ci' ls ls' u} hΓ hc hls hls' hlen heq hu h7 h8 hA => ?_,
@@ -200,7 +202,7 @@ theorem AdequacyHyps.addNoRole (H : AdequacyHyps (U := U) henv hU E Γ₀) {E₁
     fun hΓ h => H.projEta hΓ (hinds ▸ h)⟩
   unfold VEnv.addConst at h1; split at h1 <;> cases h1
   simp only at hc; split at hc
-  · next e => subst e; exact AdeqStmt.noRole hnr
+  · next e => subst e; exact AdeqStmt.noRole hnr hnd
   · exact H.const hΓ hc hls hls' hlen heq hu h7 h8 hA
 
 end LogRel

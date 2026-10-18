@@ -52,7 +52,8 @@ theorem WShape.fitsPi_of_ctorOK {I : IndHead} {as l : List (WShape (n+1))} {c : 
 applied to `args`: `m1` is a constructor shape of the same constructor with larger fields `fs1`,
 each typed at an interpretation of its declared domain, at the valuation with interpretations `p`
 of the parameters and the fields before it pushed. -/
-theorem ctor_fields_typed (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t i : Nat}
+theorem ctor_fields_typed (hM : ModelEnv env) {s : Name} (hnd : ¬AxInterp.dom s)
+    {d : VInductDecl} {t i : Nat}
     {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
     (hT : d.types[t]? = some T) (hci : T.ctors[i]? = some c)
     (hidx : (T.ctors.map (·.name)).idxOf? c.name = some i)
@@ -70,7 +71,7 @@ theorem ctor_fields_typed (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t i 
         ∃ b : WShape N, x.HasType b ∧
           LE_Interp env (pushAll ρ (p ++ (fs1.take k).map (·.T))) b.T D := by
   rw [← spine_eq_appN] at ha
-  obtain ⟨n0, H0⟩ := ha.spine_inv hM.roles (fun r n' h => by
+  obtain ⟨n0, H0⟩ := ha.spine_inv hM.roles hnd (fun r n' h => by
     cases hM.roles h (ConstArity.indTy hs hT)
     rw [(ConstArity.indTy hs hT).determ h] at *; simp [hargs])
   -- a common level for the shapes involved, above `0`
@@ -88,7 +89,7 @@ theorem ctor_fields_typed (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t i 
   obtain ⟨l', h', I, as, hm1, hfl, ha', hok⟩ := WShape.ctor_typed hne' hle' hty'
   have hnb {r I} {as : List (WShape (K+1))} : WShape.indTy r I as ≠ .bot := by
     simp [WShape.ext_iff, WShape.indTy, WShape.bot, Shape.bot]
-  obtain hy | ⟨ctys, hcl, hcty', hyY⟩ := Const.indTy_inv hM.roles hs hT hrl hC
+  obtain hy | ⟨ctys, hcl, hcty', hyY⟩ := Const.indTy_inv hM.roles hnd hs hT hrl hC
   · have := (TShape.LE.def (m := K+1+1) (b := TShape.bot) (by omega) (Nat.zero_le _)).1
       (hay.trans hy)
     simp only [TShape.bot, WShape.T, WShape.lift_bot] at this
@@ -206,8 +207,9 @@ theorem _root_.Lean4Lean.VExpr.ClosedN.foralls_getElem :
 /-- `ProjSound` for a block declared in `E₁`, whose model of `envT` (the block's types as axioms)
 is sound. -/
 theorem projSound_at (hM : ModelEnv env) {E₁ envT : VEnv} (hE₁ : E₁.WF) {d : VInductDecl}
+    {s : Name} (hnd : ¬AxInterp.dom s)
     (hd : d.WF E₁) (hTs : E₁.addConstList d.typeConsts = some envT) (hle : envT ≤ env)
-    (hX : SoundHyps envT env) {s : Name} {t : Nat} (hs : env.inducts s = some (d, t))
+    (hX : SoundHyps envT env) {t : Nat} (hs : env.inducts s = some (d, t))
     {T : VInductiveType} (hT : d.types[t]? = some T) (hname : T.name = s)
     {Γ : List VExpr} {c : VConstructor} {k : Nat} {f : VField} {ls : List VLevel}
     {As I : List VExpr} {e : VExpr} {u : VLevel} {U : Nat}
@@ -242,7 +244,7 @@ theorem projSound_at (hM : ModelEnv env) {E₁ envT : VEnv} (hE₁ : E₁.WF) {d
         ((T.typeApp (VLevel.params d.uvars) (VExpr.bvars d.params.length c.fields.length)
           c.indices).instL ls) := by
       rw [hcty, VEnv.foralls_instL', List.map_append]
-    obtain ⟨N, fs1, p, hle2, hfs, hp, hfields⟩ := ctor_fields_typed hM hs hT
+    obtain ⟨N, fs1, p, hle2, hfs, hp, hfields⟩ := ctor_fields_typed hM hnd hs hT
       (i := 0) (by simp [hcs]) (by simp [hcs]) hcty' (by simpa using hPs)
       (args := As ++ I) (by simp [hAs, hI]) hne hle1 hty ha
     rw [List.take_left' hAs] at hp
@@ -355,7 +357,8 @@ theorem TShape.ctor'_le_ctor' {c c' : Name} {l : List (WShape n)} {l' : List (WS
 
 /-- A constructor's `Const` derivation at its arity: `bot`, or the constructor shape of its
 fields at levels where its type is not a proposition. -/
-theorem Const.ctor_inv (hR : ConstRoles env) {s : Name} {d : VInductDecl} {t t' : Nat}
+theorem Const.ctor_inv (hR : ConstRoles env) (hD : ∀ {c r k}, AxInterp.dom c →
+    ConstArity env c r k → r.DomOK) {s : Name} {d : VInductDecl} {t t' : Nat}
     {T : VInductiveType} {c' : VConstructor} (hs : env.inducts s = some (d, t))
     (hT : d.types[t']? = some T) (hc : c' ∈ T.ctors) {ls : List VLevel}
     {R : TShape → VExpr → Prop} {rargs : List (WShape n)} {m : TShape}
@@ -371,7 +374,7 @@ theorem Const.ctor_inv (hR : ConstRoles env) {s : Name} {d : VInductDecl} {t t' 
     refine .inl (h2.trans ((WShape.lam'_le_bot fun x y h => WShape.LE.T_iff.1
       ((Const.compat_mismatch hR (by simp; omega) (h1 x y h) hA).trans
         TShape.bot_eqv.2)).T.trans TShape.bot_eqv.1))
-  | ext _ h1 h2 => cases hR (.delta h1 h2) hA
+  | ext h0 => exact (hD h0 hA).elim
   | delta _ h1 h2 => cases hR (.delta h1 h2) hA
   | indTy h1 h2 => cases hR (.indTy h1 h2) hA
   | ctor h1 h2 h3 h4 h5 h6 h7 =>
@@ -401,13 +404,13 @@ theorem ctorApp_inv (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t t' : Nat
   have hA : ConstArity env c'.name (.ctor d t' c') (d.params.length + c'.fields.length) :=
     .ctor hs hT hc rfl
   rw [← spine_eq_appN] at H
-  obtain ⟨n0, H0⟩ := H.spine_inv hM.roles (fun r n h => by
+  obtain ⟨n0, H0⟩ := H.spine_inv hM.roles (fun h => hM.domRole h hA) (fun r n h => by
     cases hM.roles h hA
     rw [← hA.determ h]; simp [hAs, hfs]; omega)
   obtain ⟨rargs, y, hra, hmy, hC⟩ := H0 n0 (Nat.le_refl _)
   have hl : rargs.length = d.params.length + c'.fields.length := by
     rw [List.Forall₂.length_eq hra]; simp [hAs, hfs]; omega
-  rcases Const.ctor_inv hM.roles hs hT hc hl hC with h | ⟨hP, h⟩
+  rcases Const.ctor_inv hM.roles hM.domRole hs hT hc hl hC with h | ⟨hP, h⟩
   · exact .inl (hmy.trans h)
   · refine .inr ⟨hP, n0, _, ?_, hmy.trans h⟩
     have h2 := (List.Forall₂.reverse (l := rargs) (l' := (As ++ fs).reverse)).2 hra

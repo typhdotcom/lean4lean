@@ -17,6 +17,7 @@ import Lean4Lean.Theory.Typing.LogRel.Targets
 import Lean4Lean.Theory.Typing.LogRel.ConstDelta
 import Lean4Lean.Theory.Typing.LogRel.Good
 import Lean4Lean.Theory.Typing.LogRel.Mutual
+import Lean4Lean.Theory.Typing.LogRel.BlockGood
 import Lean4Lean.Theory.Typing.LogRel.Prefix
 import Lean4Lean.Theory.Typing.LogRel.AdeqProj
 import Lean4Lean.Theory.Typing.LogRel.AdequacyWF
@@ -27,6 +28,9 @@ import Lean4Lean.Theory.Typing.LogRel.InjWF
 import Lean4Lean.Theory.Typing.LogRel.ProjChainOf
 import Lean4Lean.Theory.Typing.LogRel.AdeqQuot
 import Lean4Lean.Theory.Typing.LogRel.AdeqAssemble
+import Lean4Lean.Theory.Typing.LogRel.AdeqQuotRule
+import Lean4Lean.Theory.Typing.LogRel.AdeqQuotLift
+import Lean4Lean.Theory.Typing.LogRel.AdeqQuotLiftQ
 import Lean4Lean.Theory.Typing.LogRel.AdeqBlock
 import Lean4Lean.Theory.Typing.LogRel.StepUniq
 import Lean4Lean.Theory.Typing.LogRel.KIota

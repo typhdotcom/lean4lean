@@ -30,6 +30,10 @@ variable (env : VEnv) (U : Nat) (Γ : List VExpr)
 /-- `M` reduces to a neutral normal form. -/
 def NeRed (M : VExpr) : Prop := ∃ M', StepS env U Γ M M' ∧ WHNF env U Γ M' ∧ Neutral env M'
 
+/-- `M` reduces, typed at `A`, to a neutral normal form. -/
+def TNeRed (M A : VExpr) : Prop :=
+  ∃ M₁, TRed env U Γ M M₁ A ∧ WHNF env U Γ M₁ ∧ Neutral env M₁
+
 /-- Types related as universes: both reduce to sorts at equivalent levels, or both are stuck. -/
 def SortRel (M N : VExpr) : Prop :=
   (∃ u v, StepS env U Γ M (.sort u) ∧ StepS env U Γ N (.sort v) ∧ u ≈ v) ∨
@@ -72,6 +76,23 @@ theorem determ_l (hU : StepUniq env) (H1 : TRed env U Γ e e₁ A) (H2 : TRed en
   ⟨StepS.determ_l hU H1.1 H2.1 W, H1.2.symm.trans H2.2⟩
 
 end TRed
+
+namespace TNeRed
+
+theorem neRed (H : TNeRed env U Γ M A) : NeRed env U Γ M :=
+  let ⟨M', h1, h2, h3⟩ := H; ⟨M', h1.1, h2, h3⟩
+
+theorem tyEq (hE : TyEq env U Γ A B) (H : TNeRed env U Γ M A) : TNeRed env U Γ M B :=
+  let ⟨M', h1, h2, h3⟩ := H; ⟨M', h1.tyEq hE, h2, h3⟩
+
+/-- Typed reduction to a neutral normal form is invariant under a typed reduction. -/
+theorem whr (hU : StepUniq env) (h : TRed env U Γ M M₁ A) :
+    TNeRed env U Γ M A ↔ TNeRed env U Γ M₁ A := by
+  constructor
+  · intro ⟨M', h1, h2, h3⟩; exact ⟨M', TRed.determ_l hU h h1 h2, h2, h3⟩
+  · intro ⟨M', h1, h2, h3⟩; exact ⟨M', ⟨h.1.trans h1.1, h.2.trans h1.2⟩, h2, h3⟩
+
+end TNeRed
 
 namespace SortRel
 variable (hU : StepUniq env)
@@ -118,10 +139,17 @@ structure LogRelBase (env : VEnv) (U : Nat) (Γ : List VExpr) (n : Nat) where
   DefEq (M N A : VExpr) (m a : WShape n) : Prop
   /-- Type validity: `A ≡ B` are valid types at shape `a`. -/
   TyDefEq (A B : VExpr) (a : WShape n) : Prop
+  /-- What the relation knows of a type's typing at shape `a`, hereditarily: what a pi type
+  reduces to, typed, and its codomains at related arguments; the projections of a structure's
+  stuck values, typed along its constructor's telescope. Asked only of terms whose type is a
+  sort. -/
+  TyTy (A : VExpr) (a : WShape n) : Prop
 
 structure LogRel (env : VEnv) (U : Nat) (Γ : List VExpr) (n : Nat)
     extends LogRelBase env U Γ n where
   sort_iff : DefEq M N A (.sort r) (.sort r') ↔ SortRel env U Γ M N
+  sort_a_iff : DefEq M N A m (.sort r) ↔
+    TyDefEq M N m ∧ ∀ u, TyEq env U Γ A (.sort u) → TyTy M m ∧ TyTy N m
   sort_iff_ty : TyDefEq M N (.sort r) ↔ SortRel env U Γ M N
   bot : a.HasType .type → DefEq M N A .bot a
   toType : DefEq M N A m (.sort r) → TyDefEq M N m
@@ -130,8 +158,6 @@ structure LogRel (env : VEnv) (U : Nat) (Γ : List VExpr) (n : Nat)
   symm : DefEq M N A m a → DefEq N M A m a
   symm_ty : TyDefEq M N m → TyDefEq N M m
   trans : DefEq M₁ M₂ A m a → DefEq M₂ M₃ A m a → DefEq M₁ M₃ A m a
-  trans' : DefEq A₁ A₂ (.sort u) a (.sort r') → DefEq A₂ A₃ (.sort v) a (.sort r) →
-    DefEq A₁ A₃ (.sort u) a (.sort r')
   trans_ty : TyDefEq M₁ M₂ m → TyDefEq M₂ M₃ m → TyDefEq M₁ M₃ m
   conv : TyEq env U Γ A B → TyDefEq A B a → DefEq M N A m a → DefEq M N B m a
   mono_r_2 : a ≤ a' → m.HasType a → a'.HasType .type → DefEq M N A m a' → DefEq M N A m a
@@ -145,6 +171,12 @@ structure LogRel (env : VEnv) (U : Nat) (Γ : List VExpr) (n : Nat)
     DefEq M N A m₁ a → DefEq M N A m₂ a → DefEq M N A (m₁.join m₂) a
   whr : TRed env U Γ M M' A → TRed env U Γ N N' A → (DefEq M N A m a ↔ DefEq M' N' A m a)
   whr_ty : StepS env U Γ A A' → StepS env U Γ B B' → (TyDefEq A B m ↔ TyDefEq A' B' m)
+  tyTy_bot : TyTy A .bot
+  tyTy_mono : m ≤ m' → m.HasType .type → m'.HasType .type → TyDefEq A A m' → TyTy A m' →
+    TyTy A m
+  tyTy_join : m₁.Compat m₂ → m₁.HasType .type → m₂.HasType .type → TyDefEq A A m₁ →
+    TyDefEq A A m₂ → TyTy A m₁ → TyTy A m₂ → TyTy A (m₁.join m₂)
+  tyTy_whr : StepS env U Γ A A' → TyEq env U Γ A A' → (TyTy A m ↔ TyTy A' m)
 
 
 /-! ### Depth 0 -/
@@ -173,7 +205,9 @@ theorem LR0.TyDefEq.join (_hU : StepUniq env) {m₁ m₂ : WShape 0} (hC : m₁.
 def LR0 (hU : StepUniq env) : LogRel env U Γ 0 where
   DefEq M N _ := LR0.DefEq env U Γ M N
   TyDefEq := LR0.TyDefEq env U Γ
+  TyTy _ _ := True
   sort_iff := by simp [LR0.DefEq, LR0.TyDefEq, WShape.sort]
+  sort_a_iff := by simp [LR0.DefEq, WShape.sort]
   sort_iff_ty := by simp [LR0.TyDefEq, WShape.sort]
   bot {_ _ _ _} _ := by simp only [LR0.DefEq, LR0.TyDefEq, WShape.bot]; split <;> trivial
   toType := id
@@ -192,10 +226,6 @@ def LR0 (hU : StepUniq env) : LogRel env U Γ 0 where
     dsimp [LR0.TyDefEq]; split <;> [trivial; skip]
     exact SortRel.symm
   trans {M₁ M₂ A m a M₃} := by
-    dsimp [LR0.DefEq]; split <;> [(intros; trivial); skip]
-    dsimp [LR0.TyDefEq]; split <;> [(intros; trivial); skip]
-    exact SortRel.trans hU
-  trans' {A₁ A₂ u a r' A₃ v r} := by
     dsimp [LR0.DefEq]; split <;> [(intros; trivial); skip]
     dsimp [LR0.TyDefEq]; split <;> [(intros; trivial); skip]
     exact SortRel.trans hU
@@ -226,6 +256,10 @@ def LR0 (hU : StepUniq env) : LogRel env U Γ 0 where
   whr_ty {A A' B B' m} hA hB := by
     dsimp [LR0.TyDefEq]; split <;> [exact .rfl; skip]
     exact SortRel.whr hU hA hB
+  tyTy_bot := trivial
+  tyTy_mono _ _ _ _ _ := trivial
+  tyTy_join _ _ _ _ _ _ _ := trivial
+  tyTy_whr _ _ := .rfl
 
 end LogRel
 end Lean4Lean

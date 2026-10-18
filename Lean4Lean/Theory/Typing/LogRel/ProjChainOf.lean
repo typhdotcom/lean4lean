@@ -35,7 +35,7 @@ def seedShape (r : Bool) (s : Name) (d : VInductDecl) (T : VInductiveType) (Args
 /-- An inductive type applied to its parameters and indices, typed in the model, is interpreted
 at its least shape, which is typed at its sort's shape. -/
 theorem seedShape_interp (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
-    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} {d : VInductDecl} {t : Nat}
+    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} (hnd : ¬AxInterp.dom s) {d : VInductDecl} {t : Nat}
     {T : VInductiveType} (hs : env.inducts s = some (d, t)) (hT : d.types[t]? = some T)
     (hTW : T.WF envT d) (hPT : envT.IsTele d.uvars [] d.params)
     (hcT : env.constants s = some ⟨d.uvars, T.type⟩) {ls : List VLevel} {U : Nat}
@@ -97,7 +97,7 @@ theorem link_at {X Y : VExpr} {w : VLevel} {a0 : @WShape env.shapeEnv 1}
     henvW.modelSound
   have W : LR.SubstWF (U := U) henvW.ordered henvW.stepUniq Γ .id .id Γ .nil := .id
   obtain ⟨n', m', a, hn, le_m, hm', ha, hty⟩ := ((hS H).left.sound W.fits hX).out
-  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
+  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none nofun) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
   simp only [subst_id] at R
   have hle : a0.lift n' ≤ m' := (TShape.LE.lift_l (a := a0.T) (b := m'.T) hn).1 le_m
   rcases WShape.le_sort.1 ha.le_sort' with rfl | rfl
@@ -153,14 +153,14 @@ theorem projChain_of (henvW : env.WF)
     (VEnv.addConstList_constants_of_mem hT' (by rw [← hTn]; exact List.mem_map_of_mem hTm))
   have hOT : envT.Ordered := (VEnv.WF.addConstList h₀ (fun p hp => by
     obtain ⟨T, hT, rfl⟩ := List.mem_map.1 hp; exact (hd.types T hT).1) hT').ordered
-  have hM := henvW.modelEnv AxOK.none
+  have hM := henvW.modelEnv AxOK.none nofun
   have hSH : SoundHyps envT env :=
-    (henvW.soundHyps hM (quotRuleSound hM henvW) (henvW.blockSound hM) NoDom.none).mono
+    (henvW.soundHyps hM (quotRuleSound hM henvW) (henvW.blockSound hM) NoDom.none NoDomI.none).mono
       hle.2 hle.3
   have W : LR.SubstWF (U := U) henvW.ordered henvW.stepUniq Γ .id .id Γ .nil := .id
   have hXs : MSpine env Γ ((VExpr.const s ls).appN (As ++ I)) (.sort u) :=
     (henvW.modelSound (hX.strong henvW.ordered hΓ)).left.mspine'
-  obtain ⟨-, hty0, hint0⟩ := seedShape_interp hM hSH hle hOT hs ht hTW hPT0 hcT hls W.fits
+  obtain ⟨-, hty0, hint0⟩ := seedShape_interp hM hSH hle hOT (fun h => h.elim) hs ht hTW hPT0 hcT hls W.fits
     (by simp [hA, hI]) hXs
   have R := (chain_at henvW hΓ (hH U Γ hΓ) H).2 _ hty0.toType ⟨_, _, _, rfl⟩ hint0
   simp only [TyRel, LR, LRS, seedShape, LRS.TyDefEq.indTy_iff] at R

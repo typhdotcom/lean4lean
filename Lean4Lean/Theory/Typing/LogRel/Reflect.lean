@@ -18,15 +18,6 @@ namespace LogRel
 
 variable {env : VEnv} {U : Nat} {Γ : List VExpr}
 
-section
-variable (env : VEnv) (U : Nat) (Γ : List VExpr)
-
-/-- `M` reduces, typed at `A`, to a neutral normal form. -/
-def TNeRed (M A : VExpr) : Prop :=
-  ∃ M₁, TRed env U Γ M M₁ A ∧ WHNF env U Γ M₁ ∧ Neutral env M₁
-
-end
-
 namespace Neutral
 variable (hU : StepUniq env)
 include hU
@@ -63,12 +54,6 @@ end Neutral
 
 namespace TNeRed
 
-theorem neRed (H : TNeRed env U Γ M A) : NeRed env U Γ M :=
-  let ⟨M', h1, h2, h3⟩ := H; ⟨M', h1.1, h2, h3⟩
-
-theorem tyEq (hE : TyEq env U Γ A B) (H : TNeRed env U Γ M A) : TNeRed env U Γ M B :=
-  let ⟨M', h1, h2, h3⟩ := H; ⟨M', h1.tyEq hE, h2, h3⟩
-
 theorem app (hU : StepUniq env) (H : TNeRed env U Γ M (.forallE A B)) (ha : env.HasType U Γ a A) :
     TNeRed env U Γ (.app M a) (B.inst a) :=
   let ⟨_, h1, h2, h3⟩ := H; ⟨_, h1.app ha, Neutral.whnf_app hU h2 h3, .app h3⟩
@@ -78,50 +63,20 @@ end TNeRed
 variable [ShapeEnv]
 
 section
-variable (env : VEnv) (U : Nat) (Γ : List VExpr)
-
-/-- Fields `ms` and `ns` typed equal along the telescope `T` at shape `tel`, with field shapes
-`fs`, each field type satisfying `TI` at its shape. -/
-def FieldsTy (TI : VExpr → WShape n → Prop) :
-    VExpr → WShape n → List VExpr → List VExpr → List (WShape n) → Prop
-  | _, _, [], [], [] => True
-  | T, tel, m :: ms, n :: ns, x :: xs => ∃ D B b g, tel.piView = some (b, g) ∧
-    StepS env U Γ T (.forallE D B) ∧ x.HasType b ∧ env.IsDefEq U Γ m n D ∧ TI D b ∧
-    FieldsTy TI (B.inst m) (g.app x) ms ns xs
-  | _, _, _, _, _ => False
-
-/-- What reflecting neutral terms at type `A` and shape `a` needs of `A`, given the relation `IH`
-and the same `TI` one depth down. -/
-def TyInfoS (IH : LogRel env U Γ n) (TI : VExpr → WShape n → Prop) (A : VExpr)
-    (a : WShape (n+1)) : Prop :=
-  (∀ b f, a = .forallE b f → NeRed env U Γ A ∨ ∃ A₁ A₂ u v,
-    StepS env U Γ A (.forallE A₁ A₂) ∧ TyEq env U Γ A (.forallE A₁ A₂) ∧
-    env.HasType U Γ A₁ (.sort u) ∧ IH.TyDefEq A₁ A₁ b ∧ env.HasType U (A₁::Γ) A₂ (.sort v) ∧
-    LRS.PiDefEq IH A₁ A₂ A₂ b f ∧
-    ∀ x p, p.HasType b → env.HasType U Γ x A₁ → IH.DefEq x x A₁ p b → TI (A₂.inst x) (f.app p)) ∧
-  (∀ r h l, a = .indTy r h l → NeRed env U Γ A ∨
-    ∀ c fs hf, IsStruct c = true → (WShape.ctor c fs hf).HasType (.indTy r h l) →
-    ∀ M' N', WHNF env U Γ M' → Neutral env M' → WHNF env U Γ N' → Neutral env N' →
-      env.IsDefEq U Γ M' N' A →
-    Inert env h.name ∧ IndTele IH h l A A ∧
-    ∃ i k ci lsA AsA, h.ctors.idxOf? c = some i ∧ h.arities[i]? = some k ∧
-      env.constants c = some ci ∧ StepS env U Γ A ((VExpr.const h.name lsA).appN AsA) ∧
-      fs.length = k ∧
-      FieldsTy env U Γ TI (ctorTeleAt ci k lsA AsA) (ctorTel h l i) (VExpr.projs h.name k M')
-        (VExpr.projs h.name k N') fs ∧
-      TypeArgs env U Γ h lsA AsA)
-
-end
-
-section
 variable (env : VEnv) (U : Nat) (Γ : List VExpr) (henv : env.Ordered) (hU : StepUniq env)
 
-/-- What reflecting neutral terms at type `A` and shape `a` needs of `A`, at every depth. -/
-def TyInfo : (n : Nat) → VExpr → WShape n → Prop
-  | 0, _, _ => True
-  | n+1, A, a => TyInfoS env U Γ (LR henv hU n) (TyInfo n) A a
+/-- What reflecting neutral terms at type `A` and shape `a` needs of `A`: that it is related to
+itself there, and what the relation knows of its typing. -/
+def TyInfo (n : Nat) (A : VExpr) (a : WShape n) : Prop :=
+  (LR (U := U) (Γ := Γ) henv hU n).TyDefEq A A a ∧ (LR (U := U) (Γ := Γ) henv hU n).TyTy A a
 
 end
+
+/-- A type related to itself at a sort has what reflection needs of it. -/
+theorem TyInfo.of_defEq {henv : env.Ordered} {hU : StepUniq env} {n : Nat} {A T : VExpr}
+    {a : WShape n} (H : (LR (U := U) (Γ := Γ) henv hU n).DefEq A A T a (.sort r))
+    (e : TyEq env U Γ T (.sort u)) : TyInfo env U Γ henv hU n A a :=
+  ⟨(LR _ _ n).toType H, (((LR _ _ n).sort_a_iff.1 H).2 u e).1⟩
 
 omit [ShapeEnv] in
 theorem neutral_projs (hU : StepUniq env) (W : WHNF env U Γ M) (H : Neutral env M) :
@@ -131,23 +86,47 @@ theorem neutral_projs (hU : StepUniq env) (W : WHNF env U Γ M) (H : Neutral env
   obtain ⟨i, -, rfl⟩ := hx
   exact ⟨Neutral.whnf_proj hU W H, .proj H⟩
 
-/-- Fields typed along a telescope, all neutral normal forms, are related along it, given
+/-- A stuck type is known to the relation at every shape. -/
+theorem LRS.TyTyped.of_neRed {IH : LogRel env U Γ n} (h : NeRed env U Γ M) :
+    ∀ {m : WShape (n+1)}, LRS.TyTyped IH M m := by
+  intro m
+  cases m using WShape.casesOn' with
+  | forallE => exact (LRS.TyTyped.forallE_iff).2 (.inl h)
+  | indTy => exact (LRS.TyTyped.indTy_iff).2 (.inl h)
+  | _ => trivial
+
+/-- Neutral normal forms typed along a telescope related to itself are related along it, given
 reflection one depth down. -/
-theorem FieldsTy.toRel {IH : LogRel env U Γ n} {TI : VExpr → WShape n → Prop}
-    (refl : ∀ {M N A : VExpr} {m a : WShape n}, a.HasType .type → m.HasType a → TI A a →
-      TNeRed env U Γ M A → TNeRed env U Γ N A → env.IsDefEq U Γ M N A → IH.DefEq M N A m a) :
-    ∀ {T} {tel : WShape n} {ms ns fs}, FieldsTy env U Γ TI T tel ms ns fs →
+theorem FieldsRel.of_projs {IH : LogRel env U Γ n} (hU : StepUniq env)
+    (refl : ∀ {M N A : VExpr} {m a : WShape n}, a.HasType .type → m.HasType a →
+      IH.TyDefEq A A a → IH.TyTy A a → TNeRed env U Γ M A → TNeRed env U Γ N A →
+      env.IsDefEq U Γ M N A → IH.DefEq M N A m a) :
+    ∀ {T} {tel : WShape n} {ms ns fs}, ms.length = fs.length → tel.HasType .type →
+      TeleRel IH fs.length T T tel →
+      TelFits tel fs → ProjsTyped env U Γ T ms ns →
       (∀ x ∈ ms, WHNF env U Γ x ∧ Neutral env x) → (∀ x ∈ ns, WHNF env U Γ x ∧ Neutral env x) →
       FieldsRel IH T tel ms ns fs
-  | _, _, [], [], [], _, _, _ => trivial
-  | _, _, _ :: _, _ :: _, _ :: _, ⟨D, B, b, g, h1, h2, h3, h4, h5, h6⟩, hm, hn => by
+  | _, _, [], [], [], _, _, _, _, _, _, _ => trivial
+  | T, tel, m :: ms, n' :: ns, x :: xs, hl, ht, HT, hfit, ⟨D, B, r, hd, hP⟩, hm, hn => by
+    obtain ⟨b, g, hv, hxb, hfits⟩ := hfit
+    obtain ⟨D₁, B₁, D₁', B₁', r₁, r₁', -, hDD, HT'⟩ := HT.of_piView hv
+    obtain ⟨y1, -⟩ := HT.of_piView_ty hU hv r₁ r₁'
+    have e1 := StepS.determ hU r₁ forallE_whnf' r forallE_whnf'
+    have e2 := StepS.determ hU r₁' forallE_whnf' r forallE_whnf'
+    simp only [VExpr.forallE.injEq] at e1 e2
+    obtain ⟨rfl, rfl⟩ := e1; obtain ⟨rfl, rfl⟩ := e2
+    have ⟨tb, tg⟩ := WShape.piView_type ht hv
     have ⟨w1, n1⟩ := hm _ (.head _)
     have ⟨w2, n2⟩ := hn _ (.head _)
-    refine ⟨D, B, b, g, h1, h2, h3, h4, refl h3.isType h3 h5 ⟨_, .refl h4.hasType.1, w1, n1⟩
-      ⟨_, .refl h4.hasType.2, w2, n2⟩ h4, ?_⟩
-    exact FieldsTy.toRel refl h6 (fun x hx => hm x (.tail _ hx)) (fun x hx => hn x (.tail _ hx))
-  | _, _, [], _ :: _, _, h, _, _ | _, _, [], [], _ :: _, h, _, _
-  | _, _, _ :: _, [], _, h, _, _ | _, _, _ :: _, _ :: _, [], h, _, _ => h.elim
+    have hr := refl tb hxb (IH.left_ty hDD) y1 ⟨_, .refl hd.hasType.1, w1, n1⟩
+      ⟨_, .refl hd.hasType.2, w2, n2⟩ hd
+    refine ⟨_, _, b, g, hv, r, hxb, hd, hr, ?_⟩
+    exact FieldsRel.of_projs hU refl (by simpa using hl) (tg x)
+      (HT' m m x hxb hd.hasType.1 (IH.left hr)) hfits hP
+      (fun x hx => hm x (.tail _ hx)) (fun x hx => hn x (.tail _ hx))
+  | _, _, [], _ :: _, _, _, _, _, _, h, _, _ | _, _, _ :: _, [], _, _, _, _, _, h, _, _ => h.elim
+  | _, _, [], [], _ :: _, hl, _, _, _, _, _, _ => by simp at hl
+  | _, _, _ :: _, _ :: _, [], hl, _, _, _, _, _, _ => by simp at hl
 
 /-- Reflection: terms that reduce, typed, to neutral normal forms are related at every shape their
 type satisfies `TyInfo` at. -/
@@ -160,13 +139,14 @@ theorem reflect (henv : env.Ordered) (hU : StepUniq env) : ∀ (n : Nat) {M N A 
     dsimp only [LR0.DefEq]; split; · trivial
     dsimp only [LR0.TyDefEq]; split; · trivial
     exact .inr ⟨hM.neRed, hN.neRed⟩
-  | n+1, M, N, A, m, a, ha, hm, hI, hM, hN, hMN => by
+  | n+1, M, N, A, m, a, ha, hm, ⟨hT, hY⟩, hM, hN, hMN => by
     show LRS.DefEq (LR henv hU n) M N A m a
     have IH := @reflect henv hU n
     cases a using WShape.casesOn' with
     | bot => trivial
     | sort r =>
       rw [LRS.DefEq.sort_a]
+      refine ⟨?_, fun _ _ => ⟨LRS.TyTyped.of_neRed hM.neRed, LRS.TyTyped.of_neRed hN.neRed⟩⟩
       cases m using WShape.casesOn' with
       | sort => exact .inr ⟨hM.neRed, hN.neRed⟩
       | forallE => exact (LRS.TyDefEq.forallE_iff).2 (.inr ⟨hM.neRed, hN.neRed⟩)
@@ -178,8 +158,23 @@ theorem reflect (henv : env.Ordered) (hU : StepUniq env) : ∀ (n : Nat) {M N A 
       case neg =>
         rw [show WShape.lam' g = .bot by simp [WShape.lam', hz]]; trivial
       rw [← WShape.lam_eq_lam' (hl := hz), LRS.DefEq.lam_forallE]
-      rcases hI.1 a₁ a₂ rfl with hA | ⟨A₁, A₂, u, v, rA, eA, hA₁, hT₁, hA₂, hP, hI'⟩
+      rw [show (LR (U := U) (Γ := Γ) henv hU (n+1)).TyTy A (.forallE a₁ a₂) =
+        LRS.TyTyped (LR (U := U) (Γ := Γ) henv hU n) A (.forallE a₁ a₂) from rfl] at hY
+      rw [show (LR (U := U) (Γ := Γ) henv hU (n+1)).TyDefEq A A (.forallE a₁ a₂) =
+        LRS.TyDefEq (LR (U := U) (Γ := Γ) henv hU n) A A (.forallE a₁ a₂) from rfl] at hT
+      rw [LRS.TyTyped.forallE_iff] at hY
+      rcases hY with hA | ⟨A₁, A₂, u, v, rA, eA, hA₁, hA₂, y1, hY'⟩
       · exact .inr hA
+      rw [LRS.TyDefEq.forallE_iff] at hT
+      obtain ⟨B₁, F₁, B₂, F₂, rM, rM', -, -, hValB, hP⟩ :=
+        hT.resolve_right fun ⟨hn, _⟩ => hn.not_forallE hU rA
+      cases StepS.determ hU rA forallE_whnf rM forallE_whnf
+      cases StepS.determ hU rA forallE_whnf rM' forallE_whnf
+      have hT₁ := (LR (U := U) (Γ := Γ) henv hU n).left_ty hValB
+      have hI' : ∀ x p, p.HasType a₁ → env.HasType U Γ x A₁ →
+          (LR (U := U) (Γ := Γ) henv hU n).DefEq x x A₁ p a₁ →
+          TyInfo env U Γ henv hU n (A₂.inst x) (a₂.app p) := fun x p hp hx hv =>
+        ⟨(LR (U := U) (Γ := Γ) henv hU n).left_ty (hP.2 hp hx hv), hY' x p hp hx hv⟩
       refine .inl ⟨A₁, A₂, u, v, rA, eA, hA₁, hT₁, hA₂, hP, ?_, ?_⟩
       · intro x y p hp hxy hv
         obtain ⟨hpi, -, hgx⟩ := WShape.HasTypeLam.iff.1 hg
@@ -204,18 +199,32 @@ theorem reflect (henv : env.Ordered) (hU : StepUniq env) : ∀ (n : Nat) {M N A 
         rw [LRS.DefEq.ctor_indTy]
         unfold LRS.IndVal
         cases hc : IsStruct c
-        · exact .inr (.inr ⟨rfl, hM.neRed, hN.neRed⟩)
+        · exact .inr (.inr ⟨rfl, hM, hN⟩)
         rw [if_pos rfl]
-        rcases hI.2 r h l rfl with hA | hI'
+        rw [show (LR (U := U) (Γ := Γ) henv hU (n+1)).TyTy A (.indTy r h l) =
+          LRS.TyTyped (LR (U := U) (Γ := Γ) henv hU n) A (.indTy r h l) from rfl] at hY
+        rw [show (LR (U := U) (Γ := Γ) henv hU (n+1)).TyDefEq A A (.indTy r h l) =
+          LRS.TyDefEq (LR (U := U) (Γ := Γ) henv hU n) A A (.indTy r h l) from rfl] at hT
+        rw [LRS.TyTyped.indTy_iff] at hY
+        rcases hY with hA | hS
         · exact .inr (.inl hA)
+        rw [LRS.TyDefEq.indTy_iff] at hT
+        rcases hT with ⟨hR, hTe⟩ | ⟨hA, -⟩
+        case inr => exact .inr (.inl hA)
+        obtain ⟨hn, lsA, lsA', AsA, AsA', rA, -, -, hlen, -, hSR⟩ := hR
+        obtain ⟨i, hi, hk⟩ := hm.ctor_arity
+        obtain ⟨ci, hci, hS⟩ := hS c i fs.length hc hi hk
         obtain ⟨M', tM, wM, nM⟩ := hM
         obtain ⟨N', tN, wN, nN⟩ := hN
         have hMN' : env.IsDefEq U Γ M' N' A := tM.2.symm.trans (hMN.trans tN.2)
-        obtain ⟨hn, hT, i, k, ci, lsA, AsA, h1, h2, h3, h4, h5, h6, h7⟩ :=
-          hI' c fs hf hc hm M' N' wM nM wN nN hMN'
-        exact .inl ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, tM, wM, tN, wN, h5,
-          FieldsTy.toRel (fun ha hm hI hM hN hMN => IH ha hm hI hM hN hMN) h6
-            (neutral_projs hU wM nM) (neutral_projs hU wN nN), h7⟩
+        have hP := hS lsA AsA rA hn.whnf M' N' wM nM wN nN hMN'
+        obtain ⟨i', hi', hfit⟩ := hm.ctor_fits
+        obtain rfl : i = i' := Option.some.inj (hi.symm.trans hi')
+        have HT := hTe lsA AsA lsA AsA rA rA c i fs.length ci hi hk hci
+        exact .inl ⟨hn, hTe, i, fs.length, ci, lsA, AsA, M', N', hi, hk, hci, rA, tM, wM, tN, wN,
+          rfl, FieldsRel.of_projs hU (fun ha hm hT hY hM hN hMN => IH ha hm ⟨hT, hY⟩ hM hN hMN)
+            (by simp [VExpr.projs]) (hm.indTy_tels i) HT hfit hP (neutral_projs hU wM nM) (neutral_projs hU wN nN),
+          TypeArgs.of_rel hlen hSR.symm⟩
       | _ => trivial
     | lam => exact absurd hm.isType WShape.HasType.lam_isType
     | ctor => exact absurd hm.isType WShape.HasType.ctor_isType

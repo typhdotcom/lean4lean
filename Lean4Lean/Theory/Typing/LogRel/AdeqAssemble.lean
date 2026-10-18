@@ -84,9 +84,11 @@ omit [ShapeEnv] [AxInterp] in
 its rule in the environment with it, under the step's premises. -/
 theorem QuotStep.of
     (Hc : ∀ {env : VEnv} (henvW : env.WF) {U : Nat} {Γ₀ : List VExpr}, OnCtx Γ₀ (env.IsType U) →
-      ∀ (X : @AxInterp env.shapeEnv) {ds E E'}, @AxOK env.shapeEnv X → VEnv.WF' ds E →
-      E.Inj → E.QuotReady → E.addQuot = some E' → E' ≤ env →
+      ∀ (X : @AxInterp env.shapeEnv) {ds E E'}, @AxOK env.shapeEnv X →
+      @DomRole env.shapeEnv X env → VEnv.WF' ds E →
+      E.Inj → E.QuotReady → E.addQuot = some E' → Extends E' env →
       (∀ c, X.dom c → E'.constants c = none) →
+      @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E Γ₀ →
       ∀ {Γ c ci ls ls' u}, OnCtx Γ (env.IsType U) → (c, ci) ∈ quotConsts →
       (∀ l ∈ ls, l.WF U) → (∀ l ∈ ls', l.WF U) → ls.length = ci.uvars →
       List.Forall₂ (· ≈ ·) ls ls' → u.WF U →
@@ -97,9 +99,11 @@ theorem QuotStep.of
       @AdeqStmt env U env.shapeEnv X henvW.ordered henvW.stepUniq Γ₀ Γ
         (.const c ls) (.const c ls') (ci.type.instL ls))
     (Hr : ∀ {env : VEnv} (henvW : env.WF) {U : Nat} {Γ₀ : List VExpr}, OnCtx Γ₀ (env.IsType U) →
-      ∀ (X : @AxInterp env.shapeEnv) {ds E E'}, @AxOK env.shapeEnv X → VEnv.WF' ds E →
-      E.Inj → E.QuotReady → E.addQuot = some E' → E' ≤ env →
+      ∀ (X : @AxInterp env.shapeEnv) {ds E E'}, @AxOK env.shapeEnv X →
+      @DomRole env.shapeEnv X env → VEnv.WF' ds E →
+      E.Inj → E.QuotReady → E.addQuot = some E' → Extends E' env →
       (∀ c, X.dom c → E'.constants c = none) →
+      @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E Γ₀ →
       ∀ {Γ ls u}, OnCtx Γ (env.IsType U) → (∀ l ∈ ls, l.WF U) →
       ls.length = quotDefEq.uvars → u.WF U →
       env.IsDefEqStrong U [] (quotDefEq.type.instL ls) (quotDefEq.type.instL ls) (.sort u) →
@@ -118,11 +122,12 @@ theorem QuotStep.of
       @AdeqStmt env U env.shapeEnv X henvW.ordered henvW.stepUniq Γ₀ Γ
         (quotDefEq.lhs.instL ls) (quotDefEq.rhs.instL ls) (quotDefEq.type.instL ls)) :
     QuotStep := by
-  intro env henvW U Γ₀ hΓ₀ X ds E E' hX hW hI hD hle hdom IH
+  intro env henvW U Γ₀ hΓ₀ X ds E E' hX hXD hW hI hD hle hdom IH
   cases hD with
   | quot h0 h1 =>
     exact @AdequacyHyps.addQuot_of env.shapeEnv X env U henvW.ordered henvW.stepUniq Γ₀ E E' h1
-      IH (Hc henvW hΓ₀ X hX hW hI h0 h1 hle hdom) (Hr henvW hΓ₀ X hX hW hI h0 h1 hle hdom)
+      IH (Hc henvW hΓ₀ X hX hXD hW hI h0 h1 hle hdom IH)
+      (Hr henvW hΓ₀ X hX hXD hW hI h0 h1 hle hdom IH)
 
 end LogRel
 end Lean4Lean

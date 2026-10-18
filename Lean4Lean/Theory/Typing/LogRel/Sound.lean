@@ -217,7 +217,7 @@ theorem LE_Interp.Const.levels {R R' : TShape → VExpr → Prop} (hls : List.Fo
   induction H with
   | bot => exact .bot
   | lam _ h ih => exact .lam (fun x y hm => ih x y hm) h
-  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 (levels_equiv_trans hl hls) h4
+  | ext h0 h3 hl h4 => exact .ext h0 h3 (levels_equiv_trans hl hls) h4
   | delta h0 h1 h2 h3 h4 h5 =>
     exact .delta h0 h1 h2 (hls.length_eq ▸ h3) (hR h4 (VExpr.LvEqv.instL hls _)) h5
   | indTy h1 h2 h3 h4 h5 h6 =>
@@ -286,7 +286,7 @@ theorem spine_eq_appN (c : Name) (ls : List VLevel) (as : List VExpr) :
 
 /-- An interpretation of a constant applied to at most as many arguments as it computes at is read
 off its `Const` derivation at the arguments' interpretations. -/
-theorem LE_Interp.spine_inv (hR : ConstRoles env) :
+theorem LE_Interp.spine_inv (hR : ConstRoles env) (hnd : ¬AxInterp.dom c) :
     ∀ {rAs : List VExpr} {m}, (∀ r n, ConstArity env c r n → rAs.length ≤ n) →
     LE_Interp env ρ m (spine c ls rAs) →
     ∃ n, ∀ k, n ≤ k → ∃ (rargs : List (WShape k)) (y : TShape),
@@ -307,14 +307,14 @@ theorem LE_Interp.spine_inv (hR : ConstRoles env) :
       | nil => exact .nil
       | cons _ _ ih => exact .cons .bot ih
     | @app _ n f _ _ _ x_arg hLE_f hLE_a hle_app =>
-    obtain ⟨n', ih'⟩ := spine_inv hR (fun r n h => Nat.le_of_succ_le (harity r n h)) hLE_f
+    obtain ⟨n', ih'⟩ := spine_inv hR hnd (fun r n h => Nat.le_of_succ_le (harity r n h)) hLE_f
     refine ⟨max (n + 1) n', fun k hk => ?_⟩
     have ⟨hk_app, hk⟩ := Nat.max_le.1 hk
     obtain ⟨rargs, y, hargs, hle, hConst⟩ := ih' k hk
     have hk_n : n ≤ k := Nat.le_of_succ_le hk_app
     refine ⟨x_arg.lift k :: rargs, _, .cons (hLE_a.mono (TShape.lift_eqv hk_n).1) hargs,
       hle_app, ?_⟩
-    rcases hConst.arity with hb | ⟨f_const, hle_lam, hRec⟩ | ⟨r, hA⟩
+    rcases hConst.arity with hb | ⟨f_const, hle_lam, hRec⟩ | ⟨r, hA⟩ | ⟨hd, -⟩
     · have h_app_bot : (f.app x_arg).T ≤ .bot := by
         rw [show f = .bot from TShape.le_bot.1 (hle.trans hb |>.trans TShape.bot_eqv.1)]
         simp; exact TShape.bot_eqv.1
@@ -326,6 +326,7 @@ theorem LE_Interp.spine_inv (hR : ConstRoles env) :
       rw [← WShape.lam'_app (f := f_const) (x := x_arg')]
       exact TShape.app_mono (hle.trans hle_lam) (TShape.lift_eqv hk_n).2
     · have := harity r _ hA; rw [hargs.length_eq] at this; simp at this; omega
+    · exact (hnd hd).elim
 
 variable (env) in
 /-- An application spine of a constant typed in the model: the constant's type and each

@@ -46,6 +46,7 @@ theorem SameOn.symm {X Y : AxInterp} (H : SameOn env X Y Q) : SameOn env Y X Q :
 theorem LE_Interp.Const.sameOn {X Y : AxInterp} (H : SameOn env X Y Q) (hc : Q c)
     (h : @Const _ X env c ls R n rargs m) :
     @Const _ Y env c ls (fun h e => R h e ∧ e.ConstsSat Q) n rargs m := by
+  have hnY : ¬Y.dom c := H.domY hc
   induction h with
   | bot => exact .bot
   | lam _ h2 ih => exact .lam ih h2

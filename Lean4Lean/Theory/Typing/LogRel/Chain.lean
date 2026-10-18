@@ -59,7 +59,7 @@ theorem link_sort {X Y : VExpr} {u w : VLevel} (d : env.IsDefEq U Γ X Y (.sort 
   obtain ⟨n', m', a, -, le_m, hm', ha, hty⟩ := ((hS H).left.sound W.fits hsX).out
   cases sort_shape_of_le ((hX W.fits).2 hm') le_m
   cases WShape.HasType.sort_l_inv hty
-  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
+  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none nofun) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
   simp only [subst_id] at R
   have R := (LR _ _ _).toType R
   have := (LR.TyDefEq.lift (U := U) (Γ := Γ) (henv := henvW.ordered) (hU := henvW.stepUniq)
@@ -82,7 +82,7 @@ theorem link_pi {X Y A B : VExpr} {w : VLevel} (d : env.IsDefEq U Γ X Y (.sort 
     refine .forallE' .bot .bot (.bot <| .bot' .sort) fun _ h => ?_
     cases h.bot_r; exact WShapeFun.bot_app.symm ▸ .bot
   obtain ⟨n', m', a, hn, le_m, hm', ha, hty⟩ := ((hS H).left.sound W.fits ((hX W.fits).1 hPi)).out
-  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
+  have R := (LR.adequacy_of (henvW.modelEnv AxOK.none nofun) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
   simp only [subst_id] at R
   have hle : (piShape env).lift n' ≤ m' := (TShape.LE.lift_l hn).1 le_m
   obtain ⟨k, rfl⟩ : ∃ k, n' = k + 1 := ⟨n' - 1, by simp at hn; omega⟩

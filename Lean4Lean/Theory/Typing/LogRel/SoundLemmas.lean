@@ -522,7 +522,7 @@ theorem LE_Interp.fitsPi_foralls (hM : ModelEnv env) {c : WShape (n+1)} {fs : Li
 
 /-- An inductive type applied to all its parameters and indices is interpreted by its `indTy`
 shape, whose constructors' telescopes are their types' interpretations at the parameters. -/
-theorem LE_Interp.Const.indTy_inv (hR : ConstRoles env) {s : Name} {d : VInductDecl} {t : Nat}
+theorem LE_Interp.Const.indTy_inv (hR : ConstRoles env) {s : Name} (hnd : ¬AxInterp.dom s) {d : VInductDecl} {t : Nat}
     {T : VInductiveType} (hs : env.inducts s = some (d, t)) (hT : d.types[t]? = some T)
     {rargs : List (WShape n)} (hl : rargs.length = d.params.length + T.indices.length)
     (H : Const env s ls R rargs y) : y ≤ TShape.bot ∨ ∃ ctys : List (WShape n),
@@ -536,7 +536,7 @@ theorem LE_Interp.Const.indTy_inv (hR : ConstRoles env) {s : Name} {d : VInductD
   cases H with
   | bot => exact .inl TShape.bot_eqv.1
   | lam he hle => exact .inl (Const.lam_le_bot hR he hle A)
-  | ext _ h1 h2 => cases hR (ConstArity.delta h1 h2) A
+  | ext h0 => exact (hnd h0).elim
   | delta _ h1 h2 => cases hR (ConstArity.delta h1 h2) A
   | indTy h1 h2 h3 h4 h5 h6 =>
     rw [hs] at h1; cases h1; rw [hT] at h2; cases h2

@@ -117,6 +117,18 @@ theorem NoDom.mono {E₁ E₂ : VEnv} (H : NoDom E₂) (hd : ∀ {df}, E₁.defe
 omit [ShapeEnv] in
 theorem NoDom.none {E : VEnv} [ShapeEnv] : @NoDom _ AxInterp.none E := fun _ _ => nofun
 
+variable (E) in
+/-- No recorded block of `E` has a type or recursor the model interprets by given shapes. -/
+def NoDomI : Prop := ∀ {s d t}, E.inducts s = some (d, t) →
+  (∀ T ∈ d.types, ¬AxInterp.dom T.name) ∧ ∀ j T, d.allTypes[j]? = some T → ¬AxInterp.dom (d.recName j)
+
+theorem NoDomI.mono {E₁ E₂ : VEnv} (H : NoDomI E₂)
+    (hi : ∀ {s b}, E₁.inducts s = some b → E₂.inducts s = some b) : NoDomI E₁ := fun h => H (hi h)
+
+omit [ShapeEnv] in
+theorem NoDomI.none {E : VEnv} [ShapeEnv] : @NoDomI _ AxInterp.none E :=
+  fun _ => ⟨fun _ _ => nofun, fun _ _ _ => nofun⟩
+
 variable (env) in
 /-- The quotient's computation rule is sound, where `env` has it. -/
 def QuotRuleSound : Prop := env.defeqs quotDefEq → ∀ U, RuleSound env U quotDefEq

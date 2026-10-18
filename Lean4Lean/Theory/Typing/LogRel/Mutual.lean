@@ -245,7 +245,7 @@ theorem Good.rel (X : AxInterp) (hMX : @ModelEnv _ X env)
       | lam he hle =>
         exact .inl (h3.trans (Const.lam_le_bot hMG.roles he hle (r := .delta ci.toDefEq)
           (.delta hdf rfl)))
-      | ext _ _ _ a3 a4 a5 =>
+      | ext _ a3 a4 a5 =>
         rcases a3 with ⟨-, a3⟩ | ⟨a3, -⟩
         · exact .inr ⟨_, _, a4, h3.trans a5, a3⟩
         · exact (a3 (List.mem_map_of_mem hci)).elim
@@ -285,31 +285,39 @@ theorem AdeqStmt.good (X : AxInterp) (hMX : @ModelEnv _ X env)
 
 /-- A constant's interpretation in one model is one in another that agrees with it where the
 derivation reads the models: at a definition's unfolding or at given shapes, when no argument has
-been taken. -/
+been taken; a computing case of a constant `Y` interprets by given shapes is one of a definition. -/
 theorem LE_Interp.Const.mapAx {X Y : AxInterp} {R R' : TShape → VExpr → Prop}
-    (hR : ∀ h e, R h e → R' h e) (H : @Const _ X env c ls R n rargs m) :
+    (hR : ∀ h e, R h e → R' h e) (H : @Const _ X env c ls R n rargs m)
+    (hC : ¬X.dom c → Y.dom c → ∀ {r k}, ConstArity env c r k → ∃ df, r = .delta df) :
     (¬X.dom c → rargs = [] → ¬Y.dom c) →
     (∀ ls₀ m', X.dom c → X.I c ls₀ m' → rargs = [] → Y.dom c ∧ Y.I c ls₀ m') →
     @Const _ Y env c ls R' n rargs m := by
+  have hY {r k} (g : ¬X.dom c) (A : ConstArity env c r k) (hr : ∀ df, r ≠ .delta df) :
+      ¬Y.dom c := fun hy => let ⟨df, e⟩ := hC g hy A; hr df e
   induction H with
   | bot => intros; exact .bot
   | lam _ h2 ih => intros; exact .lam (fun x y h => ih x y h (fun _ => nofun) fun _ _ _ _ => nofun) h2
-  | ext h0 h1 h2 h3 h4 h5 =>
-    intro _ he; have := he _ _ h0 h3 rfl; exact .ext this.1 h1 h2 this.2 h4 h5
+  | ext h0 h3 h4 h5 =>
+    intro _ he; have := he _ _ h0 h3 rfl; exact .ext this.1 this.2 h4 h5
   | delta h0 h1 h2 h3 h4 h5 => intro hd _; exact .delta (hd h0 rfl) h1 h2 h3 (hR _ _ h4) h5
-  | indTy h1 h2 h3 h4 h5 h6 =>
+  | indTy h1 h2 h3 h4 h5 h6 g =>
     intros
-    refine .indTy h1 h2 h3 h4 (fun i c' cty a1 a2 => ?_) h6
+    refine .indTy h1 h2 h3 h4 (fun i c' cty a1 a2 => ?_) h6 (hY g (.indTy h1 h2) nofun)
     obtain ⟨h, b1, b2⟩ := h5 i c' cty a1 a2
     exact ⟨h, hR _ _ b1, b2⟩
-  | ctor h1 h2 h3 h4 h5 h6 h7 => intros; exact .ctor h1 h2 h3 h4 h5 h6 h7
-  | iota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 => intros; exact .iota h1 h2 h3 h4 h5 h6 h7 (hR _ _ h8) h9 h10
-  | kIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 =>
-    intros; exact .kIota h1 h2 h3 h4 h5 h6 h7 h8 (hR _ _ h9) h10
-  | quotTy h1 h2 h3 h4 h5 h6 h7 h8 => intros; exact .quotTy h1 h2 h3 h4 h5 (hR _ _ h6) h7 h8
-  | quotMk h1 h2 h3 h4 h5 => intros; exact .quotMk h1 h2 h3 h4 h5
-  | quot h1 h2 h3 h4 h5 h6 => intros; exact .quot h1 h2 h3 h4 h5 h6
-  | quotK h1 h2 h3 h4 h5 => intros; exact .quotK h1 h2 h3 h4 h5
+  | ctor h1 h2 h3 h4 h5 h6 h7 g =>
+    intros; exact .ctor h1 h2 h3 h4 h5 h6 h7 (hY g (.ctor h1 h2 h3 h4) nofun)
+  | iota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 g =>
+    intros; exact .iota h1 h2 h3 h4 h5 h6 h7 (hR _ _ h8) h9 h10 (hY g (.recursor h1 h2 h4) nofun)
+  | kIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 g =>
+    intros
+    exact .kIota h1 h2 h3 h4 h5 h6 h7 h8 (hR _ _ h9) h10 (hY g (.recursor h1 h2 h4) nofun)
+  | quotTy h1 h2 h3 h4 h5 h6 h7 h8 g =>
+    intros; exact .quotTy h1 h2 h3 h4 h5 (hR _ _ h6) h7 h8 (hY g (.quotTy h1 h2) nofun)
+  | quotMk h1 h2 h3 h4 h5 g => intros; exact .quotMk h1 h2 h3 h4 h5 (hY g (.quotMk h1 h2) nofun)
+  | quot h1 h2 h3 h4 h5 h6 g =>
+    intros; exact .quot h1 h2 h3 h4 h5 h6 (hY g (.quotLift h1 h2) nofun)
+  | quotK h1 h2 h3 h4 h5 g => intros; exact .quotK h1 h2 h3 h4 h5 (hY g (.quotLift h1 h2) nofun)
 
 /-- Every interpretation in `X` is one in `GoodOver X cis`, given each block constant's value
 adequate in `GoodOver X cis`: an unfolding of a block constant is related, by its value's
@@ -341,8 +349,8 @@ theorem LE_Interp.transfer (X : AxInterp) (hMX : @ModelEnv _ X env)
   | @const n₀ c ci₀ m m' ρ a ls R h1 h2 h3 h4 h5 h6 h7 ih5 ih7 =>
     refine @LE_Interp.const _ G env n₀ c ci₀ m m' ρ a ls _ h1 h2 h3 h4 ih5 ?_ (fun _ _ h => h)
     by_cases hc : c ∉ cis.map (·.name)
-    · exact Const.mapAx (Y := G) ih7 h6 (fun hx _ hg => hg.elim hx hc)
-        fun _ _ hx hI _ => ⟨.inl hx, .inr ⟨hc, hI⟩⟩
+    · exact Const.mapAx (Y := G) ih7 h6 (fun hx hg => (hg.elim hx hc).elim)
+        (fun hx _ hg => hg.elim hx hc) fun _ _ hx hI _ => ⟨.inl hx, .inr ⟨hc, hI⟩⟩
     rw [Classical.not_not] at hc
     obtain ⟨ci, hci', rfl⟩ := List.mem_map.1 hc
     obtain ⟨hdf, hcon, hQ⟩ := hci ci hci'
@@ -351,7 +359,8 @@ theorem LE_Interp.transfer (X : AxInterp) (hMX : @ModelEnv _ X env)
     cases h6 with
     | bot => exact .bot
     | lam he hle =>
-      exact .lam (fun x y h => Const.mapAx (Y := G) ih7 (he x y h) (fun _ => nofun)
+      exact .lam (fun x y h => Const.mapAx (Y := G) ih7 (he x y h)
+        (fun _ _ _ _ A => ⟨_, hroles A (.delta hdf rfl)⟩) (fun _ => nofun)
         fun _ _ _ _ => nofun) hle
     | ext a0 => exact (hdom ci hci' a0).elim
     | indTy a1 a2 => cases hroles (.delta hdf rfl) (.indTy a1 a2)
@@ -360,7 +369,7 @@ theorem LE_Interp.transfer (X : AxInterp) (hMX : @ModelEnv _ X env)
     | delta a0 a1 a2 a3 a4 a5 =>
       cases hsu.delta hdf a1 rfl a2
       have hv : (ci.value.instL ls).ClosedN := (hclX.defeq hdf).instL
-      refine .ext (.inr hc) hdf rfl (.inl ⟨hc, ci, hci', rfl, a3, ?_, ⟨_, h4,
+      refine .ext (.inr hc) (.inl ⟨hc, ci, hci', rfl, a3, ?_, ⟨_, h4,
         (@LE_Interp.closed_iff _ X env hclX _ (hclX.constType h1).instL _ _ _).1 h5⟩, ?_⟩)
         (List.forall₂_refl' fun _ => (rfl : VLevel.Equiv _ _)) TShape.LE.rfl
       · exact (@LE_Interp.closed_iff _ X env hclX (.const ci.name ls) trivial _ _ _).1 (@LE_Interp.const _ X env _ _ _ _ _ _ _ _ _ h1 h2 TShape.LE.rfl

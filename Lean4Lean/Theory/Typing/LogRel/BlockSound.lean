@@ -332,7 +332,7 @@ theorem iota_major_aux (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT en
     (hle : envT ≤ env) (hO : envT.Ordered) {d : VInductDecl} {j : Nat} {Tj : VInductiveType}
     {c : VConstructor} (hj : d.allTypes[j]? = some Tj) {n : VNested} (hTn : Tj.nested = some n)
     (hcW : c.WF envT d Tj) {dI : VInductDecl} {tI i : Nat} {TI : VInductiveType}
-    {cI : VConstructor} (hsI : env.inducts n.ind = some (dI, tI)) (hTI : dI.types[tI]? = some TI)
+    {cI : VConstructor} (hsI : env.inducts n.ind = some (dI, tI)) (hndI : ¬AxInterp.dom n.ind) (hTI : dI.types[tI]? = some TI)
     (hci : TI.ctors[i]? = some cI) (hidxc : (TI.ctors.map (·.name)).idxOf? cI.name = some i)
     (hname : c.name = cI.name) (hfl : c.fields.length = cI.fields.length)
     (hidxI : Tj.indices.length = TI.indices.length) (hargl : n.args.length = dI.params.length)
@@ -527,7 +527,7 @@ theorem iota_major_aux (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT en
   have hfs := hbv c.fields.length N (zs.drop N) (by simp [hzl]) (by omega)
     (fun i h => by simp [List.getElem?_drop]) hzl
   rw [show N + c.fields.length - N - c.fields.length = 0 by omega] at hfs
-  obtain ⟨N', rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hsI hTI hci hidxc hTIW hcIW hPI
+  obtain ⟨N', rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hndI hsI hTI hci hidxc hTIW hcIW hPI
     hcT hcC hlvI hP W hAsl (by simp [hfl]) (by rw [hidxl, hidxI]) hTS hCS
     (List.forall₂_append' hps hfs)
   rw [List.drop_left' (by simp [hAsl])] at hrf
@@ -538,7 +538,7 @@ theorem iota_major_aux (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT en
 the block was declared in. -/
 theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEnv} (hE₁ : E₁.WF)
     {d : VInductDecl} (hd : d.WF E₁) (hg : d.GeneratedWF E₁) (h1 : E₁.addInduct d = some E₂)
-    (hle : E₂ ≤ env) (hX₁ : SoundHyps E₁ env) {q j : Nat} {c : VConstructor}
+    (hle : E₂ ≤ env) (hX₁ : SoundHyps E₁ env) (hni : NoDomI E₂) {q j : Nat} {c : VConstructor}
     (hq : d.allCtors[q]? = some (j, c)) :
     RuleSound env U (d.iotaRule d.recLevels d.motiveLevel (VLevel.params d.recUVars) q j c) := by
   have h1' := h1
@@ -558,6 +558,7 @@ theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEn
     | nil => exact (hd.nonempty e).elim
     | cons T _ => exact ⟨T, rfl⟩
   have hs0 : env.inducts T0.name = some (d, 0) := hle.inducts (addBlock_inducts_head hB' hT0)
+  have hnd0 := hni (addBlock_inducts_head hB' hT0)
   have hcW := (hd.ctors envT hTs Tj (List.mem_of_getElem? hj)).2 c hcm
   have hmem : d.iotaRule d.recLevels d.motiveLevel (VLevel.params d.recUVars) q j c ∈
       d.iotaRules := by
@@ -565,7 +566,7 @@ theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEn
     exact ⟨((j, c), q), List.mk_mem_zipIdx_iff_getElem?.2 hq, rfl⟩
   have hdfE := hM.stepUniq.iota hs0 hmem
   have hdfR := (hg envT envC envR hTs hC hR').2 _ hmem
-  refine iotaRuleSound_of hM hs0 hj hq hcW.indices.1
+  refine iotaRuleSound_of hM hs0 (hnd0.2 j _ hj) hj hq hcW.indices.1
     ⟨(henv.ordered.closed.2 hdfE).1.1, (henv.ordered.closed.2 hdfE).2.1⟩ ?fwd ?bwd
   case fwd =>
     intro lsB σ x H
@@ -613,7 +614,7 @@ theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEn
         rcases hcs with hnil | ⟨c', hc1, hfl⟩
         · rw [hnil] at hcm; cases hcm
         · obtain rfl : c' = c := by rw [hc1] at hcm; simpa [eq_comm] using hcm
-          refine iota_body_ge_k hM hs0 hj hq hc1 hPA hlarge hiR hBl (by simp [hcW.indices.1])
+          refine iota_body_ge_k hM hs0 (hnd0.2 _ _ hj) hj hq hc1 hPA hlarge hiR hBl (by simp [hcW.indices.1])
             (fun k i hk h => iotaIdx_spec hk h) hF W hLS.mspine' hRT (fun k hk hk' => ?_) hy
           have hzl : zs.length = _ := hF.length.trans hBl
           have hkf : k < c'.fields.length := by omega
@@ -683,10 +684,10 @@ theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEn
             (List.mem_map.2 ⟨(j, c), VInductDecl.mem_ctors_iff.2 ⟨Tj, hTj, hcm⟩, rfl⟩)
         have hTW := (hd.ctors envT hTs Tj (List.mem_of_getElem? hj)).1
         have hPT : envT.IsTele d.uvars [] d.params := hd.params.mono (VEnv.addConstList_le hTs)
-        have hmaj := iota_major_own hM hXT hleT hOT hsT hTj hj hn hci hidxc hTW hcW hPT hcT hcC
+        have hmaj := iota_major_own hM hXT hleT hOT hsT (hnd0.1 Tj (List.mem_of_getElem? hTj)) hTj hj hn hci hidxc hTW hcW hPT hcT hcC
           hrecC hls hlen hlsB (by rwa [recLevels_inst d hlen]) hrecS hrecCl hrecRCl W
           (hF.length.trans hBl) hLS'
-        exact iota_body_ge hM hs0 hj hq hPA hiR hBl (by simp [hcW.indices.1]) hF W hLS.mspine' hRT
+        exact iota_body_ge hM hs0 (hnd0.2 j _ hj) hj hq hPA hiR hBl (by simp [hcW.indices.1]) hF W hLS.mspine' hRT
           hmaj hy
       | some n =>
         have hTa : Tj ∈ d.aux := by
@@ -752,8 +753,9 @@ theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEn
         have hP : ¬dI.PropAt (n.lvls.map (·.inst (d.recLevels.map (·.inst ls)))) := by
           have := hrel ▸ hdl
           simpa [levelRel, VInductDecl.PropAt] using this
-        exact iota_body_ge hM hs0 hj hq hPA hiR hBl (by simp [hcW.indices.1]) hF W hLS.mspine' hRT
-          (iota_major_aux hM hXT hleT hOT hj hn hcW hsI hTI hci hidxc hcname hfl hidxI hargl hlvl
+        exact iota_body_ge hM hs0 (hnd0.2 j _ hj) hj hq hPA hiR hBl (by simp [hcW.indices.1]) hF W hLS.mspine' hRT
+          (iota_major_aux hM hXT hleT hOT hj hn hcW hsI
+            (hTIn ▸ (hni ((hleTC.trans (VEnv.addDefEqList_le.trans (VEnv.addBlock_le hB'))).inducts hsIT)).1 TI hTIm) hTI hci hidxc hcname hfl hidxI hargl hlvl
             hTIW hcIW hPI hcT hcC hrecC hls hlen hlsB hP hrecS hrecCl hrecRCl W
             (hF.length.trans hBl) hLS') hy
   · have hv : d.motiveLevel.inst ls = .zero := by
@@ -765,11 +767,11 @@ theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEn
 /-- The iota rules of every block of a well-formed environment are sound in its model. -/
 theorem _root_.Lean4Lean.VEnv.WF.blockSound (henv : env.WF) (hM : ModelEnv env) :
     BlockSound env := by
-  intro E₁ d E₂ hE₁ hD hle hX U df hdf
+  intro E₁ d E₂ hE₁ hD hle hni hX U df hdf
   cases hD with
   | induct hd hg h1 =>
     obtain ⟨q, j, c, hq, rfl⟩ := mem_iotaRules hdf
-    exact iotaRuleSound_block hM henv hE₁ hd hg h1 hle hX hq
+    exact iotaRuleSound_block hM henv hE₁ hd hg h1 hle hX hni hq
 
 end LogRel
 end Lean4Lean
