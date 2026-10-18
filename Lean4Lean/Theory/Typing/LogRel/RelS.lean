@@ -121,7 +121,7 @@ def ProjsTyped : VExpr → List VExpr → List VExpr → Prop
 
 /-- The projections of a structure's stuck values are typed along its constructor's telescope. -/
 def StructTy (h : IndHead) (M : VExpr) : Prop :=
-  ∀ c i k, IsStruct c = true → h.ctors.idxOf? c = some i → h.arities[i]? = some k →
+  ∀ c i k, StructOK env U Γ h M c → h.ctors.idxOf? c = some i → h.arities[i]? = some k →
     ∃ ci, env.constants c = some ci ∧ ∀ lsA AsA,
     StepS env U Γ M ((VExpr.const h.name lsA).appN AsA) →
     WHNF env U Γ ((VExpr.const h.name lsA).appN AsA) →
@@ -144,13 +144,14 @@ def LRS.TyTyped (M : VExpr) : WShape (n+1) → Prop
   | ⟨.indTy _ h _, _⟩ => NeRed env U Γ M ∨ StructTy env U Γ h M
   | _ => True
 
+open Classical in
 /-- Values of an inductive type at a constructor shape: for a structure, their projections are
 related (structure eta); otherwise both reduce to the constructor with related fields, or both
 are stuck. Anything is related at a stuck type. -/
 def LRS.IndVal (A M N : VExpr) (h : IndHead) (l : List (WShape n)) (c : Name)
     (fs : List (WShape n)) : Prop :=
-  (if IsStruct c then StructVal IH h l A M N c fs else CtorVal IH h l A M N c fs) ∨
-    NeRed env U Γ A ∨ (IsStruct c = false ∧ TNeRed env U Γ M A ∧ TNeRed env U Γ N A)
+  (if StructOK env U Γ h A c then StructVal IH h l A M N c fs else CtorVal IH h l A M N c fs) ∨
+    NeRed env U Γ A ∨ (¬StructOK env U Γ h A c ∧ TNeRed env U Γ M A ∧ TNeRed env U Γ N A)
 
 /-- Term validity at value shape `m` and type shape `a`. -/
 def LRS.DefEq (M N A : VExpr) (m a : WShape (n+1)) : Prop :=
@@ -534,9 +535,9 @@ theorem trans (hU : StepUniq env) :
     · rcases H2 with H2 | H2 | ⟨hf', -⟩
       · exact .inl (H1.trans hU H2)
       · exact .inr (.inl H2)
-      · rw [hs] at hf'; cases hf'
+      · exact (hf' hs).elim
     · exact .inr (.inl H1)
-    · rw [hs] at hf; cases hf
+    · exact (hf hs).elim
   · rintro (H1 | H1 | ⟨h1, N1, N2⟩) H2
     · rcases H2 with H2 | H2 | ⟨h2, N2', N3⟩
       · exact .inl (H1.trans hU H2)
@@ -552,18 +553,17 @@ theorem conv (hU : StepUniq env) (hE : TyEq env U Γ A B)
     (hAB : (IndRel env U Γ h A B ∧ IndTele IH h l A B) ∨ (NeRed env U Γ A ∧ NeRed env U Γ B)) :
     LRS.IndVal IH A M N h l c fs → LRS.IndVal IH B M N h l c fs := by
   unfold LRS.IndVal
-  rintro (H | hA | H)
-  · rcases hAB with ⟨hR, hT⟩ | ⟨-, hB⟩
-    · have hBB := hT.symm.left' hU hR.symm
-      refine .inl ?_
-      by_cases hs : IsStruct c = true
-      · rw [if_pos hs] at H ⊢; exact H.conv hU hE hR hT hBB
-      · rw [if_neg hs] at H ⊢; exact H.conv hU hE hR hT hBB
-    · exact .inr (.inl hB)
-  · rcases hAB with ⟨hR, -⟩ | ⟨-, hB⟩
+  rcases hAB with ⟨hR, hT⟩ | ⟨-, hB⟩
+  · have hBB := hT.symm.left' hU hR.symm
+    have hS := StructOK.conv_iff (c := c) hU hR
+    rintro (H | hA | H)
+    · refine .inl ?_
+      by_cases hs : StructOK env U Γ h A c
+      · rw [if_pos hs] at H; rw [if_pos (hS.1 hs)]; exact H.conv hU hE hR hT hBB
+      · rw [if_neg hs] at H; rw [if_neg (mt hS.2 hs)]; exact H.conv hU hE hR hT hBB
     · exact (hR.not_neRed hU hA).elim
-    · exact .inr (.inl hB)
-  · exact .inr (.inr ⟨H.1, H.2.1.tyEq hE, H.2.2.tyEq hE⟩)
+    · exact .inr (.inr ⟨mt hS.2 H.1, H.2.1.tyEq hE, H.2.2.tyEq hE⟩)
+  · exact fun _ => .inr (.inl hB)
 
 theorem whr (hU : StepUniq env) (hM : TRed env U Γ M M' A) (hN : TRed env U Γ N N' A) :
     LRS.IndVal IH A M N h l c fs ↔ LRS.IndVal IH A M' N' h l c fs := by
@@ -587,7 +587,7 @@ theorem mono_r (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
   unfold LRS.IndVal
   rintro (H | H)
   · refine .inl ?_
-    by_cases hs : IsStruct c = true
+    by_cases hs : StructOK env U Γ h A c
     · rw [if_pos hs] at H ⊢; exact H.mono_r hU hl htel htel' hfit
     · rw [if_neg hs] at H ⊢; exact H.mono_r hU hl htel htel' hfit
   · exact .inr H
@@ -601,7 +601,7 @@ theorem mono_up (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
   rintro (H | H)
   · rcases hA with ⟨-, hT⟩ | ⟨hA, -⟩
     · refine .inl ?_
-      by_cases hs : IsStruct c = true
+      by_cases hs : StructOK env U Γ h A c
       · rw [if_pos hs] at H ⊢; exact H.mono_up hU hl htel htel' hfit' hT
       · rw [if_neg hs] at H ⊢; exact H.mono_up hU hl htel htel' hfit' hT
     · exact .inr (.inl hA)
@@ -614,7 +614,7 @@ theorem mono_l (hfs : fs.Forall₂ (· ≤ ·) fs')
   unfold LRS.IndVal
   rintro (H | H)
   · refine .inl ?_
-    by_cases hs : IsStruct c = true
+    by_cases hs : StructOK env U Γ h A c
     · rw [if_pos hs] at H ⊢; exact H.mono_l hfs htel hfit
     · rw [if_neg hs] at H ⊢; exact H.mono_l hfs htel hfit
   · exact .inr H
@@ -634,10 +634,10 @@ theorem LRS.TyTyped.whr (hU : StepUniq env) (hM : StepS env U Γ M M') (e : TyEq
   | indTy r h l =>
     rw [LRS.TyTyped.indTy_iff, LRS.TyTyped.indTy_iff]
     refine or_congr (NeRed.whr hU hM) ⟨fun H c i k hs hi hk => ?_, fun H c i k hs hi hk => ?_⟩
-    · obtain ⟨ci, hc, H⟩ := H c i k hs hi hk
+    · obtain ⟨ci, hc, H⟩ := H c i k ((StructOK.whr hU hM).2 hs) hi hk
       exact ⟨ci, hc, fun lsA AsA rA W M₁ N₁ w1 n1 w2 n2 hMN =>
         H lsA AsA (hM.trans rA) W M₁ N₁ w1 n1 w2 n2 (e.symm.defeqDF hMN)⟩
-    · obtain ⟨ci, hc, H⟩ := H c i k hs hi hk
+    · obtain ⟨ci, hc, H⟩ := H c i k ((StructOK.whr hU hM).1 hs) hi hk
       exact ⟨ci, hc, fun lsA AsA rA W M₁ N₁ w1 n1 w2 n2 hMN =>
         H lsA AsA (StepS.determ_l hU hM rA W) W M₁ N₁ w1 n1 w2 n2 (e.defeqDF hMN)⟩
   | _ => exact .rfl
@@ -891,9 +891,9 @@ theorem LRS.IndVal.join (hU : StepUniq env) {fs₁ fs₂ : List (WShape n)}
     · rcases H2 with H2 | H2 | ⟨hf', -⟩
       · exact .inl (H1.join hU hC htel hfit₁ hfit₂ H2)
       · exact .inr (.inl H2)
-      · rw [hs] at hf'; cases hf'
+      · exact (hf' hs).elim
     · exact .inr (.inl H1)
-    · rw [hs] at hf; cases hf
+    · exact (hf hs).elim
   · rintro (H1 | H1 | ⟨h1, N1, N2⟩) H2
     · rcases H2 with H2 | H2 | ⟨h2, N1', N2'⟩
       · exact .inl (H1.join hU hC htel hfit₁ hfit₂ H2)

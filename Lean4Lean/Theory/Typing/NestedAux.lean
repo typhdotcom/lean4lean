@@ -19,17 +19,6 @@ theorem TeleDefEq.instL {env : VEnv} {U U' : Nat} {ls : List VLevel} (hls : ∀ 
   | _, [], [], .nil => .nil
   | _, _ :: _, _ :: _, .cons h t => .cons (h.instL hls) (by simpa using TeleDefEq.instL hls t)
 
-/-- A substitution for a telescope is one for a telescope that agrees with it. -/
-theorem Ctx.SubstEq.defeqTele {env : VEnv} {U : Nat} (henv : env.Ordered) {Γ₀ : List VExpr}
-    (hΓ₀ : OnCtx Γ₀ (env.IsType U)) {Δ₀ Δ₁ Δ₂ : List VExpr} (h : env.IsDefEqCtx U Δ₀ Δ₁ Δ₂) :
-    ∀ {σ σ'}, Ctx.SubstEq env U Γ₀ σ σ' Δ₁ → Ctx.SubstEq env U Γ₀ σ σ' Δ₂ := by
-  induction h with
-  | zero => exact fun W => W
-  | succ h hA ih =>
-    intro σ σ' W
-    cases W with | cons W' _ hh =>
-    exact .cons (ih W') (hA.hasType.2.defeqDFC henv h) (.defeqDF (hA.subst henv W'.left hΓ₀) hh)
-
 end VEnv
 
 namespace VInductiveType

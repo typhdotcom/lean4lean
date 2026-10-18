@@ -198,9 +198,9 @@ theorem reflect (henv : env.Ordered) (hU : StepUniq env) : ∀ (n : Nat) {M N A 
       | ctor c fs hf =>
         rw [LRS.DefEq.ctor_indTy]
         unfold LRS.IndVal
-        cases hc : IsStruct c
-        · exact .inr (.inr ⟨rfl, hM, hN⟩)
-        rw [if_pos rfl]
+        by_cases hc : StructOK env U Γ h A c
+        case neg => exact .inr (.inr ⟨hc, hM, hN⟩)
+        rw [if_pos hc]
         rw [show (LR (U := U) (Γ := Γ) henv hU (n+1)).TyTy A (.indTy r h l) =
           LRS.TyTyped (LR (U := U) (Γ := Γ) henv hU n) A (.indTy r h l) from rfl] at hY
         rw [show (LR (U := U) (Γ := Γ) henv hU (n+1)).TyDefEq A A (.indTy r h l) =

@@ -670,16 +670,6 @@ theorem VEnv.Ctx.SubstEq.getElem {env : VEnv} {U : Nat} {Γ Δ : List VExpr} {σ
       simp only [hlen, Nat.sub_self, List.getElem_cons_zero]
       exact ha
 
-theorem VInductDecl.ProjAllowed.congr {d : VInductDecl} {c : VConstructor} {ls ls' : List VLevel}
-    {k : Nat} (H : d.ProjAllowed c ls k) (heq : List.Forall₂ (· ≈ ·) ls ls') :
-    d.ProjAllowed c ls' k := by
-  have e {l : VLevel} : l.inst ls ≈ l.inst ls' := VLevel.inst_congr (VLevel.equiv_def'.2 rfl) heq
-  have e' {l : VLevel} : l.inst ls' ≈ .zero ↔ l.inst ls ≈ .zero :=
-    ⟨fun h => VLevel.equiv_def'.2 (e.trans h), fun h => VLevel.equiv_def'.2 (e.symm.trans h)⟩
-  intro hz
-  obtain ⟨h1, h2⟩ := H fun hn => hz fun ns => by rw [← congrFun e ns]; exact hn ns
-  exact ⟨fun f hf => e'.2 (h1 f hf), fun j hj f hf => (h2 j hj f hf).imp_left e'.2⟩
-
 /-- Each field of a constructor application, at the type of its sort. -/
 theorem VEnv.WF.ctorApp_fieldType {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
     (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}

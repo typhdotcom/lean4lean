@@ -105,6 +105,38 @@ theorem of_substEq (henv : env.WF) (hn : Inert env h.name) {d : VInductDecl} {t 
 
 end IndRel
 
+/-- Structure eta applies to values of `A`, at constructor `c`: `c` is a structure's constructor,
+and at the levels of the type former application `A` reduces to, every field may be projected. -/
+def StructOK [ShapeEnv] (env : VEnv) (U : Nat) (Γ : List VExpr) (h : IndHead) (A : VExpr) (c : Name) :
+    Prop :=
+  IsStruct c = true ∧ ∀ lsA AsA, StepS env U Γ A ((VExpr.const h.name lsA).appN AsA) →
+    WHNF env U Γ ((VExpr.const h.name lsA).appN AsA) →
+    ∀ d t T cv, env.inducts h.name = some (d, t) → d.types[t]? = some T → cv ∈ T.ctors →
+      cv.name = c → ∀ k < cv.fields.length, d.ProjAllowed cv lsA k
+
+namespace StructOK
+
+variable [ShapeEnv]
+
+theorem whr (hU : StepUniq env) (hA : StepS env U Γ A A') :
+    StructOK env U Γ h A c ↔ StructOK env U Γ h A' c := by
+  refine and_congr .rfl ⟨fun H lsA AsA r w => H lsA AsA (hA.trans r) w,
+    fun H lsA AsA r w => H lsA AsA (StepS.determ_l hU hA r w) w⟩
+
+theorem conv (hU : StepUniq env) (hR : IndRel env U Γ h A B) :
+    StructOK env U Γ h A c → StructOK env U Γ h B c := by
+  obtain ⟨hn, ls, ls', As, As', h1, h2, h3, -⟩ := hR
+  refine fun ⟨hs, H⟩ => ⟨hs, fun lsB AsB r w d t T cv hd hT hcv hc k hk => ?_⟩
+  have := StepS.determ hU h2 hn.whnf r w
+  obtain ⟨-, rfl, rfl⟩ := appN_const_inj this
+  exact (H ls As h1 hn.whnf d t T cv hd hT hcv hc k hk).congr h3
+
+theorem conv_iff (hU : StepUniq env) (hR : IndRel env U Γ h A B) :
+    StructOK env U Γ h A c ↔ StructOK env U Γ h B c :=
+  ⟨conv hU hR, conv hU hR.symm⟩
+
+end StructOK
+
 /-- The arguments `As` of the type former `h.name` at levels `ls` are typed along its
 telescope. -/
 def TypeArgs (env : VEnv) (U : Nat) (Γ : List VExpr) (h : IndHead) (ls : List VLevel)

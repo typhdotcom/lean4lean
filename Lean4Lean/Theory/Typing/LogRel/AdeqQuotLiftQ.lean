@@ -237,6 +237,20 @@ theorem LR.SubstWF.cons_inv {henv : env.Ordered} {hU : StepUniq env} {Γ₀ Γ :
   | id => exact .inl ⟨rfl, rfl⟩
   | cons W' => exact .inr ⟨_, _, rfl, W'⟩
 
+omit [ShapeEnv] [AxInterp] in
+/-- An application of the constructor `c` whose declared type, at its parameters and fields, is
+related as a type to `A`: its levels and parameters agree with `A`'s, the relation's
+constructor parameters (`CtorParams`). -/
+theorem CtorParams.of_indRel {Γ : List VExpr} {h : IndHead} {c : Name} {ls : List VLevel}
+    {qs ms : List VExpr} {A : VExpr}
+    (H : IndRel env U Γ h ((VExpr.const h.name ls).appN (qs ++ ctorIdx env h.name c ls (qs ++ ms)))
+      A) :
+    ∃ lsA AsA, StepS env U Γ A ((VExpr.const h.name lsA).appN AsA) ∧
+      CtorParams env U Γ h c ls qs ms lsA AsA := by
+  obtain ⟨hn, ls₁, ls₂, As₁, As₂, r1, r2, hl, hlen1, hlen2, hR⟩ := H
+  obtain ⟨-, rfl, rfl⟩ := appN_const_inj (StepS.of_whnf hn.whnf r1)
+  exact ⟨ls₂, As₂, r2, hl, hlen1, hlen2, hR⟩
+
 omit [AxInterp] in
 /-- A constructor shape is typed only at an inductive type shape. -/
 theorem WShape.HasType.ctor_inv {c : Name} {l : List (WShape n)} {hf} {a : WShape (n+1)}
@@ -350,7 +364,7 @@ theorem quotLift_caseQ (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
     have := (IsDefEq.weak_closed hEo onBs DQ Γ).defeq.substDF hEo hΔ hΓ₀ hWE
     simpa [VExpr.subst] using this
   unfold LRS.IndVal at H'
-  rw [if_neg (by simp [hns])] at H'
+  rw [if_neg (fun hs => absurd hs.1 (by rw [hns]; decide))] at H'
   rcases H' with H' | hA | ⟨-, hM1, hN1⟩
   · obtain ⟨-, -, -, i, kk, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, hi, hk, hci, hA, tM, tN, hfl,
       hFR, hP1, hP2⟩ := H'

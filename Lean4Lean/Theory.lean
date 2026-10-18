@@ -65,3 +65,9 @@ import Lean4Lean.Theory.Typing.LogRel.Shape
 import Lean4Lean.Theory.Typing.LogRel.BlockSound
 import Lean4Lean.Theory.Typing.LogRel.QuotSound
 import Lean4Lean.Theory.Typing.LogRel.ModelInv
+import Lean4Lean.Theory.Typing.LogRel.ConstSpine
+import Lean4Lean.Theory.Typing.LogRel.AdeqCtor
+import Lean4Lean.Theory.Typing.LogRel.AdeqIndTy
+import Lean4Lean.Theory.Typing.LogRel.AdeqQuotMk
+import Lean4Lean.Theory.Typing.LogRel.AdeqStruct
+import Lean4Lean.Theory.Typing.LogRel.StructProj

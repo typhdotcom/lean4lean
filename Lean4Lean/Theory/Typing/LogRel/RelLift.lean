@@ -235,9 +235,9 @@ private theorem LR.lift_succ_aux :
           rw [WShape.lift_ctor (Nat.le_succ k), LRS.DefEq.ctor_indTy, LR_succ]
           refine Iff.trans ?_ (LRS.DefEq.ctor_indTy (IH := LR (U := U) (Γ := Γ) henv hU k) (r := r) (hf := hf)).symm
           refine or_congr ?_ .rfl
-          by_cases hs : IsStruct c' = true
-          · simp only [hs, if_true]; exact StructVal.lift ih.1 ih.2.1 ih.2.2 hU hma.indTy_tels
-          · simp only [hs, if_false, Bool.false_eq_true]
+          by_cases hs : StructOK env U Γ c A c'
+          · rw [if_pos hs, if_pos hs]; exact StructVal.lift ih.1 ih.2.1 ih.2.2 hU hma.indTy_tels
+          · rw [if_neg hs, if_neg hs]
             exact CtorVal.lift ih.1 ih.2.1 ih.2.2 hU hma.indTy_tels
         | bot => rw [WShape.lift_bot]; exact .rfl
         | sort => rw [WShape.lift_sort]; exact .rfl
