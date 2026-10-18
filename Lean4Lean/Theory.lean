@@ -3,6 +3,12 @@ import Lean4Lean.Theory.Typing.Strong
 import Lean4Lean.Theory.Typing.UniqueTyping
 import Lean4Lean.Theory.Typing.ChurchRosser
 import Lean4Lean.Theory.Typing.HeadReduction
+import Lean4Lean.Theory.Typing.LogRel.WHRed
+import Lean4Lean.Theory.Typing.LogRel.StepUniq
+import Lean4Lean.Theory.Typing.LogRel.KIota
+import Lean4Lean.Theory.Typing.LogRel.Interp
+import Lean4Lean.Theory.Typing.LogRel.Inv
+import Lean4Lean.Theory.Typing.LogRel.RuleBodies
 import Lean4Lean.Theory.Typing.Telescope
 import Lean4Lean.Theory.Typing.TelescopeInv
 import Lean4Lean.Theory.Typing.InductiveEnv
@@ -16,3 +22,4 @@ import Lean4Lean.Theory.Typing.NestedDecl
 import Lean4Lean.Theory.Typing.NestedEnv
 import Lean4Lean.Theory.Typing.NestedWF
 import Lean4Lean.Theory.Typing.NestedAux
+import Lean4Lean.Theory.Typing.LogRel.Shape

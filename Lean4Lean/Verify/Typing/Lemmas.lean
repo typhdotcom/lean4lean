@@ -1,4 +1,5 @@
 import Batteries.Data.String.Lemmas
+import Lean4Lean.Theory.Typing.Strengthen
 import Lean4Lean.Verify.Typing.Expr
 import Lean4Lean.Verify.Expr
 import Lean4Lean.Theory.Typing.Strong

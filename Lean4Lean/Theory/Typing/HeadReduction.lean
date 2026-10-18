@@ -102,7 +102,7 @@ theorem WHRed.weakU_inv (W : Ctx.Lift' ρ Γ Γ') (H : Γ' ⊢ e1.lift' ρ ⤳ e
     obtain ⟨_, h4, h5⟩ := Pattern.matches_lift'.1 h2; cases funext h5
     refine ⟨_, (Pattern.RHS.apply_lift' _).symm, .extra h1 h4 <| h3.map fun _ _ h => ?_⟩
     simp only [← Pattern.RHS.apply_lift'] at h
-    exact (IsDefEqU.weak'_iff henv hΓ W).1 h
+    exact (IsDefEqU.weak'_iffP henv hΓ W).1 h
 
 theorem WHRed.parRed (H : Γ ⊢ e1 ⤳ e2) : Γ ⊢ e1 ≫ e2 := by
   induction H with
@@ -586,16 +586,16 @@ theorem InferType.weakU_inv (W : Ctx.Lift' ρ Γ Δ) (H : Δ ⊢ e.lift' ρ ▷ 
     let .app .. := e; cases he
     obtain ⟨_, rfl, a1⟩ := ih hΔ W rfl
     obtain ⟨F, a2, a3⟩ := h2.weakU_inv hΔ W; cases F <;> cases a2
-    refine ⟨_, by rw [VExpr.lift'_inst_hi], .app a1 a3 ((IsDefEq.weak'_iff henv hΔ W).1 h3)⟩
+    refine ⟨_, by rw [VExpr.lift'_inst_hi], .app a1 a3 ((IsDefEq.weak'_iffP henv hΔ W).1 h3)⟩
   | lam h1 h2 ih =>
     let .lam .. := e; cases he
     obtain ⟨_, rfl, a2⟩ := ih ⟨hΔ, _, h1⟩ W.cons rfl
-    exact ⟨_, rfl, .lam ((IsDefEq.weak'_iff henv hΔ W).1 h1) a2⟩
+    exact ⟨_, rfl, .lam ((IsDefEq.weak'_iffP henv hΔ W).1 h1) a2⟩
   | forallE h1 h2 h3 h4 ih1 ih2 =>
     let .forallE .. := e; cases he
     obtain ⟨_, rfl, a1⟩ := ih1 hΔ W rfl
     obtain ⟨U, a2, a3⟩ := h2.weakU_inv hΔ W; cases U <;> cases a2
-    have hΓ := hΔ.weak'_inv henv W
+    have hΓ := hΔ.weak'_invP henv W
     have := a1.hasType hΓ
     have ⟨_, hU⟩ := this.isType henv hΓ
     have hA := (a3.defeq hΓ hU).defeq this

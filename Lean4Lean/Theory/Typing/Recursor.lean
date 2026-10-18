@@ -1,4 +1,5 @@
 import Lean4Lean.Theory.Typing.InductiveEnv
+import Lean4Lean.Theory.Typing.Strengthen
 
 /-!
 # The recursor's type is well typed
