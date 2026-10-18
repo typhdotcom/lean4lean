@@ -9,7 +9,7 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv} {U : Nat}
+variable [ShapeEnv] [AxInterp] {env : VEnv} {U : Nat}
 
 /-- The quotient's rule forward, under its binders, at any valuation: an interpretation of
 `Quot.lift α r β f h (Quot.mk α r a)` interprets `f a`. -/
@@ -29,7 +29,8 @@ theorem quot_body_le (hM : ModelEnv env) (hq : env.defeqs quotDefEq) {u v : VLev
   cases hC with
   | bot => exact .bot
   | lam he hle => exact LE_Interp.mono (Const.lam_le_bot hM.roles he hle (hrl ▸ hA)) .bot
-  | delta h1 h2 => cases hM.roles (.delta h1 h2) hA
+  | ext _ h1 h2 => cases hM.roles (.delta h1 h2) hA
+  | delta _ h1 h2 => cases hM.roles (.delta h1 h2) hA
   | indTy h1 h2 => cases hM.roles (.indTy h1 h2) hA
   | ctor h1 h2 h3 h4 => cases hM.roles (.ctor h1 h2 h3 h4) hA
   | quotTy h1 h2 => cases hM.roles (.quotTy h1 h2) hA
@@ -81,7 +82,8 @@ theorem quot_body_le (hM : ModelEnv env) (hq : env.defeqs quotDefEq) {u v : VLev
         obtain ⟨l', h', heq, -⟩ := WShape.ctor'_le.1
           (WShape.LE.of_T ((hxy.trans this).trans TShape.bot_eqv.2)) hne
         simp [WShape.ext_iff, WShape.ctor, WShape.bot, Shape.bot] at heq
-      | delta g1 g2 => cases hM.roles (.delta g1 g2) hB
+      | ext _ g1 g2 => cases hM.roles (.delta g1 g2) hB
+      | delta _ g1 g2 => cases hM.roles (.delta g1 g2) hB
       | indTy g1 g2 => cases hM.roles (.indTy g1 g2) hB
       | ctor g1 g2 g3 g4 => cases hM.roles (.ctor g1 g2 g3 g4) hB
       | quotTy g1 g2 => cases hM.roles (.quotTy g1 g2) hB
@@ -417,12 +419,15 @@ theorem quotRuleSound (hM : ModelEnv env) (henv : env.WF) : QuotRuleSound env :=
   · exact quot_body_le hM hq hy
   · exact quot_body_ge hM hq hmk hQc hu (by simpa using W') hLS (hRS.sound.defeq_r hBB.symm) hy
 
+omit [ShapeEnv] [AxInterp] in
 /-- The model of a well-formed environment, with its own structures, is sound for its typing
 rules. -/
 theorem _root_.Lean4Lean.VEnv.WF.modelSound {env : VEnv} (henv : env.WF)
-    (H : env.IsDefEqStrong U Γ M N A) : @StrongSoundEq env.shapeEnv env U Γ M N A :=
+    (H : env.IsDefEqStrong U Γ M N A) :
+    @StrongSoundEq env.shapeEnv (@AxInterp.none env.shapeEnv) env U Γ M N A :=
   letI := env.shapeEnv
-  henv.strongSound (quotRuleSound henv.modelEnv henv) (henv.blockSound henv.modelEnv) H
+  henv.strongSound (quotRuleSound (henv.modelEnv AxOK.none) henv)
+    (henv.blockSound (henv.modelEnv AxOK.none)) H
 
 end LogRel
 end Lean4Lean

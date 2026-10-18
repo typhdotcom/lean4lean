@@ -41,6 +41,18 @@ theorem _root_.Lean4Lean.VEnv.shapeEnv_isStruct (env : VEnv) :
 
 variable [ShapeEnv]
 
+/-- Constants the model interprets by given shapes instead of by their steps: `I c ls` are the
+shapes of the constant `c ∈ dom` at levels `ls`. A recursive definition's body is related by the
+logical relation in the model that interprets the definitions of its block by the shapes where
+they are already related. By default no constant is. -/
+class AxInterp where
+  dom : Name → Prop
+  I : Name → List VLevel → TShape → Prop
+
+/-- The model with no constant interpreted by given shapes. -/
+instance (priority := low) AxInterp.none : AxInterp := ⟨fun _ => False, fun _ _ _ => False⟩
+
+
 open Classical in
 /-- Whether the block's types are relevant (not propositions) at the levels `ls`: the flag of
 their `indTy` shapes. -/
@@ -153,6 +165,8 @@ theorem kFieldShapes_mono {c : VConstructor} {is is' : List TShape}
       | succ i => exact ih2 i
   · exact .rfl
 
+variable [AxInterp]
+
 variable (env : VEnv) (c : Name) (ls : List VLevel) (R : TShape → VExpr → Prop) in
 /-- The shapes `m` of the constant `c` at levels `ls` applied to arguments whose shapes are
 `rargs` (last argument first). `R` interprets the closed terms the constant reduces to. -/
@@ -160,8 +174,11 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
   | bot : Const (n := n) rargs (WShape.T (n := n') .bot)
   | lam {f : WShapeFun n} : (∀ x y, (x, y) ∈ f → Const (x :: rargs) y.T) →
     m ≤ WShape.T (n := n + 1) (.lam' f) → Const rargs m
+  /-- A constant interpreted by given shapes. -/
+  | ext {df : VDefEq} : AxInterp.dom c → env.defeqs df → df.lhs = .const c (VLevel.params df.uvars) →
+    AxInterp.I c ls₀ m' → List.Forall₂ (· ≈ ·) ls₀ ls → m ≤ m' → Const (n := n) [] m
   /-- A definition unfolds. -/
-  | delta {df : VDefEq} : env.defeqs df → df.lhs = .const c (VLevel.params df.uvars) → ls.length = df.uvars →
+  | delta {df : VDefEq} : ¬AxInterp.dom c → env.defeqs df → df.lhs = .const c (VLevel.params df.uvars) → ls.length = df.uvars →
     R h (df.rhs.instL ls) → m ≤ h → Const (n := n) [] m
   /-- An inductive type applied to its parameters and indices, with its constructors' field
   telescopes at the parameters. -/
@@ -274,30 +291,35 @@ theorem le_sort (H : LE_Interp env ρ m (.sort u)) : m ≤ .sort (levelRel u) :=
   | bot => exact TShape.bot_le'
   | sort h => exact h
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.AppS.mono (h : m ≤ m') (h' : h₀ ≤ h₁)
     (H : AppS h₀ as m') : AppS h₁ as m := by
   induction H generalizing m h₁ with
   | nil h1 => exact .nil (h.trans (h1.trans h'))
   | cons h1 h2 _ ih => exact .cons (h1.trans h') h2 (ih h .rfl)
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.AppS.args_mono (H : AppS h as m) :
     ∀ {as'}, as.Forall₂ (· ≤ ·) as' → AppS h as' m := by
   induction H with
   | nil h1 => intro _ e; cases e; exact .nil h1
   | cons h1 h2 _ ih => intro _ e; cases e with | cons a1 a2 => exact .cons h1 (h2.trans a1) (ih a2)
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.PiAppS.mono (h : m ≤ m') (h' : h₀ ≤ h₁)
     (H : PiAppS h₀ as m') : PiAppS h₁ as m := by
   induction H generalizing m h₁ with
   | nil h1 => exact .nil (h.trans (h1.trans h'))
   | cons h1 h2 _ ih => exact .cons (h1.trans h') h2 (ih h .rfl)
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.PiAppS.args_mono (H : PiAppS h as m) :
     ∀ {as'}, as.Forall₂ (· ≤ ·) as' → PiAppS h as' m := by
   induction H with
   | nil h1 => intro _ e; cases e; exact .nil h1
   | cons h1 h2 _ ih => intro _ e; cases e with | cons a1 a2 => exact .cons h1 (h2.trans a1) (ih a2)
 
+omit [AxInterp] in
 /-- Lifting a list of shapes keeps each above itself. -/
 theorem lift_T_ge {l : List (WShape n₁)} (hn : n₁ ≤ n₂) :
     (l.map (·.T)).Forall₂ (· ≤ ·) ((l.map (WShape.lift n₂)).map (·.T)) := by
@@ -309,7 +331,8 @@ theorem Const.mono (h : m ≤ m') (H : Const env c ls R rargs m') : Const env c 
   induction H generalizing m with
   | bot => exact TShape.le_bot'.1 (h.trans TShape.bot_eqv.1) ▸ .bot
   | lam _ h2 ih => exact .lam (ih · · · .rfl) (h.trans h2)
-  | delta h1 h2 h3 h4 h5 => exact .delta h1 h2 h3 h4 (h.trans h5)
+  | ext h1 h2 h3 h4 h5 h6 => exact .ext h1 h2 h3 h4 h5 (h.trans h6)
+  | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 h4 (h.trans h5)
   | indTy h1 h2 h3 h4 h5 h6 => exact .indTy h1 h2 h3 h4 h5 (h.trans h6)
   | ctor h1 h2 h3 h4 h5 h6 h7 => exact .ctor h1 h2 h3 h4 h5 h6 (h.trans h7)
   | iota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 =>
@@ -347,7 +370,8 @@ theorem Const.mono_l (h : rargs.Forall₂ (· ≤ ·) rargs') (H : Const env c l
   induction H with
   | bot => exact .bot
   | lam _ h2 ih => exact .lam (fun x y h' => ih _ _ h' (.cons .rfl h)) h2
-  | delta h1 h2 h3 h4 h5 => cases h; exact .delta h1 h2 h3 h4 h5
+  | ext h1 h2 h3 h4 h5 h6 => cases h; exact .ext h1 h2 h3 h4 h5 h6
+  | delta h0 h1 h2 h3 h4 h5 => cases h; exact .delta h0 h1 h2 h3 h4 h5
   | indTy h1 h2 h3 h4 h5 h6 =>
     have hr := List.Forall₂.reverse.2 h
     refine .indTy h1 h2 (h.length_eq ▸ h3) h4 (fun i c' cty a1 a2 => ?_) (h6.trans ?_)
@@ -408,6 +432,7 @@ theorem Const.mono_l (h : rargs.Forall₂ (· ≤ ·) rargs') (H : Const env c l
     cases h
     exact .quotK h1 h2 h3 h4 (h5.mono .rfl (WShape.LE.T hf))
 
+omit [AxInterp] in
 /-- A function shape and an argument shape joined with others at a common level, and the
 application of the joins above the join of the applications. -/
 theorem _root_.Lean4Lean.LogRel.TShape.app_join {f : WShape (n+1)} {f' : WShape (n'+1)}
@@ -429,6 +454,7 @@ theorem _root_.Lean4Lean.LogRel.TShape.app_join {f : WShape (n+1)} {f' : WShape 
   exact ⟨_, _, _, jF, jX, cap, (TShape.Join.mk cap _).2
     ⟨TShape.app_mono jF.le.1 jX.le.1, TShape.app_mono jF.le.2 jX.le.2⟩⟩
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.AppS.compat_join (hh : h.Compat h') (H1 : AppS h as m)
     (H2 : AppS h' as' m') (has : as.Forall₂ TShape.Compat as') :
     m.Compat m' ∧ AppS (h.join h') (as.zipWith TShape.join as') (m.join m') := by
@@ -450,6 +476,7 @@ theorem _root_.Lean4Lean.LogRel.AppS.compat_join (hh : h.Compat h') (H1 : AppS h
     exact ⟨c, .cons ((jF _).2 ⟨hf1.trans jh.1, hf2.trans jh.2⟩)
       ((jX _).2 ⟨hx1.trans ja.1, hx2.trans ja.2⟩) (j.mono .rfl hle)⟩
 
+omit [AxInterp] in
 /-- A pi type shape and an argument shape joined with others at a common level, and the codomain
 of the joins above the join of the codomains. -/
 theorem _root_.Lean4Lean.LogRel.TShape.piApp_join {f : WShape (n+1)} {f' : WShape (n'+1)}
@@ -471,6 +498,7 @@ theorem _root_.Lean4Lean.LogRel.TShape.piApp_join {f : WShape (n+1)} {f' : WShap
   exact ⟨_, _, _, jF, jX, cap, (TShape.Join.mk cap _).2
     ⟨TShape.piApp_mono jF.le.1 jX.le.1, TShape.piApp_mono jF.le.2 jX.le.2⟩⟩
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.PiAppS.compat_join (hh : h.Compat h') (H1 : PiAppS h as m)
     (H2 : PiAppS h' as' m') (has : as.Forall₂ TShape.Compat as') :
     m.Compat m' ∧ PiAppS (h.join h') (as.zipWith TShape.join as') (m.join m') := by
@@ -582,7 +610,8 @@ theorem Const.arity (H : Const env c ls R rargs m) :
   cases H with
   | bot => exact .inl (TShape.bot_eqv.1.trans TShape.bot_eqv.2)
   | lam h1 h2 => exact .inr (.inl ⟨_, h2, h1⟩)
-  | delta h1 h2 h3 => exact .inr (.inr ⟨_, ConstArity.delta h1 h2⟩)
+  | ext _ h1 h2 => exact .inr (.inr ⟨_, ConstArity.delta h1 h2⟩)
+  | delta _ h1 h2 => exact .inr (.inr ⟨_, ConstArity.delta h1 h2⟩)
   | indTy h1 h2 h3 => exact .inr (.inr ⟨_, by rw [h3]; exact ConstArity.indTy h1 h2⟩)
   | ctor h1 h2 h3 h4 h5 h6 =>
     exact .inr (.inr ⟨_, by rw [h6]; exact ConstArity.ctor h1 h2 h3 h4⟩)
@@ -595,6 +624,7 @@ theorem Const.arity (H : Const env c ls R rargs m) :
   | quot h1 h2 => exact .inr (.inr ⟨_, ConstArity.quotLift h1 h2⟩)
   | quotK h1 h2 => exact .inr (.inr ⟨_, ConstArity.quotLift h1 h2⟩)
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.WShape.lam'_le_bot {f : WShapeFun n}
     (H : ∀ x y, (x, y) ∈ f → y ≤ .bot) : WShape.lam' f ≤ .bot := by
   by_cases hf : f.NonZero
@@ -614,7 +644,7 @@ theorem Const.compat_mismatch (hR : ConstRoles env) {rargs1 : List (WShape n)} {
   | lam _ m_le ih =>
     refine m_le.trans ((WShape.lam'_le_bot fun x y h => WShape.LE.T_iff.1
       ((ih x y h (by simp; omega)).trans TShape.bot_eqv.2)).T.trans TShape.bot_eqv.1)
-  | delta => simp at h_len
+  | ext | delta => simp at h_len
   | indTy h1 h2 h3 => exact (key (.indTy h1 h2) (by rw [← h3]; exact h_len)).elim
   | ctor h1 h2 h3 h4 _ h6 => exact (key (.ctor h1 h2 h3 h4) (by rw [← h6]; exact h_len)).elim
   | iota h1 h2 h3 h4 _ h6 =>
@@ -632,7 +662,8 @@ theorem Const.mapR (hR : ∀ {h e}, R h e → R' h e) (H : Const env c ls R rarg
   induction H with
   | bot => exact .bot
   | lam _ h2 ih => exact .lam ih h2
-  | delta h1 h2 h3 h4 h5 => exact .delta h1 h2 h3 (hR h4) h5
+  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 hl h4
+  | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 (hR h4) h5
   | indTy h1 h2 h3 h4 h5 h6 =>
     refine .indTy h1 h2 h3 h4 (fun i c' cty a1 a2 => ?_) h6
     obtain ⟨h, b1, b2⟩ := h5 i c' cty a1 a2
@@ -685,6 +716,7 @@ theorem _root_.Lean4Lean.VEnv.WF.etaCtorUniq {env : VEnv} (henv : env.WF) : EtaC
     rw [r4] at this; simpa using this
   exact henv.stepUniq.ctor hs hq hq' ((mem hq).trans (mem hq').symm)
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.WShape.map_T_zipWith_join :
     ∀ {l1 l2 : List (WShape n)},
     (l1.zipWith WShape.join l2).map (·.T) = (l1.map (·.T)).zipWith TShape.join (l2.map (·.T))
@@ -694,6 +726,7 @@ theorem _root_.Lean4Lean.LogRel.WShape.map_T_zipWith_join :
     simp only [List.zipWith_cons_cons, List.map_cons, WShape.T_join]
     rw [WShape.map_T_zipWith_join]
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.WShape.Compat.map_T {l1 l2 : List (WShape n)}
     (h : l1.Forall₂ WShape.Compat l2) : (l1.map (·.T)).Forall₂ TShape.Compat (l2.map (·.T)) :=
   List.forall₂_map_left_iff.2 (List.forall₂_map_right_iff.2 (h.imp fun _ _ e => e.T))
@@ -707,6 +740,7 @@ theorem _root_.List.forall₂_of_length {R : α → β → Prop} :
     .cons (H _ (.head _) _ (.head _)) (List.forall₂_of_length (by simpa using h)
       fun x hx y hy => H x (.tail _ hx) y (.tail _ hy))
 
+omit [AxInterp] in
 /-- The fields of compatible constructor shapes of the same constructor are compatible: a shape that
 collapses has fields `bot`. -/
 theorem _root_.Lean4Lean.LogRel.WShape.Compat.ctor'_inv {l l' : List (WShape n)}
@@ -740,12 +774,14 @@ theorem _root_.List.forall₂_getD {R : α → β → Prop} {d : α} {d' : β} :
   | _, _, .cons a _, _, 0 => by simpa using a
   | _, _, .cons _ l, h, i+1 => by simpa using List.forall₂_getD l h i
 
+omit [AxInterp] in
 theorem getD_join_le : ∀ {l l' : List TShape} (i : Nat), l.length = l'.length →
     (l.getD i TShape.bot).join (l'.getD i TShape.bot) ≤ (l.zipWith TShape.join l').getD i TShape.bot
   | [], [], _, _ => by simpa using (TShape.Join.mk TShape.Compat.bot_l _).2 ⟨.rfl, .rfl⟩
   | _ :: _, _ :: _, 0, _ => by simpa using TShape.LE.rfl
   | _ :: _, _ :: _, i+1, h => by simpa using getD_join_le i (by simpa using h)
 
+omit [AxInterp] in
 theorem kFieldShapes_compat {c : VConstructor} {is is' : List TShape}
     (h : is.Forall₂ TShape.Compat is') :
     (kFieldShapes c is).Forall₂ TShape.Compat (kFieldShapes c is') := by
@@ -760,6 +796,7 @@ theorem kFieldShapes_compat {c : VConstructor} {is is' : List TShape}
     | some i => exact List.forall₂_getD h TShape.Compat.bot_l i
     | none => exact TShape.Compat.bot_l
 
+omit [AxInterp] in
 theorem kFieldShapes_join_le {c : VConstructor} {is is' : List TShape}
     (hl : is.length = is'.length) :
     ((kFieldShapes c is).zipWith TShape.join (kFieldShapes c is')).Forall₂ (· ≤ ·)
@@ -775,6 +812,7 @@ theorem kFieldShapes_join_le {c : VConstructor} {is is' : List TShape}
     | some i => exact getD_join_le i hl
     | none => exact (TShape.Join.mk TShape.Compat.bot_l _).2 ⟨.rfl, .rfl⟩
 
+omit [AxInterp] in
 theorem _root_.Lean4Lean.LogRel.WShape.Compat.ctor'_cases {l l' : List (WShape n)}
     (h : (WShape.ctor' c l).Compat (.ctor' c' l')) :
     c = c' ∨ IsStruct c = true ∨ IsStruct c' = true := by
@@ -792,6 +830,7 @@ theorem _root_.List.Forall₂.getElem?' {R : α → β → Prop} :
   | _, _, 0, _, _, .cons h _, rfl, rfl => h
   | _, _, _+1, _, _, .cons _ h, e1, e2 => List.Forall₂.getElem?' h e1 e2
 
+omit [AxInterp] in
 /-- Compatible constructor shapes of a constructor: one has fields `bot`, or their fields are
 compatible. -/
 theorem _root_.Lean4Lean.LogRel.WShape.Compat.ctor'_fields {l l' : List (WShape n)}
@@ -820,7 +859,27 @@ set_option hygiene false in
 local macro "mismatch " h:term : tactic =>
   `(tactic| exact absurd (hRo $h (by arity)) (by intro h; cases h))
 
-theorem Const.compat_join (hRo : ConstRoles env) (hU : StepUniq env)
+omit [ShapeEnv] [AxInterp] in
+theorem levels_equiv_trans : ∀ {l₁ l₂ l₃ : List VLevel}, List.Forall₂ (· ≈ ·) l₁ l₂ →
+    List.Forall₂ (· ≈ ·) l₂ l₃ → List.Forall₂ (· ≈ ·) l₁ l₃
+  | _, _, _, .nil, .nil => .nil
+  | _, _, _, .cons a h, .cons b h' => .cons (Eq.trans a b) (levels_equiv_trans h h')
+
+omit [ShapeEnv] [AxInterp] in
+theorem levels_equiv_symm : ∀ {l₁ l₂ : List VLevel}, List.Forall₂ (· ≈ ·) l₁ l₂ →
+    List.Forall₂ (· ≈ ·) l₂ l₁
+  | _, _, .nil => .nil
+  | _, _, .cons a h => .cons (Eq.symm a) (levels_equiv_symm h)
+
+/-- What the model needs of the shapes it gives constants: compatible ones join within them. -/
+structure AxOK : Prop where
+  join : ∀ {c ls₁ ls₂ m₁ m₂}, AxInterp.I c ls₁ m₁ → AxInterp.I c ls₂ m₂ →
+    List.Forall₂ (· ≈ ·) ls₁ ls₂ → m₁.Compat m₂ ∧ AxInterp.I c ls₁ (m₁.join m₂)
+
+omit [AxInterp] in
+theorem AxOK.none : @AxOK _ (@AxInterp.none _) := ⟨nofun⟩
+
+theorem Const.compat_join (hRo : ConstRoles env) (hU : StepUniq env) (hA : AxOK)
     (hS : ∀ c, IsStruct c = true → env.IsEtaCtor c) (hE : EtaCtorUniq env)
     {rargs1 rargs2 : List (WShape n)} (hc : List.Forall₂ WShape.Compat rargs1 rargs2)
     (H1 : Const env c ls R rargs1 m) (H2 : Const env c ls R' rargs2 m')
@@ -872,20 +931,35 @@ theorem Const.compat_join (hRo : ConstRoles env) (hU : StepUniq env)
       exact ih.mono_l <| .cons ((WShape.Join.mk hxc' _).2 ⟨le, le'⟩) <|
         List.forall₂_refl' fun _ => .rfl
     · exact bot_l (Const.lam_le_bot hRo he m_le (hc.length_eq ▸ A)) H2 hc
-  | @delta _ _ n' _ h1 h2 h3 h4 h5 =>
+  | @ext _ _ _ n' _ h0 h1 h2 h3 hl h4 =>
     have A1 := ConstArity.delta h1 h2
-    have H1 := Const.delta (R := R) (n := n') h1 h2 h3 h4 h5
+    cases hc
+    have H1 := Const.ext (R := R) (n := n') h0 h1 h2 h3 hl h4
+    cases H2 with
+    | bot => exact bot_r TShape.bot_eqv.1 H1 .nil
+    | lam he' m_le' => exact bot_r (Const.lam_le_bot hRo he' m_le' A1) H1 .nil
+    | ext _ _ _ a3 al a4 =>
+      have ⟨c₁, j₁⟩ := hA.join h3 a3 (levels_equiv_trans hl (levels_equiv_symm al))
+      have jl := (TShape.Join.mk c₁).le
+      have cm := TShape.Compat.mono h4 a4 c₁
+      exact ⟨cm, .ext h0 h1 h2 j₁ hl ((TShape.Join.mk cm _).2 ⟨h4.trans jl.1, a4.trans jl.2⟩)⟩
+    | delta a0 => exact (a0 h0).elim
+    | _ => clear H1 h0 h1 h2 h3 h4; mismatch A1
+  | @delta _ _ n' _ h0 h1 h2 h3 h4 h5 =>
+    have A1 := ConstArity.delta h1 h2
+    have H1 := Const.delta (R := R) (n := n') h0 h1 h2 h3 h4 h5
     cases hc
     cases H2 with
     | bot => exact bot_r TShape.bot_eqv.1 H1 .nil
     | lam he' m_le' => exact bot_r (Const.lam_le_bot hRo he' m_le' A1) H1 .nil
-    | delta a1 a2 a3 a4 a5 =>
+    | ext a0 => exact (h0 a0).elim
+    | delta _ a1 a2 a3 a4 a5 =>
       cases hU.delta h1 a1 h2 a2
       have ⟨c₁, j₁⟩ := hRR h4 a4
       have jl := (TShape.Join.mk c₁).le
       have cm := TShape.Compat.mono h5 a5 c₁
-      exact ⟨cm, .delta h1 h2 h3 j₁ ((TShape.Join.mk cm _).2 ⟨h5.trans jl.1, a5.trans jl.2⟩)⟩
-    | _ => clear H1 h1 h2 h3 h4 h5; mismatch A1
+      exact ⟨cm, .delta h0 h1 h2 h3 j₁ ((TShape.Join.mk cm _).2 ⟨h5.trans jl.1, a5.trans jl.2⟩)⟩
+    | _ => clear H1 h0 h1 h2 h3 h4 h5; mismatch A1
   | @ctor _ _ _ d _ _ _ _ _ h1 h2 h3 h4 h5 h6 h7 =>
     have A1 := ConstArity.ctor h1 h2 h3 h4
     have H1 : Const env c ls R _ _ := .ctor h1 h2 h3 h4 h5 h6 h7
@@ -1111,7 +1185,8 @@ theorem Const.lift (hn : n₁ ≤ n₂) (H : Const (n := n₁) env c ls R rargs 
     · obtain ⟨x, y, h', rfl, rfl⟩ := (WShapeFun.mem_lift hn).1 h
       exact (ih _ _ h' hn).mono (TShape.lift_eqv hn).1
     · exact WShape.lift_lam' hn ▸ h2.trans (TShape.lift_eqv (Nat.succ_le_succ hn)).2
-  | delta h1 h2 h3 h4 h5 => exact .delta h1 h2 h3 h4 h5
+  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 hl h4
+  | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 h4 h5
   | @indTy _ _ d _ _ rargs ctys h1 h2 h3 h4 h5 h6 =>
     refine .indTy (ctys := ctys.map (WShape.lift n₂)) h1 h2 (by simpa using h3) (by simpa using h4)
       (fun i c' cty' a1 a2 => ?_) ?_
@@ -1216,7 +1291,8 @@ theorem Const.closed (hcl : ClosedRules env) (H : Const env c ls R rargs m) :
   induction H with
   | bot => exact .bot
   | lam _ h2 ih => exact .lam ih h2
-  | delta h1 h2 h3 h4 h5 => exact .delta h1 h2 h3 ⟨(hcl.defeq h1).instL, h4⟩ h5
+  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 hl h4
+  | delta h0 h1 h2 h3 h4 h5 => exact .delta h0 h1 h2 h3 ⟨(hcl.defeq h1).instL, h4⟩ h5
   | indTy h1 h2 h3 h4 h5 h6 =>
     refine .indTy h1 h2 h3 h4 (fun i c' cty a1 a2 => ?_) h6
     obtain ⟨h, b1, b2⟩ := h5 i c' cty a1 a2
@@ -1311,7 +1387,7 @@ theorem proj_lift {fs : List (WShape n)} {x : WShape n} {k : Nat} (hN : n ≤ N)
     by simp [h5], h6.trans (TShape.lift_eqv hN).2⟩
 
 /-- Two interpretations of a term are compatible, and their join is one. -/
-theorem compat_join (hRo : ConstRoles env) (hU : StepUniq env)
+theorem compat_join (hRo : ConstRoles env) (hU : StepUniq env) (hA : AxOK)
     (hS : ∀ c, IsStruct c = true → env.IsEtaCtor c) (hE : EtaCtorUniq env) {m₁ m₂ : TShape}
     (hρ : ρ'.LE ρ) (H1 : LE_Interp env ρ' m₁ M) (H2 : LE_Interp env ρ m₂ M) :
     m₁.Compat m₂ ∧ LE_Interp env ρ (m₁.join m₂) M := by
@@ -1434,7 +1510,7 @@ theorem compat_join (hRo : ConstRoles env) (hU : StepUniq env)
     have a6' := a6.mapR (R' := Rd R₂) (fun hr => Or.inr ⟨_, .rfl, hr⟩)
     have mono {R a a' A} (le : a ≤ a') : Rd R a' A → Rd R a A :=
       .imp (by exact le.trans) fun ⟨_, le', hr⟩ => by exact ⟨_, le.trans le', hr⟩
-    have ⟨hc1, hj1⟩ := Const.compat_join (R₃ := LE_Interp env ρ) hRo hU hS hE .nil
+    have ⟨hc1, hj1⟩ := Const.compat_join (R₃ := LE_Interp env ρ) hRo hU hA hS hE .nil
         (h6'.lift (Nat.le_max_left ..)) (a6'.lift (Nat.le_max_right ..))
         (.inl TShape.bot_le') (.inl TShape.bot_le') .mono <| by
       rintro m₁ m₂ A (hb1 | ⟨m₁', le1, hr1⟩) (hb2 | ⟨m₂', le2, hr2⟩)
@@ -1492,14 +1568,15 @@ structure ModelEnv (env : VEnv) : Prop where
   structOf : ∀ c, env.IsEtaCtor c → IsStruct c = true
   etaCtor : EtaCtorUniq env
   closed : ClosedRules env
+  ax : AxOK
 
 theorem compat (hM : ModelEnv env) (H1 : LE_Interp env ρ m₁ M) (H2 : LE_Interp env ρ m₂ M) :
     m₁.Compat m₂ :=
-  (compat_join hM.roles hM.stepUniq hM.struct hM.etaCtor .rfl H1 H2).1
+  (compat_join hM.roles hM.stepUniq hM.ax hM.struct hM.etaCtor .rfl H1 H2).1
 
 theorem join' (hM : ModelEnv env) (H1 : LE_Interp env ρ m₁ M) (H2 : LE_Interp env ρ m₂ M) :
     LE_Interp env ρ (m₁.join m₂) M :=
-  (compat_join hM.roles hM.stepUniq hM.struct hM.etaCtor .rfl H1 H2).2
+  (compat_join hM.roles hM.stepUniq hM.ax hM.struct hM.etaCtor .rfl H1 H2).2
 
 theorem join (hM : ModelEnv env) (J : m₁.Join m₂ m) (H1 : LE_Interp env ρ m₁ M)
     (H2 : LE_Interp env ρ m₂ M) : LE_Interp env ρ m M :=
@@ -2036,11 +2113,14 @@ theorem sound_forallE (hM : ModelEnv env)
       · exact .bot' .sort
 
 
+omit [ShapeEnv] [AxInterp] in
 /-- A well-formed environment is one the model can interpret, with its own structures. -/
-theorem _root_.Lean4Lean.VEnv.WF.modelEnv {env : VEnv} (henv : env.WF) :
-    @ModelEnv env.shapeEnv env :=
+theorem _root_.Lean4Lean.VEnv.WF.modelEnv {env : VEnv} (henv : env.WF)
+    {ax : @AxInterp env.shapeEnv} (hA : @AxOK env.shapeEnv ax) :
+    @ModelEnv env.shapeEnv ax env :=
   letI := env.shapeEnv
-  { roles := henv.constRoles
+  { ax := hA
+    roles := henv.constRoles
     stepUniq := henv.stepUniq
     struct := fun _ h => (env.shapeEnv_isStruct).1 h
     structOf := fun _ h => (env.shapeEnv_isStruct).2 h

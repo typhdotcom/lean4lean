@@ -12,7 +12,7 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv} {U : Nat}
+variable [ShapeEnv] [AxInterp] {env : VEnv} {U : Nat}
 
 omit [ShapeEnv] in
 theorem mem_iotaRules {d : VInductDecl} {df : VDefEq} (h : df ∈ d.iotaRules) :

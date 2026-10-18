@@ -16,7 +16,7 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv} {U : Nat}
+variable [ShapeEnv] [AxInterp] {env : VEnv} {U : Nat}
 
 /-! ### Lambda telescopes -/
 
@@ -206,6 +206,7 @@ theorem forall₂_bvars_le {σ : Valuation} : ∀ {n k : Nat} {xs : List TShape}
   rw [getElem_bvars] at this
   exact bvar_iff.1 this
 
+omit [AxInterp] in
 /-- Values for binders below a valuation's: the first `N` below the variables above the last `m`,
 the last `m` below those. -/
 theorem pushAll_le_of {σ : Valuation} {N m : Nat} {pre fs : List TShape} (hpl : pre.length = N)
@@ -266,7 +267,8 @@ theorem iota_body_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q 
   cases hC with
   | bot => exact .bot
   | lam he hle => exact LE_Interp.mono (Const.lam_le_bot hM.roles he hle (hrl ▸ hA)) .bot
-  | delta h1 h2 => cases hM.roles (.delta h1 h2) hA
+  | ext _ h1 h2 => cases hM.roles (.delta h1 h2) hA
+  | delta _ h1 h2 => cases hM.roles (.delta h1 h2) hA
   | indTy h1 h2 => cases hM.roles (.indTy h1 h2) hA
   | ctor h1 h2 h3 h4 => cases hM.roles (.ctor h1 h2 h3 h4) hA
   | quotTy h1 h2 => cases hM.roles (.quotTy h1 h2) hA
@@ -366,6 +368,7 @@ theorem iota_body_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t₀ j q 
 
 /-! ### The backward direction -/
 
+omit [AxInterp] in
 theorem pushAll_bvar {ρ : Valuation} {zs : List TShape} {N m : Nat} (hl : zs.length = N + m)
     (i : Nat) (hi : i < zs.length) : pushAll ρ zs (N + m - 1 - i) = zs[i] := by
   rw [pushAll_apply, dif_pos (by omega), List.getElem_reverse]

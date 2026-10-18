@@ -12,24 +12,22 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv} {U : Nat}
+variable [ShapeEnv] [AxInterp] {env : VEnv} {U : Nat}
 
 variable (env) in
 /-- A block's iota rules are sound, given that the environment it was declared in is. -/
 def BlockSound : Prop := ∀ {E₁ d E₂}, E₁.WF → VDecl.WF E₁ (.induct d) E₂ → E₂ ≤ env →
   SoundHyps E₁ env → ∀ U, ∀ df ∈ d.iotaRules, RuleSound env U df
 
-/-- The cases of the model's soundness that need the rules hold of a well-formed environment,
-given that the quotient's rule and each block's rules and projections are sound. -/
-theorem _root_.Lean4Lean.VEnv.WF.soundHyps (henv : env.WF) (hM : ModelEnv env)
-    (hQ : QuotRuleSound env) (hB : BlockSound env) : SoundHyps env env := by
-  obtain ⟨ds, H₀⟩ := henv
-  suffices ∀ {ds' E}, VEnv.WF' ds' E → E ≤ env → SoundHyps E env from this H₀ .rfl
-  intro ds' E H hle
+/-- The cases of the model's soundness that need the rules hold of an environment built by
+well-formed declarations, given that the quotient's rule and each block's rules and projections are
+sound and no definition it has is of a constant the model interprets by given shapes. -/
+theorem soundHyps_of (hM : ModelEnv env) (hQ : QuotRuleSound env) (hB : BlockSound env)
+    {ds' E} (H : VEnv.WF' ds' E) (hle : E ≤ env) (hnd : NoDom E) : SoundHyps E env := by
   induction H with
   | empty => exact .empty
   | @decl _ E₂ _ E₁ hD hW ih =>
-    have IH := ih (hD.le.trans hle)
+    have IH := ih (hD.le.trans hle) (hnd.mono hD.le.defeqs)
     cases hD with
     | «axiom» _ h1 | «opaque» _ h1 =>
       exact IH.mono (fun h => VEnv.addConst_defeqs h1 ▸ h) (fun h => VEnv.addConst_inducts h1 ▸ h)
@@ -37,7 +35,8 @@ theorem _root_.Lean4Lean.VEnv.WF.soundHyps (henv : env.WF) (hM : ModelEnv env)
     | «def» _ h1 =>
       refine ⟨fun U df h => ?_, fun U s d t h => IH.2 U s d t (VEnv.addConst_inducts h1 ▸ h)⟩
       rcases h with rfl | h
-      · exact ruleSound_defn hM (hle.constants (VEnv.addDefEq_le.constants (VEnv.addConst_self h1)))
+      · exact ruleSound_defn hM (hnd (.inl rfl) rfl)
+          (hle.constants (VEnv.addDefEq_le.constants (VEnv.addConst_self h1)))
           (hle.defeqs (.inl rfl))
       · exact IH.1 U df (VEnv.addConst_defeqs h1 ▸ h)
     | mutualDef _ h1 _ =>
@@ -45,7 +44,7 @@ theorem _root_.Lean4Lean.VEnv.WF.soundHyps (henv : env.WF) (hM : ModelEnv env)
         IH.2 U s d t (VEnv.addConsts_inducts h1 ▸ VEnv.addDefEqs_inducts ▸ h)⟩
       have h' := h
       rcases VEnv.addDefEqs_defeqs h with ⟨ci, hci, rfl⟩ | h
-      · exact ruleSound_defn hM
+      · exact ruleSound_defn hM (hnd h' rfl)
           (hle.constants (VEnv.addDefEqs_le.constants (VEnv.addConsts_constants h1 ci hci)))
           (hle.defeqs h')
       · exact IH.1 U df (VEnv.addConsts_defeqs h1 ▸ h)
@@ -74,13 +73,24 @@ theorem _root_.Lean4Lean.VEnv.WF.soundHyps (henv : env.WF) (hM : ModelEnv env)
           exact IH.2 U s d' t h'
         · exact projSoundAt_block hM ⟨_, hW⟩ hd h1' hle IH h hT'
 
+/-- The cases of the model's soundness that need the rules hold of a well-formed environment,
+given that the quotient's rule and each block's rules and projections are sound and no definition
+it has is of a constant the model interprets by given shapes. -/
+theorem _root_.Lean4Lean.VEnv.WF.soundHyps (henv : env.WF) (hM : ModelEnv env)
+    (hQ : QuotRuleSound env) (hB : BlockSound env) (hnd : NoDom env) : SoundHyps env env :=
+  let ⟨_, H₀⟩ := henv; soundHyps_of hM hQ hB H₀ .rfl hnd
+
+omit [ShapeEnv] [AxInterp] in
 /-- The model of a well-formed environment, with its own structures, is sound for its typing
 rules, given that the quotient's rule and each block's rules and projections are. -/
 theorem _root_.Lean4Lean.VEnv.WF.strongSound {env : VEnv} (henv : env.WF)
-    (hQ : @QuotRuleSound env.shapeEnv env) (hB : @BlockSound env.shapeEnv env)
-    (H : env.IsDefEqStrong U Γ M N A) : @StrongSoundEq env.shapeEnv env U Γ M N A :=
+    (hQ : @QuotRuleSound env.shapeEnv (@AxInterp.none env.shapeEnv) env)
+    (hB : @BlockSound env.shapeEnv (@AxInterp.none env.shapeEnv) env)
+    (H : env.IsDefEqStrong U Γ M N A) :
+    @StrongSoundEq env.shapeEnv (@AxInterp.none env.shapeEnv) env U Γ M N A :=
   letI := env.shapeEnv
-  (henv.soundHyps henv.modelEnv hQ hB).strongSound henv.modelEnv .rfl H
+  (henv.soundHyps (henv.modelEnv AxOK.none) hQ hB NoDom.none).strongSound
+    (henv.modelEnv AxOK.none) .rfl H
 
 end LogRel
 end Lean4Lean

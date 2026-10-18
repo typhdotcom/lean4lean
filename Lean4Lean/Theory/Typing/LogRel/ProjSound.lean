@@ -17,8 +17,9 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv}
+variable [ShapeEnv] [AxInterp] {env : VEnv}
 
+omit [AxInterp] in
 /-- A constructor shape below a shape typed at `a`: the shape is a constructor shape of the same
 constructor with larger fields, and `a` an inductive type shape it fits. -/
 theorem WShape.ctor_typed {c : Name} {l : List (WShape n)} (hne : IsStruct c → WShape.ListNonZero l)
@@ -34,6 +35,7 @@ theorem WShape.ctor_typed {c : Name} {l : List (WShape n)} (hne : IsStruct c →
   | lam => unfold WShape.lam' at eq; split at eq <;> cases eq
   | _ => cases eq
 
+omit [AxInterp] in
 /-- A constructor shape fitting an inductive type shape fits the constructor's telescope. -/
 theorem WShape.fitsPi_of_ctorOK {I : IndHead} {as l : List (WShape (n+1))} {c : Name} {i : Nat}
     (H : Shape.ctorOK Shape.hasType I (as.map (·.1)) c (l.map (·.1)) = true)
@@ -326,6 +328,7 @@ theorem projSound_at (hM : ModelEnv env) {E₁ envT : VEnv} (hE₁ : E₁.WF) {d
     exact ⟨m', a, hmx.trans ((WShape.LE.T (b := .bot) hz).trans h1), h2, h3, h4⟩
 
 
+omit [AxInterp] in
 /-- A constructor shape that does not collapse, below another constructor shape: the same
 constructor, with smaller fields. -/
 theorem TShape.ctor'_le_ctor' {c c' : Name} {l : List (WShape n)} {l' : List (WShape n')}
@@ -368,7 +371,8 @@ theorem Const.ctor_inv (hR : ConstRoles env) {s : Name} {d : VInductDecl} {t t' 
     refine .inl (h2.trans ((WShape.lam'_le_bot fun x y h => WShape.LE.T_iff.1
       ((Const.compat_mismatch hR (by simp; omega) (h1 x y h) hA).trans
         TShape.bot_eqv.2)).T.trans TShape.bot_eqv.1))
-  | delta h1 h2 => cases hR (.delta h1 h2) hA
+  | ext _ h1 h2 => cases hR (.delta h1 h2) hA
+  | delta _ h1 h2 => cases hR (.delta h1 h2) hA
   | indTy h1 h2 => cases hR (.indTy h1 h2) hA
   | ctor h1 h2 h3 h4 h5 h6 h7 =>
     have := hR (.ctor h1 h2 h3 h4) hA

@@ -12,7 +12,7 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv}
+variable [ShapeEnv] [AxInterp] {env : VEnv}
 
 /-- Pi types with the same interpretations have domains and codomains with the same
 interpretations. -/
@@ -63,14 +63,17 @@ theorem SoundEq.forallE_inv (hM : ModelEnv env) (H : SoundEq env Γ (.forallE A 
 
 /-! ### Valuations of telescopes -/
 
+omit [AxInterp] in
 theorem pushAll_append (ρ : Valuation) :
     ∀ (xs ys : List TShape), pushAll ρ (xs ++ ys) = pushAll (pushAll ρ xs) ys
   | [], _ => rfl
   | _ :: xs, ys => pushAll_append _ xs ys
 
+omit [AxInterp] in
 theorem pushAll_concat (ρ : Valuation) (xs : List TShape) (x : TShape) :
     pushAll ρ (xs ++ [x]) = (pushAll ρ xs).push x := pushAll_append ..
 
+omit [AxInterp] in
 theorem pushAll_apply (ρ : Valuation) :
     ∀ (xs : List TShape) (i : Nat), pushAll ρ xs i =
       if h : i < xs.length then xs.reverse[i]'(by simpa using h) else ρ (i - xs.length)
@@ -88,6 +91,7 @@ theorem pushAll_apply (ρ : Valuation) :
         obtain ⟨k, hk⟩ : ∃ k, i - xs.length = k + 1 := ⟨i - xs.length - 1, by omega⟩
         rw [hk]; show ρ k = _; congr 1; omega
 
+omit [AxInterp] in
 theorem pushAll_mono {ρ ρ' : Valuation} (hρ : ρ.LE ρ') :
     ∀ {xs ys : List TShape}, List.Forall₂ (· ≤ ·) xs ys → (pushAll ρ xs).LE (pushAll ρ' ys)
   | [], [], .nil => hρ
@@ -446,6 +450,7 @@ theorem MSpine.ofTele (hM : ModelEnv env) {c : Name} {ls : List VLevel} {Qs : Li
 
 /-! ### Telescopes of pi type shapes -/
 
+omit [AxInterp] in
 theorem WShape.piApp_le_bot {f : WShape (n+1)} {x : WShape n} (hf : f.T ≤ TShape.bot) :
     (f.piApp x).T ≤ TShape.bot := by
   have hf : f ≤ .bot := WShape.LE.T_iff.1 (hf.trans TShape.bot_eqv.2)
@@ -453,11 +458,13 @@ theorem WShape.piApp_le_bot {f : WShape (n+1)} {x : WShape n} (hf : f.T ≤ TSha
   show (WShape.piCod (.bot : WShape (n+1)) |>.app x).T ≤ _
   simp [WShape.piCod]; exact TShape.bot_eqv.1
 
+omit [AxInterp] in
 theorem PiAppS.le_bot (H : PiAppS h as y) (hh : h ≤ TShape.bot) : y ≤ TShape.bot := by
   induction H with
   | nil h1 => exact h1.trans hh
   | cons h1 _ _ ih => exact ih (WShape.piApp_le_bot (h1.trans hh))
 
+omit [AxInterp] in
 theorem WShape.piApp_of_not_forallE {f : WShape (n+1)} (hf : ∀ b g, f ≠ .forallE b g)
     (x : WShape n) : f.piApp x = .bot := by
   cases f using WShape.casesOn' with
@@ -529,7 +536,8 @@ theorem LE_Interp.Const.indTy_inv (hR : ConstRoles env) {s : Name} {d : VInductD
   cases H with
   | bot => exact .inl TShape.bot_eqv.1
   | lam he hle => exact .inl (Const.lam_le_bot hR he hle A)
-  | delta h1 h2 => cases hR (ConstArity.delta h1 h2) A
+  | ext _ h1 h2 => cases hR (ConstArity.delta h1 h2) A
+  | delta _ h1 h2 => cases hR (ConstArity.delta h1 h2) A
   | indTy h1 h2 h3 h4 h5 h6 =>
     rw [hs] at h1; cases h1; rw [hT] at h2; cases h2
     exact .inr ⟨_, h4, h5, h6⟩

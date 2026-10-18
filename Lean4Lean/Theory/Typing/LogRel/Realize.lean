@@ -15,7 +15,7 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv}
+variable [ShapeEnv] [AxInterp] {env : VEnv}
 
 /-- A pi type shape for a telescope with one point per binder: at each binder its domain shape
 and the argument shape it is defined at, then the codomain shape `r`. -/
@@ -27,11 +27,13 @@ def piTele : List (TShape × TShape) → TShape → TShape
       (WShapeFun.single (x.2.lift (max b.1 (max x.1 i.1)))
         (i.2.lift (max b.1 (max x.1 i.1))))).T
 
+omit [AxInterp] in
 theorem PiAppS.mono_h {h h' : TShape} (hh : h ≤ h') {as : List TShape} {m : TShape} :
     PiAppS h as m → PiAppS h' as m
   | .nil h1 => .nil (h1.trans hh)
   | .cons h1 h2 h3 => .cons (h1.trans hh) h2 h3
 
+omit [AxInterp] in
 /-- The telescope's codomain at its argument shapes. -/
 theorem piTele_piAppS : ∀ (L : List (TShape × TShape)) (r : TShape),
     PiAppS (piTele L r) (L.map (·.2)) r
@@ -78,6 +80,7 @@ theorem piTele_interp : ∀ (L : List (TShape × TShape)) (Δ : List VExpr) {σ 
       exact (TShape.lift_eqv hn1).2.trans (WShape.LE.T hxy)
     · exact .bot
 
+omit [AxInterp] in
 /-- The telescope is a type when its argument shapes are typed at its domains and its codomain is
 a type. -/
 theorem piTele_typed : ∀ (L : List (TShape × TShape)) {r : TShape} {rel : Bool},
@@ -106,6 +109,7 @@ theorem piTele_typed : ∀ (L : List (TShape × TShape)) {r : TShape} {rel : Boo
     · exact .bot' .sort
 
 
+omit [AxInterp] in
 /-- Argument shapes typed at the telescope's domains fit it. -/
 theorem piTele_fitsPi : ∀ (L : List (TShape × TShape)) (r : TShape) (n : Nat),
     (∀ b x, (b, x) ∈ L → x.HasType b) → (piTele L r).1 ≤ n + 1 →
@@ -143,6 +147,7 @@ theorem LE_Interp.Valuation.Fits.cons_inv {Δ : List VExpr} {A : VExpr} {σ : Va
   | nil => cases e
   | cons W h1 h2 h3 => cases e; exact ⟨_, _, _, rfl, W, h1, h2, h3⟩
 
+omit [AxInterp] in
 theorem Valuation.push_inj {ρ ρ' : Valuation} {x x' : TShape} (h : ρ.push x = ρ'.push x') :
     ρ = ρ' ∧ x = x' :=
   ⟨funext fun i => congrFun h (i+1), congrFun h 0⟩
@@ -193,6 +198,7 @@ theorem Valuation.Fits.tele : ∀ (n : Nat) (Δ : List VExpr) (P : List TShape),
       exact ⟨ha', hx', hty⟩
 
 
+omit [AxInterp] in
 theorem WShape.ctysOK_of {N : Nat} {h : IndHead} {pre ctys : List (WShape N)}
     (hpre : pre.length = h.nargs) (hcty : ∀ x ∈ ctys, x.HasType .type) :
     Shape.ctysOK Shape.hasType h ((pre ++ ctys).map (·.1)) = true := by
@@ -203,6 +209,7 @@ theorem WShape.ctysOK_of {N : Nat} {h : IndHead} {pre ctys : List (WShape N)}
   obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hx
   exact hcty y hy
 
+omit [AxInterp] in
 /-- A constructor shape whose fields fit its telescope, recorded in an inductive type shape whose
 telescopes are types, is typed at it, and the inductive type shape is a type. -/
 theorem WShape.ctor'_typed {N : Nat} {h : IndHead} {pre ctys : List (WShape (N+1))} {c : Name}
@@ -223,16 +230,19 @@ theorem WShape.ctor'_typed {N : Nat} {h : IndHead} {pre ctys : List (WShape (N+1
   exact WShape.fitsPi_iff.2 hfit
 
 
+omit [AxInterp] in
 theorem PiAppS.mono_m {h : TShape} : ∀ {as : List TShape} {m m' : TShape}, m' ≤ m →
     PiAppS h as m → PiAppS h as m'
   | _, _, _, hm, .nil h1 => .nil (hm.trans h1)
   | _, _, _, hm, .cons h1 h2 h3 => .cons h1 h2 (PiAppS.mono_m hm h3)
 
+omit [AxInterp] in
 theorem PiAppS.mono_args {h : TShape} : ∀ {as as' : List TShape} {m : TShape},
     List.Forall₂ (· ≤ ·) as as' → PiAppS h as m → PiAppS h as' m
   | _, _, _, .nil, H => H
   | _, _, _, .cons ha hl, .cons h1 h2 h3 => .cons h1 (h2.trans ha) (PiAppS.mono_args hl h3)
 
+omit [AxInterp] in
 theorem PiAppS.bot : ∀ (as : List TShape), PiAppS TShape.bot as TShape.bot
   | [] => .nil .rfl
   | _ :: as => .cons (f := (WShape.bot : WShape (0+1))) (x := (WShape.bot : WShape 0))
@@ -241,6 +251,7 @@ theorem PiAppS.bot : ∀ (as : List TShape), PiAppS TShape.bot as TShape.bot
           simp [WShape.piApp, WShape.piCod_bot, WShape.bot_app]
         rw [this]; exact PiAppS.mono_h TShape.bot_eqv.2 (PiAppS.bot as))
 
+omit [AxInterp] in
 /-- A telescope's codomain at its first argument shapes is the telescope of the rest. -/
 theorem piTele_append_piAppS : ∀ (L₁ L₂ : List (TShape × TShape)) (r : TShape),
     PiAppS (piTele (L₁ ++ L₂) r) (L₁.map (·.2)) (piTele L₂ r)
@@ -287,6 +298,7 @@ theorem typeSpine (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env) (h
   exact this
 
 
+omit [AxInterp] in
 theorem forall₂_le_of_pushAll {ys P : List TShape} (hl : ys.length = P.length)
     (h : ∀ i < ys.length, pushAll .nil ys i ≤ pushAll .nil P i) : List.Forall₂ (· ≤ ·) ys P := by
   refine List.forall₂_of_getElem? hl fun j a b ha hb => ?_
@@ -307,12 +319,14 @@ theorem forall₂_lift {ρ : Valuation} {K : Nat} : ∀ {xs : List TShape} {As :
   | _, _, hK, .cons h hl => .cons (h.lift (hK _ (.head _)))
       (forall₂_lift (fun x hx => hK x (.tail _ hx)) hl)
 
+omit [AxInterp] in
 theorem forall₂_le_lift {K : Nat} : ∀ {xs : List TShape}, (∀ x ∈ xs, x.1 ≤ K) →
     List.Forall₂ (· ≤ ·) xs (xs.map fun x => (x.2.lift K).T)
   | [], _ => .nil
   | _ :: _, hK => .cons (TShape.lift_eqv (hK _ (.head _))).2
       (forall₂_le_lift fun x hx => hK x (.tail _ hx))
 
+omit [AxInterp] in
 theorem forall₂_le_trans : ∀ {xs ys zs : List TShape}, List.Forall₂ (· ≤ ·) xs ys →
     List.Forall₂ (· ≤ ·) ys zs → List.Forall₂ (· ≤ ·) xs zs
   | _, _, _, .nil, .nil => .nil
@@ -327,6 +341,7 @@ theorem forall₂_bot {ρ : Valuation} {n : Nat} : ∀ (I : List VExpr),
 /-- A level above every shape of a list. -/
 def maxLvl (l : List TShape) : Nat := l.foldr (fun x n => max x.1 n) 0
 
+omit [AxInterp] in
 theorem le_maxLvl : ∀ {l : List TShape} {x : TShape}, x ∈ l → x.1 ≤ maxLvl l
   | _ :: _, _, .head _ => Nat.le_max_left ..
   | _ :: _, _, .tail _ h => Nat.le_trans (le_maxLvl h) (Nat.le_max_right ..)

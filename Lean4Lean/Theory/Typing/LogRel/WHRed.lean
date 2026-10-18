@@ -20,11 +20,9 @@ that are indices are read off the indices, the others are proofs typed in `Γ`, 
 indices at those fields must be the major premise's (`KFields`). Likewise `Quot.lift` of a
 quotient that is a proposition reduces on any major premise to the function at a term of the
 quotient's type (`kQuot`). These steps depend on the context: a proof the reduct needs may exist
-only in an extension of it. They are deterministic only up to the choice of those proofs
-(`Step.determ`): two steps of a term are equal, or both are such steps at the same redex.
-
-Steps weaken and substitute along typed substitutions, given that the types the context steps are
-checked against are closed (`KClosed`, a theorem for well-formed environments).
+only in an extension of it. Which proofs is a choice (`kFieldsOf`, `quotWit`), so steps are
+deterministic (`Step.determ`). The logical relation is over a fixed context, so steps are never
+weakened or substituted.
 
 A term is neutral (`Neutral`) when it is a variable, or a projection, application or major premise
 of a neutral term, or a recursor or `Quot.lift` at a propositional instance: its only steps are
@@ -172,6 +170,32 @@ structure KFields (env : VEnv) (U : Nat) (Γ : List VExpr) (T : VInductiveType) 
     env.IsDefEq U Γ (VInductDecl.idxAt c lsB ps fs)[i] is[i] ((T.indices[i].instL lsB).subst
       (VExpr.Subst.id.consList (ps ++ (VInductDecl.idxAt c lsB ps fs).take i)))
 
+/-- Some fields for a K-like reduction, if the context provides any. -/
+noncomputable def kFieldsOf (env : VEnv) (U : Nat) (Γ : List VExpr) (T : VInductiveType)
+    (c : VConstructor) (lsB : List VLevel) (ps is : List VExpr) : List VExpr :=
+  open Classical in
+  if h : ∃ fs, fs.length = c.fields.length ∧ KFields env U Γ T c lsB ps is fs then
+    Classical.choose h
+  else []
+
+theorem kFieldsOf_spec {env : VEnv} {U : Nat} {Γ : List VExpr} {T : VInductiveType}
+    {c : VConstructor} {lsB : List VLevel} {ps is fs : List VExpr}
+    (h1 : fs.length = c.fields.length) (h2 : KFields env U Γ T c lsB ps is fs) :
+    (kFieldsOf env U Γ T c lsB ps is).length = c.fields.length ∧
+      KFields env U Γ T c lsB ps is (kFieldsOf env U Γ T c lsB ps is) := by
+  have h : ∃ fs, fs.length = c.fields.length ∧ KFields env U Γ T c lsB ps is fs := ⟨_, h1, h2⟩
+  simp only [kFieldsOf, dif_pos h]; exact Classical.choose_spec h
+
+/-- Some term of type `α`, if the context provides one. -/
+noncomputable def quotWit (env : VEnv) (U : Nat) (Γ : List VExpr) (α : VExpr) : VExpr :=
+  open Classical in
+  if h : ∃ a, env.HasType U Γ a α then Classical.choose h else .sort .zero
+
+theorem quotWit_spec {env : VEnv} {U : Nat} {Γ : List VExpr} {α a : VExpr}
+    (h : env.HasType U Γ a α) : env.HasType U Γ (quotWit env U Γ α) α := by
+  have h' : ∃ a, env.HasType U Γ a α := ⟨_, h⟩
+  simp only [quotWit, dif_pos h']; exact Classical.choose_spec h'
+
 /-! ### Steps -/
 
 section
@@ -215,11 +239,15 @@ inductive Step : VExpr → VExpr → Prop where
     d.allTypes[j]? = some T → T.ctors = [c] → d.PropAt (d.blockLevels recLs) →
     d.largeElim = true → ps.length = d.params.length →
     ms.length = d.allTypes.length + d.allCtors.length → is.length = T.indices.length →
-    fs.length = c.fields.length → KFields env U Γ T c (d.recLevels.map (·.inst recLs)) ps is fs →
+    (kFieldsOf env U Γ T c (d.recLevels.map (·.inst recLs)) ps is).length = c.fields.length →
+    KFields env U Γ T c (d.recLevels.map (·.inst recLs)) ps is
+      (kFieldsOf env U Γ T c (d.recLevels.map (·.inst recLs)) ps is) →
     Step (.app ((VExpr.const (d.recName j) recLs).appN (ps ++ ms ++ is)) e)
-      ((d.iotaRhs recLs q j c).appN (ps ++ ms ++ fs))
-  | kQuot : env.defeqs quotDefEq → ls = [u, v] → u ≈ .zero → env.HasType U Γ a α →
-    Step (.app ((VExpr.const ``Quot.lift ls).appN [α, r, β, f, h]) e) (.app f a)
+      ((d.iotaRhs recLs q j c).appN
+        (ps ++ ms ++ kFieldsOf env U Γ T c (d.recLevels.map (·.inst recLs)) ps is))
+  | kQuot : env.defeqs quotDefEq → ls = [u, v] → u ≈ .zero →
+    env.HasType U Γ (quotWit env U Γ α) α →
+    Step (.app ((VExpr.const ``Quot.lift ls).appN [α, r, β, f, h]) e) (.app f (quotWit env U Γ α))
 
 /-- A term in weak head normal form takes no step. -/
 def WHNF (e : VExpr) : Prop := ∀ e', ¬Step env U Γ e e'
@@ -293,36 +321,6 @@ theorem _root_.Lean4Lean.VExpr.ClosedN.lift'_consList_subst {e : VExpr} {as : Li
     dif_pos (by simpa using hi)]
   try simp [← List.map_reverse]
 
-section
-variable (env : VEnv) (U : Nat) (Γ : List VExpr)
-
-/-- Two reducts of the same K-like redex, under the same applications, projections and major
-premises: they differ only in the proofs the context provided for the fields of the constructor,
-or for the quotient's element. -/
-inductive KAlt : VExpr → VExpr → Prop where
-  | kIota : env.inducts s = some (d, t) → d.allCtors[q]? = some (j, c) →
-    d.allTypes[j]? = some T → T.ctors = [c] → d.PropAt (d.blockLevels recLs) →
-    d.largeElim = true → ps.length = d.params.length →
-    ms.length = d.allTypes.length + d.allCtors.length → is.length = T.indices.length →
-    fs.length = c.fields.length → fs'.length = c.fields.length →
-    KFields env U Γ T c (d.recLevels.map (·.inst recLs)) ps is fs →
-    KFields env U Γ T c (d.recLevels.map (·.inst recLs)) ps is fs' →
-    KAlt ((d.iotaRhs recLs q j c).appN (ps ++ ms ++ fs))
-      ((d.iotaRhs recLs q j c).appN (ps ++ ms ++ fs'))
-  | kQuot {ls : List VLevel} {u v : VLevel} : env.defeqs quotDefEq → ls = [u, v] → u ≈ .zero →
-    env.HasType U Γ a α → env.HasType U Γ a' α → KAlt (.app f a) (.app f a')
-  | app : KAlt f f' → KAlt (.app f a) (.app f' a)
-  | proj : KAlt e e' → KAlt (.proj s k e) (.proj s k e')
-  | major : env.inducts s = some (d, t) → d.allTypes[j]? = some T →
-    ¬d.PropAt (d.blockLevels recLs) → ¬d.EtaRec j (d.blockLevels recLs) →
-    args.length = d.majorIdx T → KAlt e e' →
-    KAlt (.app ((VExpr.const (d.recName j) recLs).appN args) e)
-      (.app ((VExpr.const (d.recName j) recLs).appN args) e')
-  | quotMajor : env.defeqs quotDefEq → ¬QuotProp ls → KAlt e e' →
-    KAlt (.app ((VExpr.const ``Quot.lift ls).appN [α, r, β, f, h]) e)
-      (.app ((VExpr.const ``Quot.lift ls).appN [α, r, β, f, h]) e')
-
-end
 
 namespace Step
 variable {env : VEnv} {U : Nat} {Γ : List VExpr}
@@ -446,19 +444,16 @@ theorem allTypes_of_allCtors {d : VInductDecl} {q j : Nat} {c : VConstructor}
     (h : d.allCtors[q]? = some (j, c)) : ∃ T, d.allTypes[j]? = some T ∧ c ∈ T.ctors :=
   VInductDecl.mem_allCtors_iff.1 (List.mem_of_getElem? h)
 
-/-- Two steps of a term are equal, or they are K-like steps at the same redex, differing only in
-the proofs the context provided (`KAlt`). -/
+/-- Steps are deterministic. -/
 theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
-    e₁ = e₂ ∨ KAlt env U Γ e₁ e₂ := by
+    e₁ = e₂ := by
   induction H1 generalizing e₂ with
   | app l1 ih =>
     generalize hx : VExpr.app _ _ = x at H2
     cases H2 with
     | app r1 =>
       cases hx
-      rcases ih r1 with rfl | h
-      · exact .inl rfl
-      · exact .inr (.app h)
+      cases ih r1; rfl
     | beta => cases hx; cases lam_whnf _ l1
     | quot r1 => injection hx with hx; subst hx; cases quotHead_whnf hU r1 _ l1
     | quotMajor r1 => injection hx with hx; subst hx; cases quotHead_whnf hU r1 _ l1
@@ -481,16 +476,14 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
     generalize hx : VExpr.app _ _ = x at H2
     cases H2 with
     | app r1 => cases hx; cases lam_whnf _ r1
-    | beta => cases hx; exact .inl rfl
+    | beta => cases hx; rfl
     | _ => first | cases hx | (injection hx with hx; cases appN_const_ne_lam hx.symm)
   | proj l1 ih =>
     generalize hx : VExpr.proj _ _ _ = x at H2
     cases H2 with
     | proj r1 =>
       cases hx
-      rcases ih r1 with rfl | h
-      · exact .inl rfl
-      · exact .inr (.proj h)
+      cases ih r1; rfl
     | projIota r1 r2 r3 =>
       injection hx with _ _ hx; subst hx
       cases ctor_whnf hU r1 (VInductDecl.allTypes_getElem? r2) (by simp [r3]) _ l1
@@ -506,13 +499,13 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       cases l1.symm.trans r1; cases l2.symm.trans r2; cases l3.symm.trans r3
       obtain ⟨-, -, h⟩ := appN_const_inj he
       obtain ⟨-, rfl⟩ := List.append_inj h (l4.trans r4.symm)
-      exact .inl (Option.some.inj (l6.symm.trans r6))
+      exact Option.some.inj (l6.symm.trans r6)
     | _ => cases hx
   | delta l1 l2 l3 =>
     generalize hx : VExpr.const _ _ = x at H2
     cases H2 with
     | delta r1 r2 r3 =>
-      cases hx; cases hU.delta l1 r1 l2 r2; exact .inl rfl
+      cases hx; cases hU.delta l1 r1 l2 r2; rfl
     | _ => cases hx
   | quot l1 l2 =>
     generalize hx : VExpr.app _ _ = x at H2
@@ -524,7 +517,7 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       obtain ⟨-, -, h1⟩ := appN_const_inj hx1
       obtain ⟨-, -, h2⟩ := appN_const_inj hx2
       simp only [List.cons.injEq, and_true] at h1 h2
-      obtain ⟨-, -, -, rfl, -⟩ := h1; obtain ⟨-, -, rfl⟩ := h2; exact .inl rfl
+      obtain ⟨-, -, -, rfl, -⟩ := h1; obtain ⟨-, -, rfl⟩ := h2; rfl
     | quotMajor r1 r2 r3 =>
       injection hx with _ hx; subst hx; cases quotMk_whnf hU l1 _ r3
     | kQuot r1 r2 r3 =>
@@ -557,9 +550,7 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       obtain ⟨-, rfl, h1⟩ := appN_const_inj hx1
       simp only [List.cons.injEq, and_true] at h1
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h1
-      rcases ih r3 with rfl | h
-      · exact .inl rfl
-      · exact .inr (.quotMajor l1 l2 h)
+      cases ih r3; rfl
     | kQuot r1 r2 r3 =>
       injection hx with hx
       obtain ⟨-, rfl, -⟩ := appN_const_inj hx
@@ -596,7 +587,7 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       obtain ⟨-, rfl, h1⟩ := appN_const_inj hx
       simp only [List.cons.injEq, and_true] at h1
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h1
-      exact .inr (.kQuot l1 l2 l3 l4 r4)
+      rfl
     | major r1 r2 =>
       injection hx with hx
       exact (hU.recQuot l1 r1 (List.getElem?_eq_some_iff.1 r2).1 (appN_const_inj hx).1.symm).elim
@@ -629,9 +620,7 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       injection hx with hx1 hx2; subst hx2
       obtain ⟨hn, rfl, rfl⟩ := appN_const_inj hx1
       obtain ⟨rfl, rfl, rfl⟩ := recName_inj hU l1 l2 r1 r2 hn
-      rcases ih r5 with rfl | h
-      · exact .inl rfl
-      · exact .inr (.major l1 l2 l3 le l4 h)
+      cases ih r5; rfl
     | iota r1 r2 r3 =>
       injection hx with hx1 hx2; subst hx2
       exact (ctor_whnf' hU r1 r2 _ l5).elim
@@ -679,7 +668,7 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       obtain ⟨h3, rfl⟩ := List.append_inj h1 (by simp only [List.length_append]; rw [l5, r5, l6, r6])
       obtain ⟨rfl, rfl⟩ := List.append_inj' h3 (by rw [l6, r6])
       obtain ⟨-, rfl⟩ := List.append_inj h2 (by simp [l8, r8])
-      exact .inl rfl
+      rfl
     | kIota r1 _ r3 _ r5 =>
       injection hx with hx1
       obtain ⟨hn, rfl, -⟩ := appN_const_inj hx1
@@ -725,7 +714,7 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       cases hU.ctor l1 l2 r2 rfl
       obtain ⟨h3, rfl⟩ := List.append_inj h1 (by simp only [List.length_append]; rw [l7, r7, l8, r8])
       obtain ⟨rfl, rfl⟩ := List.append_inj' h3 (by rw [l8, r8])
-      exact .inr (.kIota l1 l2 l3 l4 l5 l6 l7 l8 l9 l10 r10 l11 r11)
+      rfl
     | etaIota r1 r2 _ _ r5 =>
       injection hx with hx1
       obtain ⟨hn, rfl, -⟩ := appN_const_inj hx1
@@ -771,7 +760,7 @@ theorem determ (H1 : Step env U Γ e e₁) (H2 : Step env U Γ e e₂) :
       cases l3.symm.trans r3
       cases hU.ctor l1 l4 r4 rfl
       obtain ⟨rfl, rfl⟩ := List.append_inj h1 (by rw [l7, r7])
-      exact .inl rfl
+      rfl
     | _ => cases hx
 
 end Step
@@ -839,113 +828,6 @@ theorem iotaRhs_closed (h1 : env.inducts s = some (d, t)) (h2 : d.allCtors[q]? =
   refine (henv.closed.2 (hU.iota h1 ?_)).2.1.instL
   simp only [VInductDecl.iotaRules, List.mem_map]
   exact ⟨((j, c), q), List.mk_mem_zipIdx_iff_getElem?.2 h2, rfl⟩
-
-include henv hU hk in
-theorem lift' (W : Ctx.Lift' ρ Γ Γ') (H : Step env U Γ e1 e2) :
-    Step env U Γ' (e1.lift' ρ) (e2.lift' ρ) := by
-  induction H with
-  | app _ ih => exact .app ih
-  | beta => rw [VExpr.lift'_inst_hi]; exact .beta
-  | proj _ ih => exact .proj ih
-  | projIota h1 h2 h3 h4 h5 h6 =>
-    simp only [lift'_appN, List.map_append, VExpr.lift']
-    exact .projIota h1 h2 h3 (by simpa) (by simpa) (by simp [h6])
-  | delta h1 h2 h3 =>
-    rw [(delta_closed henv h1).lift'_eq .zero]; exact .delta h1 h2 h3
-  | quot h1 h2 => simp only [lift'_appN, VExpr.lift', List.map]; exact .quot h1 h2
-  | quotMajor h1 h2 _ ih =>
-    simp only [lift'_appN, VExpr.lift', List.map] at ih ⊢; exact .quotMajor h1 h2 ih
-  | major h1 h2 h3 he h4 _ ih =>
-    simp only [lift'_appN, VExpr.lift'] at ih ⊢; exact .major h1 h2 h3 he (by simpa) ih
-  | iota h1 h2 h3 h4 he h5 h6 h7 h8 h9 =>
-    simp only [lift'_appN, List.map_append, VExpr.lift']
-    rw [(iotaRhs_closed henv hU h1 h2).lift'_eq .zero]
-    exact .iota h1 h2 h3 h4 he (by simpa) (by simpa) (by simpa) (by simpa) (by simpa)
-  | etaIota h1 h2 h3 h4 h5 h6 h7 h8 =>
-    simp only [lift'_appN, List.map_append, VExpr.lift', VExpr.projs, List.map_map]
-    rw [(iotaRhs_closed henv hU h1 h4).lift'_eq .zero]
-    exact .etaIota h1 h2 h3 h4 h5 h6 (by simpa) (by simpa)
-  | kIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 =>
-    simp only [lift'_appN, List.map_append, VExpr.lift']
-    rw [(iotaRhs_closed henv hU h1 h2).lift'_eq .zero]
-    exact .kIota h1 h2 h3 h4 h5 h6 (by simpa) (by simpa) (by simpa) (by simpa)
-      (h11.map hk h1 h2 h3 h7 h10 (fun hA => hA.lift'_consList_subst _) (·.weak' henv W))
-  | kQuot h1 h2 h3 h4 =>
-    simp only [lift'_appN, VExpr.lift', List.map]; exact .kQuot h1 h2 h3 (h4.weak' henv W)
-
-include henv hU hk in
-theorem weakN (W : Ctx.LiftN n k Γ Γ') (H : Step env U Γ e1 e2) :
-    Step env U Γ' (e1.liftN n k) (e2.liftN n k) := by
-  simp only [← lift'_consN_skipN]; exact H.lift' henv hU hk (Ctx.liftN_iff_lift'.1 W)
-
-include henv hU hk in
-theorem instN (H₀ : env.HasType U Γ₀ a A₀) (W : Ctx.InstN Γ₀ a A₀ k Γ₁ Γ)
-    (H : Step env U Γ₁ e1 e2) : Step env U Γ (e1.inst a k) (e2.inst a k) := by
-  induction H with
-  | app _ ih => exact .app ih
-  | beta => rw [(by apply inst_inst_hi : (inst ..).inst _ _ = _)]; exact .beta
-  | proj _ ih => exact .proj ih
-  | projIota h1 h2 h3 h4 h5 h6 =>
-    simp only [inst_appN, List.map_append, VExpr.inst]
-    exact .projIota h1 h2 h3 (by simpa) (by simpa) (by simp [h6])
-  | delta h1 h2 h3 =>
-    rw [(delta_closed henv h1).instN_eq (Nat.zero_le _)]; exact .delta h1 h2 h3
-  | quot h1 h2 => simp only [inst_appN, VExpr.inst, List.map]; exact .quot h1 h2
-  | quotMajor h1 h2 _ ih =>
-    simp only [inst_appN, VExpr.inst, List.map] at ih ⊢; exact .quotMajor h1 h2 ih
-  | major h1 h2 h3 he h4 _ ih =>
-    simp only [inst_appN, VExpr.inst] at ih ⊢; exact .major h1 h2 h3 he (by simpa) ih
-  | iota h1 h2 h3 h4 he h5 h6 h7 h8 h9 =>
-    simp only [inst_appN, List.map_append, VExpr.inst]
-    rw [(iotaRhs_closed henv hU h1 h2).instN_eq (Nat.zero_le _)]
-    exact .iota h1 h2 h3 h4 he (by simpa) (by simpa) (by simpa) (by simpa) (by simpa)
-  | etaIota h1 h2 h3 h4 h5 h6 h7 h8 =>
-    simp only [inst_appN, List.map_append, VExpr.inst, VExpr.projs, List.map_map]
-    rw [(iotaRhs_closed henv hU h1 h4).instN_eq (Nat.zero_le _)]
-    exact .etaIota h1 h2 h3 h4 h5 h6 (by simpa) (by simpa)
-  | kIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 =>
-    simp only [inst_appN, List.map_append, VExpr.inst]
-    rw [(iotaRhs_closed henv hU h1 h2).instN_eq (Nat.zero_le _)]
-    exact .kIota h1 h2 h3 h4 h5 h6 (by simpa) (by simpa) (by simpa) (by simpa)
-      (h11.map hk h1 h2 h3 h7 h10 (fun hA => hA.inst_consList_subst _ _)
-        (·.instN henv H₀ W))
-  | kQuot h1 h2 h3 h4 =>
-    simp only [inst_appN, VExpr.inst, List.map]; exact .kQuot h1 h2 h3 (h4.instN henv W H₀)
-
-include henv hU hk in
-theorem subst (W : VEnv.Ctx.SubstEq env U Γ₀ σ σ Γ) (hΓ₀ : OnCtx Γ₀ (env.IsType U))
-    (H : Step env U Γ e1 e2) : Step env U Γ₀ (e1.subst σ) (e2.subst σ) := by
-  induction H with
-  | app _ ih => exact .app ih
-  | beta => rw [VExpr.subst_inst]; exact .beta
-  | proj _ ih => exact .proj ih
-  | projIota h1 h2 h3 h4 h5 h6 =>
-    simp only [subst_appN, List.map_append, subst_proj, subst_const]
-    exact .projIota h1 h2 h3 (by simpa) (by simpa) (by simp [h6])
-  | delta h1 h2 h3 =>
-    rw [(delta_closed henv h1).subst_eq nofun]; exact .delta h1 h2 h3
-  | quot h1 h2 => simp only [subst_appN, subst_app, subst_const, List.map]; exact .quot h1 h2
-  | quotMajor h1 h2 _ ih =>
-    simp only [subst_appN, subst_app, subst_const, List.map] at ih ⊢; exact .quotMajor h1 h2 ih
-  | major h1 h2 h3 he h4 _ ih =>
-    simp only [subst_appN, subst_app, subst_const] at ih ⊢; exact .major h1 h2 h3 he (by simpa) ih
-  | iota h1 h2 h3 h4 he h5 h6 h7 h8 h9 =>
-    simp only [subst_appN, List.map_append, subst_app, subst_const]
-    rw [(iotaRhs_closed henv hU h1 h2).subst_eq nofun]
-    exact .iota h1 h2 h3 h4 he (by simpa) (by simpa) (by simpa) (by simpa) (by simpa)
-  | etaIota h1 h2 h3 h4 h5 h6 h7 h8 =>
-    simp only [subst_appN, List.map_append, subst_app, subst_const, VExpr.projs, List.map_map]
-    rw [(iotaRhs_closed henv hU h1 h4).subst_eq nofun]
-    exact .etaIota h1 h2 h3 h4 h5 h6 (by simpa) (by simpa)
-  | kIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 =>
-    simp only [subst_appN, List.map_append, subst_app, subst_const]
-    rw [(iotaRhs_closed henv hU h1 h2).subst_eq nofun]
-    exact .kIota h1 h2 h3 h4 h5 h6 (by simpa) (by simpa) (by simpa) (by simpa)
-      (h11.map hk h1 h2 h3 h7 h10 (fun hA => hA.subst_consList_subst _)
-        (·.subst henv W hΓ₀))
-  | kQuot h1 h2 h3 h4 =>
-    simp only [subst_appN, subst_app, subst_const, List.map]
-    exact .kQuot h1 h2 h3 (h4.subst henv W hΓ₀)
 
 end Step
 
@@ -1040,11 +922,15 @@ inductive KStep : VExpr → VExpr → Prop where
     d.allTypes[j]? = some T → T.ctors = [c] → d.PropAt (d.blockLevels recLs) →
     d.largeElim = true → ps.length = d.params.length →
     ms.length = d.allTypes.length + d.allCtors.length → is.length = T.indices.length →
-    fs.length = c.fields.length → KFields env U Γ T c (d.recLevels.map (·.inst recLs)) ps is fs →
+    (kFieldsOf env U Γ T c (d.recLevels.map (·.inst recLs)) ps is).length = c.fields.length →
+    KFields env U Γ T c (d.recLevels.map (·.inst recLs)) ps is
+      (kFieldsOf env U Γ T c (d.recLevels.map (·.inst recLs)) ps is) →
     KStep (.app ((VExpr.const (d.recName j) recLs).appN (ps ++ ms ++ is)) e)
-      ((d.iotaRhs recLs q j c).appN (ps ++ ms ++ fs))
-  | kQuot : env.defeqs quotDefEq → ls = [u, v] → u ≈ .zero → env.HasType U Γ a α →
-    KStep (.app ((VExpr.const ``Quot.lift ls).appN [α, r, β, f, h]) e) (.app f a)
+      ((d.iotaRhs recLs q j c).appN
+        (ps ++ ms ++ kFieldsOf env U Γ T c (d.recLevels.map (·.inst recLs)) ps is))
+  | kQuot : env.defeqs quotDefEq → ls = [u, v] → u ≈ .zero →
+    env.HasType U Γ (quotWit env U Γ α) α →
+    KStep (.app ((VExpr.const ``Quot.lift ls).appN [α, r, β, f, h]) e) (.app f (quotWit env U Γ α))
 
 end
 
@@ -1404,32 +1290,31 @@ theorem map' {F : VExpr → VExpr} {Γ' : List VExpr}
   | rfl => exact .rfl
   | tail _ h ih => exact .tail ih (hF h)
 
-section
-variable (henv : env.Ordered) (hU : StepUniq env) (hk : KClosed env)
-include henv hU hk
-
-theorem lift' (W : Ctx.Lift' ρ Γ Γ') (H : StepS env U Γ e e') :
-    StepS env U Γ' (e.lift' ρ) (e'.lift' ρ) :=
-  H.map' (·.lift' henv hU hk W)
-
-theorem weakN (W : Ctx.LiftN n k Γ Γ') (H : StepS env U Γ e e') :
-    StepS env U Γ' (e.liftN n k) (e'.liftN n k) :=
-  H.map' (·.weakN henv hU hk W)
-
-theorem instN (H₀ : env.HasType U Γ₀ a A₀) (W : Ctx.InstN Γ₀ a A₀ k Γ₁ Γ)
-    (H : StepS env U Γ₁ e e') : StepS env U Γ (e.inst a k) (e'.inst a k) :=
-  H.map' (·.instN henv hU hk H₀ W)
-
-theorem subst (W : VEnv.Ctx.SubstEq env U Γ₀ σ σ Γ) (hΓ₀ : OnCtx Γ₀ (env.IsType U))
-    (H : StepS env U Γ e e') : StepS env U Γ₀ (e.subst σ) (e'.subst σ) :=
-  H.map' (·.subst henv hU hk W hΓ₀)
-
-end
 
 theorem of_whnf (W : WHNF env U Γ e) (H : StepS env U Γ e e') : e = e' := by
   cases H using ReflTransGen.headIndOn with
   | rfl => rfl
   | head h => cases W _ h
+
+/-- Of two reduction sequences from one term, one extends the other. -/
+theorem total (hU : StepUniq env) (H1 : StepS env U Γ e e₁) (H2 : StepS env U Γ e e₂) :
+    StepS env U Γ e₁ e₂ ∨ StepS env U Γ e₂ e₁ := by
+  induction H1 using ReflTransGen.headIndOn generalizing e₂ with
+  | rfl => exact .inl H2
+  | head h1 _ ih =>
+    cases H2 using ReflTransGen.headIndOn with
+    | rfl => exact .inr (.head h1 ‹_›)
+    | head h2 H2 => cases Step.determ hU h1 h2; exact ih H2
+
+/-- A reduction sequence reaching a normal form is extended by every other from the same term. -/
+theorem determ_l (hU : StepUniq env) (H1 : StepS env U Γ e e₁) (H2 : StepS env U Γ e e₂)
+    (W : WHNF env U Γ e₂) : StepS env U Γ e₁ e₂ :=
+  (total hU H1 H2).elim id fun h => of_whnf W h ▸ .rfl
+
+/-- A term has at most one normal form. -/
+theorem determ (hU : StepUniq env) (H1 : StepS env U Γ e e₁) (W1 : WHNF env U Γ e₁)
+    (H2 : StepS env U Γ e e₂) (W2 : WHNF env U Γ e₂) : e₁ = e₂ :=
+  of_whnf W1 (determ_l hU H1 H2 W2)
 
 end StepS
 
@@ -1504,29 +1389,6 @@ theorem delta (h1 : env.defeqs df) (h2 : df.lhs = .const n (VLevel.params df.uva
   have := VEnv.IsDefEq.extra (Γ := Γ) h1 h3 h4
   rwa [h2, VExpr.instL, VLevel.inst_map_id h4] at this
 
-section
-variable (henv : env.Ordered) (hU : StepUniq env) (hk : KClosed env)
-include henv hU hk
-
-theorem weak' (W : Ctx.Lift' ρ Γ Γ') (H : TRed env U Γ e1 e2 A) :
-    TRed env U Γ' (e1.lift' ρ) (e2.lift' ρ) (A.lift' ρ) :=
-  ⟨H.1.lift' henv hU hk W, H.2.weak' henv W⟩
-
-theorem weakN (W : Ctx.LiftN n k Γ Γ') (H : TRed env U Γ e1 e2 A) :
-    TRed env U Γ' (e1.liftN n k) (e2.liftN n k) (A.liftN n k) :=
-  ⟨H.1.weakN henv hU hk W, H.2.weakN henv W⟩
-
-theorem instN (H₀ : env.HasType U Γ₀ a A₀) (W : Ctx.InstN Γ₀ a A₀ k Γ₁ Γ)
-    (H : TRed env U Γ₁ e1 e2 A) :
-    TRed env U Γ (e1.inst a k) (e2.inst a k) (A.inst a k) :=
-  ⟨H.1.instN henv hU hk H₀ W, H.2.instN henv H₀ W⟩
-
-theorem subst (W : VEnv.Ctx.SubstEq env U Γ₀ σ σ Γ) (hΓ₀ : OnCtx Γ₀ (env.IsType U))
-    (H : TRed env U Γ e1 e2 A) :
-    TRed env U Γ₀ (e1.subst σ) (e2.subst σ) (A.subst σ) :=
-  ⟨H.1.subst henv hU hk W hΓ₀, H.2.subst henv W hΓ₀⟩
-
-end
 
 end TRed
 

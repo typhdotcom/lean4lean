@@ -15,7 +15,7 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {E env : VEnv} {U : Nat}
+variable [ShapeEnv] [AxInterp] {E env : VEnv} {U : Nat}
 
 variable (env U) in
 /-- The two sides of an instance of the rule `df` have the same interpretations. -/
@@ -98,14 +98,24 @@ theorem SoundHyps.empty : SoundHyps .empty env :=
   ⟨fun _ _ h => (nomatch h), fun _ _ _ _ h => (nomatch h)⟩
 
 /-- A definition's rule. -/
-theorem ruleSound_defn (hM : ModelEnv env) {ci : VDefVal}
+theorem ruleSound_defn (hM : ModelEnv env) {ci : VDefVal} (hnd : ¬AxInterp.dom ci.name)
     (hc : env.constants ci.name = some ci.toVConstant) (hdf : env.defeqs ci.toDefEq) :
     RuleSound env U ci.toDefEq := by
   intro Γ ls _ hlen _ _ _ h4
   have : ci.toDefEq.lhs.instL ls = .const ci.name ls :=
     congrArg _ (VLevel.inst_map_id (n := ci.uvars) hlen)
   rw [this]
-  exact extraSound_defn hM hc hdf hlen h4
+  exact extraSound_defn hM hnd hc hdf hlen h4
+
+variable (E) in
+/-- No rule of `E` defines a constant the model interprets by given shapes. -/
+def NoDom : Prop := ∀ {df c us}, E.defeqs df → df.lhs = .const c us → ¬AxInterp.dom c
+
+theorem NoDom.mono {E₁ E₂ : VEnv} (H : NoDom E₂) (hd : ∀ {df}, E₁.defeqs df → E₂.defeqs df) :
+    NoDom E₁ := fun h => H (hd h)
+
+omit [ShapeEnv] in
+theorem NoDom.none {E : VEnv} [ShapeEnv] : @NoDom _ AxInterp.none E := fun _ _ => nofun
 
 variable (env) in
 /-- The quotient's computation rule is sound, where `env` has it. -/

@@ -14,7 +14,7 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv] {env : VEnv}
+variable [ShapeEnv] [AxInterp] {env : VEnv}
 
 /-- A shape typed at an interpretation of an inductive type at its arity is `bot` or a
 constructor shape of one of the type's constructors. -/
@@ -87,6 +87,7 @@ theorem StrongSound.proof_le_bot' {U : Nat} {Γ₀ Γ : List VExpr} {ρ : Valuat
   have b4' := TShape.HasType.mono_r (by simpa [hr] using b3.le_sort) .sort b4
   exact a1.trans (b4'.proofIrrel (b4'.mono_r b1 a4))
 
+omit [AxInterp] in
 /-- Constructor shapes with fields below are below. -/
 theorem TShape.ctor'_mono {c : Name} {l : List (WShape n)} {l' : List (WShape n')}
     (h : List.Forall₂ (fun x y => x.T ≤ y.T) l l') :

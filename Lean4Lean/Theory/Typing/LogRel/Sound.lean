@@ -16,7 +16,7 @@ open Lean4Lean VExpr
 namespace LogRel
 open LE_Interp
 
-variable [ShapeEnv]
+variable [ShapeEnv] [AxInterp]
 
 variable (env : VEnv) in
 def SoundEq (Γ : List VExpr) (M N : VExpr) : Prop :=
@@ -217,8 +217,9 @@ theorem LE_Interp.Const.levels {R R' : TShape → VExpr → Prop} (hls : List.Fo
   induction H with
   | bot => exact .bot
   | lam _ h ih => exact .lam (fun x y hm => ih x y hm) h
-  | delta h1 h2 h3 h4 h5 =>
-    exact .delta h1 h2 (hls.length_eq ▸ h3) (hR h4 (VExpr.LvEqv.instL hls _)) h5
+  | ext h0 h1 h2 h3 hl h4 => exact .ext h0 h1 h2 h3 (levels_equiv_trans hl hls) h4
+  | delta h0 h1 h2 h3 h4 h5 =>
+    exact .delta h0 h1 h2 (hls.length_eq ▸ h3) (hR h4 (VExpr.LvEqv.instL hls _)) h5
   | indTy h1 h2 h3 h4 h5 h6 =>
     refine .indTy h1 h2 h3 h4 (fun i c' cty a1 a2 => ?_) ((VInductDecl.rel_congr hls) ▸ h6)
     have ⟨h, b1, b2⟩ := h5 i c' cty a1 a2
@@ -511,7 +512,7 @@ theorem LE_Interp.lams_congr :
 /-! ### Rule instances -/
 
 /-- A definition's unfolding: the constant and its value have the same interpretations. -/
-theorem extraSound_defn (hM : ModelEnv env) {ci : VDefVal}
+theorem extraSound_defn (hM : ModelEnv env) {ci : VDefVal} (hnd : ¬AxInterp.dom ci.name)
     (hc : env.constants ci.name = some ci.toVConstant) (hdf : env.defeqs ci.toDefEq)
     (hlen : ls.length = ci.uvars)
     (hr : StrongSound env U Γ (ci.value.instL ls) (ci.type.instL ls)) :
@@ -526,14 +527,15 @@ theorem extraSound_defn (hM : ModelEnv env) {ci : VDefVal}
       | lam he hle =>
         have := Const.lam_le_bot hM.roles he hle (r := .delta ci.toDefEq) (.delta hdf hlhs)
         exact TShape.le_bot'.1 (h3.trans this) ▸ .bot
-      | delta a1 a2 a3 a4 a5 =>
+      | ext a0 => exact (hnd a0).elim
+      | delta _ a1 a2 a3 a4 a5 =>
         cases hM.stepUniq.delta hdf a1 hlhs a2
         exact (h7 _ _ a4).mono (h3.trans a5)
       | indTy a1 a2 => cases hM.roles (.delta hdf hlhs) (.indTy a1 a2)
       | ctor a1 a2 a3 a4 => cases hM.roles (.delta hdf hlhs) (.ctor a1 a2 a3 a4)
       | quotTy _ _ _ a4 => cases a4
   · have ⟨_, _, le, hm1, ha, hty⟩ := hr.sound W h
-    exact .const hc hlen le hty ha (.delta (n := 0) hdf hlhs hlen hm1 .rfl) fun _ _ h => h
+    exact .const hc hlen le hty ha (.delta (n := 0) hnd hdf hlhs hlen hm1 .rfl) fun _ _ h => h
 
 /-- Soundness of the model of `env` for every typing rule of an environment `E ≤ env`, given the
 cases that need `E`'s rules (`LevelInv`, `ExtraSound`, `ProjSound`, `ProjIotaSound`,
