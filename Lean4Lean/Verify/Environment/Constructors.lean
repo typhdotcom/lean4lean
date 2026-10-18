@@ -207,26 +207,6 @@ theorem List.forIn_early (bad : Nat → Bool) : ∀ (l : List Nat),
     · simp only [h, if_false, Bool.false_eq_true, Bool.false_or]
       exact List.forIn_early bad l
 
-theorem TrExprS.mkAppRevList_inv {env : VEnv} {Us : List Name} {Δ : VLCtx} {f : Expr} :
-    ∀ {rs : List Expr} {e'}, TrExprS env Us Δ (f.mkAppRevList rs) e' →
-    ∃ f' rs', e' = f'.appN rs'.reverse ∧ TrExprS env Us Δ f f' ∧
-      List.Forall₂ (TrExprS env Us Δ) rs rs'
-  | [], _, h => ⟨_, [], rfl, h, .nil⟩
-  | _ :: _, _, h => by
-    cases h with
-    | app _ _ h1 h2 =>
-      obtain ⟨f', rs', rfl, hf, hrs⟩ := mkAppRevList_inv h1
-      exact ⟨f', _ :: rs', by simp [VExpr.appN_append, VExpr.appN], hf, .cons h2 hrs⟩
-
-theorem TrExprS.mkAppList_inv {env : VEnv} {Us : List Name} {Δ : VLCtx} {f : Expr}
-    {as : List Expr} {e'} (h : TrExprS env Us Δ (f.mkAppList as) e') :
-    ∃ f' as', e' = f'.appN as' ∧ TrExprS env Us Δ f f' ∧
-      List.Forall₂ (TrExprS env Us Δ) as as' := by
-  rw [← Expr.mkAppRevList_reverse] at h
-  obtain ⟨f', rs', rfl, hf, hrs⟩ := mkAppRevList_inv h
-  refine ⟨f', rs'.reverse, rfl, hf, ?_⟩
-  simpa using (Lean4Lean.List.Forall₂.reverse (R := TrExprS env Us Δ)).2 hrs
-
 theorem VLCtx.find?_fvar_index : ∀ {Δ : VLCtx}, Δ.FVWF →
     (∀ x ∈ Δ, x.1.isSome ∧ ∃ A, x.2 = .vlam A) →
     ∀ {p fv}, Δ.fvars[p]? = some fv → ∃ A, Δ.find? (.inr fv) = some (.bvar p, A)
@@ -602,7 +582,7 @@ theorem checkPositivity.loop.WF {venv₀ : VEnv} {types : List InductiveType} {U
       simp only [Bool.not_eq_true] at hdocc
       dsimp only
       refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
-      obtain ⟨tys, hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv hΔs hok hdom
+      obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔs hok hdom
       have htyT : c.venv.IsType c.lparams.length (Δtop ++ Mp.vlctx).toCtx tys :=
         hdomT.defeqU_l henv hΓ hdefty
       obtain ⟨u, hdomS⟩ := hdomT
@@ -858,7 +838,7 @@ theorem checkConstructors.loop.WF {venv₀ : VEnv} {types : List InductiveType} 
               FieldsChecked c.venv d (ps.reverse ++ Δc.toCtx) Δf.length Ds := by
         refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
         have hΔkΓ := hΔk.toCtx
-        obtain ⟨tys, hty', hdefty⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk
+        obtain ⟨tys, hty', hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk
         have htyT : c.venv.IsType c.lparams.length (Δf ++ Mp.vlctx).toCtx tys :=
           ⟨_, hdu.defeqU_l henv hΔkΓ hdefty⟩
         have htyb := hty'.weakFV' henv.ordered W hΔb; simp only [Lift.consN] at htyb
@@ -1319,7 +1299,7 @@ theorem isLargeEliminator.loop.WF {venv : VEnv} {Us : List Name} {stats : Induct
     obtain ⟨dk, hdk⟩ := hA.defeqDFC henv hΔ
     have hdkA := hA.uniq henv hΔ hdk
     refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
-    obtain ⟨tys, hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk
+    obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔk hok hdk
     obtain ⟨u₀, hAS⟩ := hAT
     have hdkS : c.venv.HasType c.lparams.length Δk.toCtx dk (.sort u₀) :=
       (hAS.defeqDFC henv.ordered hΔ.defeqCtx).defeqU_l henv hΔk.toCtx

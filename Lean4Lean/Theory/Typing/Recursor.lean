@@ -112,6 +112,25 @@ theorem FieldsWF.recArg {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs
       have := ih i f (by simpa using hf)
       simpa [List.take_succ_cons, Nat.add_right_comm, Nat.add_assoc] using this
 
+theorem FieldsWF.length {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs) :
+    Ds.length = fs.length := by
+  induction H with
+  | nil => rfl
+  | cons _ _ _ _ _ _ _ ih => simp [ih]
+
+theorem FieldsWF.defeq {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs) :
+    ∀ i D f, Ds[i]? = some D → fs[i]? = some f →
+      env.IsDefEqU d.uvars (((fs.take i).map (·.type)).reverse ++ Γ) D f.type := by
+  induction H with
+  | nil => simp
+  | cons h1 _ _ _ _ _ _ ih =>
+    intro i D f hD hf
+    cases i with
+    | zero => simp at hD hf; subst hD hf; simpa using h1
+    | succ i =>
+      have := ih i D f (by simpa using hD) (by simpa using hf)
+      simpa [List.take_succ_cons] using this
+
 theorem FieldsWF.level {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs) :
     ∀ i f, fs[i]? = some f →
       env.HasType d.uvars (((fs.take i).map (·.type)).reverse ++ Γ) f.type (.sort f.level) := by
@@ -125,6 +144,59 @@ theorem FieldsWF.level {env : VEnv} {Γ k Ds fs} (H : d.FieldsWF env Γ k Ds fs)
       have := ih i f (by simpa using hf)
       simpa [List.take_succ_cons] using this
 
+/-- The fields before the `k`th that are not `P`, each with those that are removed, form a
+telescope over the parameters, into whose context the context of all the fields before the `k`th
+lifts, provided none of them mentions an earlier field that is `P`. -/
+theorem FieldsWF.keptTele {env : VEnv} (henv : env.WF) {c : VConstructor} {Ds}
+    (hP : env.IsTele d.uvars [] d.params) (H : d.FieldsWF env d.params.reverse 0 Ds c.fields)
+    {P : Nat → Prop} {k : Nat} (hk : k ≤ c.fields.length)
+    (hskip : ∀ i < k, ¬P i → ∀ f : VField, c.fields[i]? = some f →
+      ∀ j < i, P j → f.type.Skips 1 (i - 1 - j)) :
+    Ctx.Lift' (VConstructor.keptLiftBy P k) ((c.keptFieldsBy P k).reverse ++ d.params.reverse)
+      (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse) ∧
+    env.IsTele d.uvars d.params.reverse (c.keptFieldsBy P k) := by
+  have hPc : OnCtx d.params.reverse (env.IsType d.uvars) := by simpa using hP.onCtx trivial
+  have htele := H.tele.1
+  have hctx (i) (hi : i ≤ c.fields.length) :
+      OnCtx (((c.fields.take i).map (·.type)).reverse ++ d.params.reverse) (env.IsType d.uvars) := by
+    have := htele
+    rw [← List.take_append_drop i c.fields, List.map_append] at this
+    exact (VEnv.IsTele.append_inv this).1.onCtx hPc
+  let KF (i : Nat) := (VConstructor.keptIdxBy P i).map fun j =>
+    VConstructor.strippedTypeBy P j ((c.fields[j]?.map VField.type).getD default)
+  have main : ∀ i ≤ k, Ctx.Lift' (VConstructor.keptLiftBy P i) ((KF i).reverse ++ d.params.reverse)
+      (((c.fields.take i).map (·.type)).reverse ++ d.params.reverse) ∧
+      env.IsTele d.uvars d.params.reverse (KF i) := by
+    intro i
+    induction i with
+    | zero => intro; simp [KF, VConstructor.keptLiftBy, VConstructor.keptIdxBy]; exact ⟨.refl, .nil⟩
+    | succ i ih =>
+      intro hi
+      obtain ⟨W, ht⟩ := ih (by omega)
+      have hfi := List.getElem?_eq_getElem (l := c.fields) (i := i) (by omega)
+      generalize c.fields[i] = fi at hfi
+      have htake : (c.fields.take (i + 1)).map (·.type) = (c.fields.take i).map (·.type) ++ [fi.type] := by
+        rw [List.take_add_one, hfi]; simp
+      simp only [KF, VConstructor.keptIdxBy_succ, VConstructor.keptLiftBy_succ, htake,
+        List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append,
+        List.singleton_append, List.cons_append]
+      split
+      · simp only [List.append_nil]; exact ⟨.skip W, ht⟩
+      · rename_i hPi
+        have hlift := VConstructor.strippedTypeBy_lift' (hskip i (by omega) hPi fi hfi)
+        have hty := H.level i fi hfi
+        rw [hlift] at hty
+        have hty' := (VEnv.HasType.weak'_iff henv (hctx i (by omega)) W (A := .sort _)).1 hty
+        simp only [List.map_append, List.map_cons, List.map_nil, List.reverse_append,
+          List.reverse_cons, List.reverse_nil, List.nil_append, List.singleton_append, hfi,
+          Option.map_some, Option.getD_some]
+        refine ⟨?_, ht.concat ⟨_, by simpa [KF] using hty'⟩⟩
+        have := Ctx.Lift'.cons (A := VConstructor.strippedTypeBy P i fi.type) W
+        rwa [← hlift] at this
+  obtain ⟨W, ht⟩ := main k (Nat.le_refl _)
+  exact ⟨by simpa [KF, VConstructor.keptFieldsBy_eq] using W,
+    by simpa [KF, VConstructor.keptFieldsBy_eq] using ht⟩
+
 /-- The kernel's checks give the constructor's `projFields` clause: each field's type, typed in
 the context of the fields before it, strengthens to the context without the fields the
 projection skips, since it does not mention them. -/
@@ -137,47 +209,16 @@ theorem FieldsWF.projFields {env : VEnv} (henv : env.WF) {c : VConstructor} {Ds}
   intro k f hf
   have hk : k < c.fields.length := (List.getElem?_eq_some_iff.1 hf).1
   have hPc : OnCtx d.params.reverse (env.IsType d.uvars) := by simpa using hP.onCtx trivial
-  have htele := H.tele.1
-  have hctx (i) (hi : i ≤ c.fields.length) :
-      OnCtx (((c.fields.take i).map (·.type)).reverse ++ d.params.reverse) (env.IsType d.uvars) := by
-    have := htele
-    rw [← List.take_append_drop i c.fields, List.map_append] at this
+  have hctx : OnCtx (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse)
+      (env.IsType d.uvars) := by
+    have := H.tele.1
+    rw [← List.take_append_drop k c.fields, List.map_append] at this
     exact (VEnv.IsTele.append_inv this).1.onCtx hPc
-  let KF (i : Nat) := (c.keptIdx k i).map fun j =>
-    c.strippedType k j ((c.fields[j]?.map VField.type).getD default)
-  have main : ∀ i ≤ k, Ctx.Lift' (c.keptLift k i) ((KF i).reverse ++ d.params.reverse)
-      (((c.fields.take i).map (·.type)).reverse ++ d.params.reverse) ∧
-      env.IsTele d.uvars d.params.reverse (KF i) := by
-    intro i
-    induction i with
-    | zero => intro; simp [KF, VConstructor.keptLift, VConstructor.keptIdx]; exact ⟨.refl, .nil⟩
-    | succ i ih =>
-      intro hi
-      obtain ⟨W, ht⟩ := ih (by omega)
-      have hfi := List.getElem?_eq_getElem (l := c.fields) (i := i) (by omega)
-      generalize c.fields[i] = fi at hfi
-      have htake : (c.fields.take (i + 1)).map (·.type) = (c.fields.take i).map (·.type) ++ [fi.type] := by
-        rw [List.take_add_one, hfi]; simp
-      simp only [KF, VConstructor.keptIdx_succ, VConstructor.keptLift_succ, htake, List.reverse_append,
-        List.reverse_cons, List.reverse_nil, List.nil_append, List.singleton_append, List.cons_append]
-      split
-      · simp only [List.append_nil]; exact ⟨.skip W, ht⟩
-      · have hlift := c.strippedType_lift' (c.field_skips (k := k) hfi (by omega))
-        have hty := H.level i fi hfi
-        rw [hlift] at hty
-        have hty' := (VEnv.HasType.weak'_iff henv (hctx i (by omega)) W (A := .sort _)).1 hty
-        simp only [List.map_append, List.map_cons, List.map_nil, List.reverse_append,
-          List.reverse_cons, List.reverse_nil, List.nil_append, List.singleton_append, hfi,
-          Option.map_some, Option.getD_some]
-        refine ⟨?_, ht.concat ⟨_, by simpa [KF] using hty'⟩⟩
-        have := Ctx.Lift'.cons (A := c.strippedType k i fi.type) W
-        rwa [← hlift] at this
-  obtain ⟨W, ht⟩ := main k (Nat.le_refl _)
+  obtain ⟨W, ht⟩ := H.keptTele henv hP (P := c.Skipped k) (Nat.le_of_lt hk)
+    fun i hi _ fi hfi => c.field_skips hfi (Nat.le_of_lt hi)
   have hty := H.level k f hf
   rw [c.strippedType_lift' (c.field_skips (k := k) hf (Nat.le_refl _))] at hty
-  have := (VEnv.HasType.weak'_iff henv (hctx k (Nat.le_of_lt hk)) W (A := .sort _)).1 hty
-  exact ⟨by simpa [KF, VConstructor.keptFields_eq] using ht,
-    by simpa [KF, VConstructor.keptFields_eq] using this⟩
+  exact ⟨ht, (VEnv.HasType.weak'_iff henv hctx W (A := .sort _)).1 hty⟩
 
 end VInductDecl
 end Lean4Lean
@@ -246,7 +287,7 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
     obtain ⟨T', hT', hcm⟩ := mem_ctors_iff.1 hc
     cases hj.symm.trans hT'
     have hcW := (hTW hj).2 c hcm
-    obtain ⟨ps, Ds, hty, hps, hfs⟩ := hcW.shape
+    obtain ⟨ps, Ds, hty, hps, hfs, -⟩ := hcW.shape
     have ⟨htele, hdeq⟩ := FieldsWF.tele hfs
     refine ⟨htele, ?_⟩
     have hP : envT.IsTele d.uvars [] d.params := hdecl.params.mono hle₁
@@ -284,7 +325,7 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
       exact hcc.defeqU_r henvC trivial hdef
     recArg := fun {j c k f ra} hc hf hra => by
       obtain ⟨T', hT', hcm⟩ := mem_ctors_iff.1 hc
-      obtain ⟨ps, Ds, hty, hps, hfs⟩ := ((hTW hT').2 c hcm).shape
+      obtain ⟨ps, Ds, hty, hps, hfs, -⟩ := ((hTW hT').2 c hcm).shape
       have := FieldsWF.recArg hfs k f hf
       unfold RecArgWF at this
       rw [hra] at this
@@ -1396,5 +1437,367 @@ theorem VExpr.WF.proj_congr {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env
   have ⟨_, hS⟩ := hx.isType henv.ordered hΓ
   exact ⟨_, (VEnv.projCongr henv.ordered hΓ h1 h2 h3 (henv.projFacts h1 h2 h3) h5 h6 h7 h8 h7 h8 W
     hS (he.of_l henv hΓ hx) k f h4 hP).2⟩
+
+/-- A term whose type is a pi telescope ending in a sort, applied to arguments to a sort, takes
+exactly as many arguments as the telescope has binders. -/
+theorem VEnv.HasType.appN_sort_length {env : VEnv} {U : Nat} (henv : env.WF) {Γ : List VExpr}
+    (hΓ : OnCtx Γ (env.IsType U)) :
+    ∀ {As : List VExpr} {τ : Subst} {f : VExpr} {as : List VExpr} {l u : VLevel},
+    env.HasType U Γ f ((VExpr.foralls As (.sort l)).subst τ) →
+    env.HasType U Γ (f.appN as) (.sort u) → as.length = As.length
+  | [], _, _, [], _, _, _, _ => rfl
+  | _ :: _, _, _, [], _, _, hf, h =>
+    (VEnv.IsDefEqU.sort_forallE_inv henv hΓ (h.uniqU henv hΓ hf)).elim
+  | As, τ, f, a :: as, l, u, hf, h => by
+    have hwf := appN_wf_prefix henv.ordered hΓ (as := [a]) (bs := as) ⟨_, h⟩
+    obtain ⟨A₁, B₁, h1, h2⟩ := hwf.app_inv henv.ordered hΓ
+    match As, hf with
+    | [], hf => exact (VEnv.IsDefEqU.sort_forallE_inv henv hΓ (hf.uniqU henv hΓ h1)).elim
+    | A :: As, hf =>
+      simp only [foralls_cons] at hf
+      have ⟨⟨_, hA⟩, _⟩ := VEnv.IsDefEqU.forallE_inv henv hΓ (h1.uniqU henv hΓ hf)
+      have hfa := hf.app (h2.defeqU_r henv hΓ ⟨_, hA⟩)
+      rw [inst_lift_cons] at hfa
+      exact congrArg (· + 1) (appN_sort_length henv hΓ hfa h)
+
+/-- The facts the recursor is built from hold of any block a well-formed environment records. -/
+theorem VEnv.WF.recFacts {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDecl} {t : Nat}
+    (hs : env.inducts s = some (d, t)) {U : Nat} {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U)
+    (hlen : ls.length = d.uvars) : d.RecFacts env U ls := by
+  obtain ⟨env₀, env₂, h₀, hd, hadd, hle, -⟩ := henv.inducts_block hs
+  simp only [VEnv.addInduct, Option.bind_eq_bind, Option.bind_eq_some_iff] at hadd
+  obtain ⟨envT, hT, envC, hC, envR, hR, hB⟩ := hadd
+  exact (VInductDecl.recFacts h₀ hd hT hC hls hlen).mono
+    ((VEnv.addConstList_le hR).trans <| VEnv.addDefEqList_le.trans <|
+      (VEnv.addBlock_le hB).trans hle) henv
+
+/-- Two terms of a type of a recorded block with a single fieldless constructor and no indices,
+not recursive, are definitionally equal: each is, by structure eta, the constructor. -/
+theorem VEnv.WF.unitLike {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+    (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
+    {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
+    (hc : T.ctors = [c]) (hi : T.indices = []) (hrec : d.isRec = false) (hf : c.fields = [])
+    {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U) (hlen : ls.length = d.uvars)
+    {As : List VExpr} {e₁ e₂ : VExpr}
+    (h₁ : env.HasType U Γ e₁ (.appN (.const s ls) As))
+    (h₂ : env.HasType U Γ e₂ (.appN (.const s ls) As)) :
+    env.IsDefEq U Γ e₁ e₂ (.appN (.const s ls) As) := by
+  have hF := henv.recFacts hs hls hlen
+  obtain ⟨env₀, envT, -, -, -, -, T', hT', hname⟩ := henv.inducts hs
+  cases ht.symm.trans hT'; subst hname
+  have hty := hF.type ht
+  rw [hi, List.map_nil, List.append_nil] at hty
+  have hty0 := hty.weak0 henv.ordered (Γ := Γ)
+  rw [← closed_subst henv.ordered hty .dflt] at hty0
+  have ⟨_, hS⟩ := h₁.isType henv.ordered hΓ
+  have hA : As.length = d.params.length := by
+    simpa using VEnv.HasType.appN_sort_length henv hΓ hty0 hS
+  have W := henv.projArgs hΓ hs ht hls hlen (I := []) hA (by simp [hi]) (by simpa using h₁)
+  simp only [List.append_nil, hi, List.map_nil] at W
+  have hcm : (t, c) ∈ d.ctors := VInductDecl.mem_ctors_iff.2 ⟨T, ht, by simp [hc]⟩
+  obtain ⟨hil, hcty⟩ := hF.ctor hcm ht
+  rw [hi, List.length_nil, List.length_eq_zero_iff] at hil
+  rw [hf, hil, List.map_nil, List.append_nil, List.map_nil, List.append_nil, List.length_nil] at hcty
+  have hc0 := hcty.weak0 henv.ordered (Γ := Γ)
+  rw [← closed_subst henv.ordered hcty .dflt] at hc0
+  have hk := VEnv.HasType.appN_substT (Δ := []) (as := As) hc0 (by simp [hA]) (by simpa using W)
+  simp only [subst_appN, subst] at hk
+  rw [← hA, subst_bvars_consList] at hk
+  have hk' : env.HasType U Γ (.appN (.const c.name ls) (As ++ VExpr.projs T.name c.fields.length e₁))
+      (.appN (.const T.name ls) As) := by
+    simpa [hf, VExpr.projs] using hk
+  have hk'' : env.HasType U Γ (.appN (.const c.name ls) (As ++ VExpr.projs T.name c.fields.length e₂))
+      (.appN (.const T.name ls) As) := by
+    simpa [hf, VExpr.projs] using hk
+  have e₁η := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA h₁ hk'
+  have e₂η := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA h₂ hk''
+  simp only [hf, List.length_nil, VExpr.projs, List.range_zero, List.map_nil,
+    List.append_nil] at e₁η e₂η
+  exact e₁η.trans e₂η.symm
+
+/-- Each argument of a telescope's substitution, typed against its entry instantiated by the
+arguments before it. -/
+theorem VEnv.Ctx.SubstEq.getElem {env : VEnv} {U : Nat} {Γ Δ : List VExpr} {σ : Subst} :
+    ∀ (n : Nat) {As as : List VExpr}, as.length = n →
+    VEnv.Ctx.SubstEq env U Γ (σ.consList as) (σ.consList as) (As.reverse ++ Δ) →
+    as.length = As.length → ∀ r (h : r < as.length) (h' : r < As.length),
+      env.HasType U Γ as[r] (As[r].subst (σ.consList (as.take r)))
+  | 0, _, as, hn, _, _, r, h, _ => by simp [List.eq_nil_of_length_eq_zero hn] at h
+  | n + 1, As, as, hn, W, hlen, r, h, h' => by
+    obtain ⟨as, a, rfl⟩ : ∃ as' a, as = as' ++ [a] := by
+      simpa using (List.eq_nil_or_concat as).resolve_left (by rintro rfl; simp at hn)
+    obtain ⟨As, A, rfl⟩ : ∃ As' A, As = As' ++ [A] := by
+      simpa using (List.eq_nil_or_concat As).resolve_left (by rintro rfl; simp at hlen)
+    simp only [List.length_append, List.length_singleton, Nat.add_right_cancel_iff] at hlen hn
+    rw [Subst.consList_concat, List.reverse_append] at W
+    cases W with | cons W' _ ha =>
+    simp only [List.length_append, List.length_singleton] at h h'
+    rcases Nat.lt_or_ge r as.length with hr | hr
+    · have := VEnv.Ctx.SubstEq.getElem n hn W' hlen r hr (by omega)
+      simp only [List.getElem_append_left hr, List.getElem_append_left (show r < As.length by omega),
+        List.take_append_of_le_length (Nat.le_of_lt hr)]
+      exact this
+    · obtain rfl : r = as.length := by omega
+      simp only [List.getElem_append_right (Nat.le_refl _), Nat.sub_self,
+        List.getElem_append_right (show As.length ≤ as.length by omega), List.take_left']
+      simp only [hlen, Nat.sub_self, List.getElem_cons_zero]
+      exact ha
+
+theorem VInductDecl.ProjAllowed.congr {d : VInductDecl} {c : VConstructor} {ls ls' : List VLevel}
+    {k : Nat} (H : d.ProjAllowed c ls k) (heq : List.Forall₂ (· ≈ ·) ls ls') :
+    d.ProjAllowed c ls' k := by
+  have e {l : VLevel} : l.inst ls ≈ l.inst ls' := VLevel.inst_congr (VLevel.equiv_def'.2 rfl) heq
+  have e' {l : VLevel} : l.inst ls' ≈ .zero ↔ l.inst ls ≈ .zero :=
+    ⟨fun h => VLevel.equiv_def'.2 (e.trans h), fun h => VLevel.equiv_def'.2 (e.symm.trans h)⟩
+  intro hz
+  obtain ⟨h1, h2⟩ := H fun hn => hz fun ns => by rw [← congrFun e ns]; exact hn ns
+  exact ⟨fun f hf => e'.2 (h1 f hf), fun j hj f hf => (h2 j hj f hf).imp_left e'.2⟩
+
+/-- The constant a recorded block's constructor is declared as. -/
+theorem VEnv.WF.ctor_constant {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDecl} {t : Nat}
+    (hs : env.inducts s = some (d, t)) {j : Nat} {c : VConstructor} (hjc : (j, c) ∈ d.ctors) :
+    env.constants c.name = some ⟨d.uvars, c.type⟩ := by
+  obtain ⟨env₀, env₂, -, -, hadd, hle, -⟩ := henv.inducts_block hs
+  simp only [VEnv.addInduct, Option.bind_eq_bind, Option.bind_eq_some_iff] at hadd
+  obtain ⟨envT, hT, envC, hC, envR, hR, hB⟩ := hadd
+  exact ((VEnv.addConstList_le hR).trans <| VEnv.addDefEqList_le.trans <|
+    (VEnv.addBlock_le hB).trans hle).constants
+    (VEnv.addConstList_constants_of_mem hC (List.mem_map.2 ⟨(j, c), hjc, rfl⟩))
+
+/-- A well-formed application of a recorded block's constructor to as many arguments as it has
+parameters and fields: its levels, the arguments as parameters and fields instantiating the
+constructor's telescope, and its type. -/
+theorem VEnv.WF.ctorApp {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+    (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
+    {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
+    (hcm : c ∈ T.ctors) {ls : List VLevel} {args : List VExpr}
+    (hlen : args.length = d.params.length + c.fields.length)
+    (hXwf : VExpr.WF env U Γ (.appN (.const c.name ls) args)) (τ : Subst := .dflt) :
+    (∀ l ∈ ls, l.WF U) ∧ ls.length = d.uvars ∧ ∃ As fs, args = As ++ fs ∧
+      As.length = d.params.length ∧ fs.length = c.fields.length ∧
+      Ctx.SubstEq env U Γ ((τ.consList As).consList fs)
+        ((τ.consList As).consList fs)
+        ((c.fields.map (·.type.instL ls)).reverse ++ (d.params.map (·.instL ls)).reverse) ∧
+      env.HasType U Γ (.appN (.const c.name ls) (As ++ fs)) (.appN (.const s ls)
+        (As ++ (c.indices.map (·.instL ls)).map (·.subst ((τ.consList As).consList fs)))) := by
+  have hjc : (t, c) ∈ d.ctors := VInductDecl.mem_ctors_iff.2 ⟨T, ht, hcm⟩
+  obtain ⟨-, -, -, -, -, -, T', hT', hname⟩ := henv.inducts hs
+  cases ht.symm.trans hT'; subst hname
+  obtain ⟨ci, hci, hls, hlenls⟩ :=
+    (appN_wf_prefix henv.ordered hΓ (as := []) (bs := args) (by simpa using hXwf)).const_inv
+      henv.ordered hΓ
+  cases (henv.ctor_constant hs hjc).symm.trans hci
+  have hF := henv.recFacts hs hls hlenls
+  obtain ⟨hil, hcty⟩ := hF.ctor hjc ht
+  have hc0 := hcty.weak0 henv.ordered (Γ := Γ)
+  rw [← closed_subst henv.ordered hcty τ] at hc0
+  have hPF : env.IsTele U [] (d.params.map (·.instL ls) ++ c.fields.map (·.type.instL ls)) :=
+    hF.params.append (by simpa using hF.fields hjc)
+  have W := VEnv.HasType.appN_invT henv hΓ (Δ := []) hc0 .nil hPF hXwf (by simp [hlen])
+  obtain ⟨As, fs, rfl, hA, hfs⟩ : ∃ As fs, args = As ++ fs ∧ As.length = d.params.length ∧
+      fs.length = c.fields.length :=
+    ⟨args.take d.params.length, args.drop d.params.length, (List.take_append_drop ..).symm,
+      by simp [hlen], by simp [hlen]⟩
+  rw [List.reverse_append, List.append_nil, Subst.consList_append] at W
+  have hX := VEnv.HasType.appN_substT (Δ := []) (as := As ++ fs) hc0 (by simp [hA, hfs])
+    (by rw [Subst.consList_append, List.reverse_append, List.append_nil]; exact W)
+  simp only [subst_appN, subst, List.map_append] at hX
+  rw [Subst.consList_append, show (bvars d.params.length c.fields.length) =
+      bvars d.params.length (0 + fs.length) by rw [hfs, Nat.zero_add],
+    subst_bvars_consList_ge, ← hA, subst_bvars_consList] at hX
+  exact ⟨hls, hlenls, As, fs, rfl, hA, hfs, W, hX⟩
+
+/-- Each field of a constructor application, at the type of its sort. -/
+theorem VEnv.WF.ctorApp_fieldType {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+    (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
+    {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
+    (hc : T.ctors = [c]) {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U) {As fs : List VExpr}
+    (hfs : fs.length = c.fields.length)
+    (W : Ctx.SubstEq env U Γ ((Subst.dflt.consList As).consList fs)
+      ((Subst.dflt.consList As).consList fs)
+      ((c.fields.map (·.type.instL ls)).reverse ++ (d.params.map (·.instL ls)).reverse))
+    {j : Nat} {f : VField} (hf : c.fields[j]? = some f) :
+    env.HasType U Γ ((f.type.instL ls).subst (Subst.dflt.consList (As ++ fs.take j)))
+      (.sort (f.level.inst ls)) := by
+  have hF := henv.projFacts hs ht hc
+  have hj : j < fs.length := hfs ▸ (List.getElem?_eq_some_iff.1 hf).1
+  have WA := VEnv.Ctx.SubstEq.dropList (as := fs) (as' := fs)
+    (Bs := c.fields.map (·.type.instL ls)) (by simp [hfs]) (by simp [hfs]) W
+  obtain ⟨hFt, hFk⟩ := hF.fields j f hf
+  have hFt := hFt.instL hls
+  simp only [List.map_reverse] at hFt
+  -- the kept fields, as arguments for the kept telescope
+  have WK := Ctx.SubstEq.ofGetElem WA (c.keptIdx j j).length
+    (as := (c.keptIdx j j).map (fs[·]?.getD default)) (by simp) hFt
+    (by simp [VConstructor.keptFields_eq]) fun r h h' => ?_
+  · have hFk := hFk.instL hls
+    simp only [List.map_append, List.map_reverse] at hFk
+    have := hFk.subst henv.ordered WK hΓ
+    rwa [← Subst.consList_append, ← c.field_subst_stripped hf (Nat.le_refl _),
+      List.map_range_getD_eq_take _ (Nat.le_of_lt hj)] at this
+  · simp only [List.length_map] at h
+    have hm := List.getElem_mem h
+    obtain ⟨hjk, -⟩ := (c.mem_keptIdx).1 hm
+    generalize hi : (c.keptIdx j j)[r] = i at hjk
+    have hi' : i < fs.length := by omega
+    obtain ⟨fi, hfi⟩ : ∃ fi, c.fields[i]? = some fi := ⟨_, List.getElem?_eq_getElem (by omega)⟩
+    have := VEnv.Ctx.SubstEq.getElem fs.length rfl W (by simp [hfs]) i hi' (by simp; omega)
+    simp only [List.getElem_map, hi, List.getElem?_eq_getElem hi', Option.getD_some,
+      VConstructor.keptFields_eq, hfi, Option.map_some, ← List.map_take,
+      VConstructor.keptIdx_take _ _ _ _ h, ← Subst.consList_append]
+    rw [← c.field_subst_stripped hfi (Nat.le_of_lt hjk),
+      List.map_range_getD_eq_take _ (Nat.le_of_lt hi')]
+    simpa [(List.getElem?_eq_some_iff.1 hfi).2, Subst.consList_append] using this
+
+/-- A typed projection of a recorded block's constructor applied to the parameters and all of its
+fields is the field. -/
+theorem VEnv.WF.proj_ctorApp {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+    (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
+    {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
+    (hcm : c ∈ T.ctors) {ls : List VLevel} {args : List VExpr} {k : Nat} {a : VExpr}
+    (hlen : args.length = d.params.length + c.fields.length)
+    (ha : args[d.params.length + k]? = some a)
+    (H : VExpr.WF env U Γ (.proj s k (.appN (.const c.name ls) args))) :
+    env.IsDefEqU U Γ (.proj s k (.appN (.const c.name ls) args)) a := by
+  obtain ⟨d₁, t₁, T₁, c₁, f, ls₁, As₁, I₁, h1, h2, h3, h4, h5, h6, h7, h8, hP, hx, -⟩ :=
+    H.proj_inv henv.ordered hΓ
+  cases hs.symm.trans h1; cases ht.symm.trans h2
+  obtain rfl : c = c₁ := by simpa [h3] using hcm
+  obtain ⟨hls, hlenls, As, fs, rfl, hA, hfs, W, hX⟩ := henv.ctorApp hΓ hs ht hcm hlen ⟨_, hx⟩
+  have WA := VEnv.Ctx.SubstEq.dropList (as := fs) (as' := fs)
+    (Bs := c.fields.map (·.type.instL ls)) (by simp [hfs]) (by simp [hfs]) W
+  -- its two types agree
+  have hT₁ := hx.isType henv.ordered hΓ
+  have hT₂ := hX.isType henv.ordered hΓ
+  have hil := ((henv.recFacts hs hls hlenls).ctor (VInductDecl.mem_ctors_iff.2 ⟨T, ht, hcm⟩) ht).1
+  have hIl : (List.map (fun x => x.subst ((Subst.dflt.consList As).consList fs))
+      (c.indices.map (·.instL ls))).length = T.indices.length := by simp [hil]
+  obtain ⟨hlseq, -⟩ := VEnv.IsDefEqU.indApp_inv henv hΓ hs ht h5 h6 hls hlenls h7 h8 hA hIl
+    hT₁ hT₂ (hx.uniqU henv hΓ hX)
+  have hP' := hP.congr hlseq
+  obtain ⟨_, hS⟩ := hT₂
+  have hfsT : ∀ k (h : k < fs.length) (f : VField), c.fields[k]? = some f →
+      env.HasType U Γ fs[k] ((f.type.instL ls).subst (Subst.dflt.consList (As ++ fs.take k))) := by
+    intro k h f hf
+    obtain ⟨hk, hfk⟩ := List.getElem?_eq_some_iff.1 hf
+    have := VEnv.Ctx.SubstEq.getElem fs.length rfl W (by simp [hfs]) k h (by simp; omega)
+    simpa [hfk, Subst.consList_append] using this
+  have hfa : fs[k]? = some a := by
+    rw [List.getElem?_append_right (by omega), hA, Nat.add_sub_cancel_left] at ha
+    exact ha
+  exact ⟨_, VEnv.projIota_ctor henv.ordered hΓ hs ht h3 (henv.projFacts hs ht h3) hls hlenls hA hIl
+    hfs WA hS hX hfsT k f a h4 hfa hP'⟩
+
+theorem VExpr.projs_take (s : Name) (e : VExpr) {r k : Nat} (h : r ≤ k) :
+    (VExpr.projs s k e).take r = VExpr.projs s r e := by
+  simp [VExpr.projs, ← List.map_take, List.take_range, Nat.min_eq_left h]
+
+/-- Structure eta, from the projections: a term of a non-recursive structure type without indices
+is definitionally equal to the constructor applied to the parameters and to arguments its
+projections are definitionally equal to. -/
+theorem VEnv.WF.structEta {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF)
+    (hΓ : OnCtx Γ (env.IsType U)) {s : Name} {d : VInductDecl} {t : Nat} {T : VInductiveType}
+    {c : VConstructor} (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
+    (hc : T.ctors = [c]) (hi : T.indices = []) (hrec : d.isRec = false)
+    {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U) (hlen : ls.length = d.uvars)
+    {As fs : List VExpr} {x : VExpr} (hA : As.length = d.params.length)
+    (hfs : fs.length = c.fields.length) (hx : env.HasType U Γ x (.appN (.const s ls) As))
+    (hP : ∀ j < c.fields.length, d.ProjAllowed c ls j)
+    (hdf : ∀ j (h : j < fs.length), env.IsDefEqU U Γ (.proj s j x) fs[j]) :
+    env.IsDefEq U Γ x (.appN (.const c.name ls) (As ++ fs)) (.appN (.const s ls) As) := by
+  have hF := henv.recFacts hs hls hlen
+  obtain ⟨-, -, -, -, -, -, T', hT', hname⟩ := henv.inducts hs
+  cases ht.symm.trans hT'; subst hname
+  have hjc : (t, c) ∈ d.ctors := VInductDecl.mem_ctors_iff.2 ⟨T, ht, by simp [hc]⟩
+  have hI : ([] : List VExpr).length = T.indices.length := by simp [hi]
+  have hx' : env.HasType U Γ x (.appN (.const T.name ls) (As ++ [])) := by simpa using hx
+  have W := henv.projArgs hΓ hs ht hls hlen hA hI hx'
+  simp only [List.append_nil, hi, List.map_nil] at W
+  have ⟨_, hS⟩ := hx'.isType henv.ordered hΓ
+  have hPF := henv.projFacts hs ht hc
+  -- the projections, pairwise equal to the arguments at the fields' types
+  have W2 : Ctx.SubstEq env U Γ ((Subst.dflt.consList As).consList (VExpr.projs T.name
+      c.fields.length x)) ((Subst.dflt.consList As).consList fs)
+      ((c.fields.map (·.type.instL ls)).reverse ++ (d.params.map (·.instL ls)).reverse) := by
+    refine Ctx.SubstEq.ofGetElemDF W c.fields.length (by simp [VExpr.projs])
+      (by simpa [List.map_reverse, Function.comp_def] using hF.fields hjc)
+      (by simp [VExpr.projs]) (by simp [hfs]) fun r h h' h'' => ?_
+    simp only [VExpr.projs, List.length_map, List.length_range] at h
+    obtain ⟨f, hf⟩ : ∃ f, c.fields[r]? = some f := ⟨_, List.getElem?_eq_getElem h⟩
+    have hPC := (VEnv.projCongr henv.ordered hΓ hs ht hc hPF hls hlen hA hI hA hI W hS hx' r f hf
+      (hP r h)).2
+    have := (hdf r h').of_l henv hΓ hPC.hasType.1
+    simp only [VExpr.projs, List.getElem_map, List.getElem_range, List.getElem_map]
+    rw [← VExpr.projs, VExpr.projs_take _ _ (Nat.le_of_lt h)]
+    simpa [VConstructor.projType, hf, Subst.consList_append,
+      (List.getElem?_eq_some_iff.1 hf).2] using this
+  -- the constructor at both
+  obtain ⟨hil, hcty⟩ := hF.ctor hjc ht
+  rw [hi, List.length_nil, List.length_eq_zero_iff] at hil
+  rw [hil, List.map_nil, List.append_nil] at hcty
+  have hc0 := hcty.weak0 henv.ordered (Γ := Γ)
+  rw [← closed_subst henv.ordered hcty .dflt] at hc0
+  have hcongr := IsDefEq.appN_substTDF (Δ := []) (as := As ++ VExpr.projs T.name c.fields.length x)
+    (bs := As ++ fs) hc0 (by simp [hA, VExpr.projs]) (by simp [hA, hfs])
+    (by rw [Subst.consList_append, Subst.consList_append, List.reverse_append, List.append_nil]
+        exact W2)
+  simp only [subst_appN, subst] at hcongr
+  rw [Subst.consList_append, show (bvars d.params.length c.fields.length) =
+      bvars d.params.length (0 + (VExpr.projs T.name c.fields.length x).length) by
+        simp [VExpr.projs],
+    subst_bvars_consList_ge, ← hA, subst_bvars_consList] at hcongr
+  have hη := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA hx hcongr.hasType.1
+  exact hη.trans hcongr
+
+theorem List.forall₂_of_getElem? {R : α → β → Prop} : ∀ {l₁ : List α} {l₂ : List β},
+    l₁.length = l₂.length → (∀ (j : Nat) a b, l₁[j]? = some a → l₂[j]? = some b → R a b) →
+    List.Forall₂ R l₁ l₂
+  | [], [], _, _ => .nil
+  | a :: l₁, b :: l₂, hl, H =>
+    .cons (H 0 a b rfl rfl) (List.forall₂_of_getElem? (by simpa using hl)
+      fun j a b h₁ h₂ => H (j + 1) a b h₁ h₂)
+
+/-- Both halves of an application are well formed. `app_inv` gives the typings, which is more
+than a caller peeling a spine apart wants to name: this is the form that chains. -/
+theorem VExpr.WF.app_inv₂ (henv : VEnv.Ordered env) (hΓ : OnCtx Γ (env.IsType U)) {f a : VExpr}
+    (H : VExpr.WF env U Γ (f.app a)) : VExpr.WF env U Γ f ∧ VExpr.WF env U Γ a :=
+  let ⟨_, _, hf, ha⟩ := H.app_inv henv hΓ; ⟨⟨_, hf⟩, ⟨_, ha⟩⟩
+
+variable! (henv : VEnv.Ordered env) (hΓ : OnCtx Γ (env.IsType U)) in
+theorem VExpr.WF.appN_inv : ∀ {vs : List VExpr} {e},
+    VExpr.WF env U Γ (e.appN vs) → VExpr.WF env U Γ e
+  | [], _, h => h
+  | v :: vs, e, h =>
+    let ⟨_, _, h, _⟩ := (VExpr.WF.appN_inv (vs := vs) (e := e.app v) h).app_inv henv hΓ
+    ⟨_, h⟩
+
+/-- Congruence for `appN`: the arguments' typings come from the application being well formed, so
+no separate hypothesis about them is needed. -/
+theorem VEnv.IsDefEqU.appN {env : VEnv} (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U)) :
+    ∀ {vs : List VExpr} {f g}, env.IsDefEqU U Γ f g → VExpr.WF env U Γ (f.appN vs) →
+      env.IsDefEqU U Γ (f.appN vs) (g.appN vs) := by
+  intro vs
+  induction vs with
+  | nil => intro _ _ h _; exact h
+  | cons v vs ih =>
+    intro f g h hwf
+    obtain ⟨A, B, hf, hv⟩ :=
+      (VExpr.WF.appN_inv henv.ordered hΓ (vs := vs) (e := f.app v) hwf).app_inv henv.ordered hΓ
+    exact ih ⟨_, (h.of_l henv hΓ hf).appDF hv⟩ hwf
+
+/-- Congruence for a whole application spine, arguments included. `IsDefEqU.appN` covers only the
+function; the typings each step needs come from the application's own well-typedness, the same
+way `TrExprS.appN` gets them. -/
+theorem VEnv.IsDefEqU.appN' {env : VEnv} {U Γ} (henv : VEnv.WF env)
+    (hΓ : OnCtx Γ (env.IsType U)) :
+    ∀ {xs ys : List VExpr} {f f'}, env.IsDefEqU U Γ f f' →
+      List.Forall₂ (env.IsDefEqU U Γ) xs ys →
+      VExpr.WF env U Γ (f.appN xs) →
+      env.IsDefEqU U Γ (f.appN xs) (f'.appN ys)
+  | [], _, _, _, hf, h, _ => by cases h; exact hf
+  | x :: xs, y :: ys, f, f', hf, .cons hx hxs, hwf =>
+    have ⟨_, _, hfT, hxT⟩ := (VExpr.WF.appN_inv (vs := xs) henv hΓ hwf).app_inv henv hΓ
+    VEnv.IsDefEqU.appN' henv hΓ (f := f.app x) (f' := f'.app y)
+      ⟨_, (hf.of_l henv hΓ hfT).appDF (hx.of_l henv hΓ hxT)⟩ hxs hwf
 
 end Lean4Lean

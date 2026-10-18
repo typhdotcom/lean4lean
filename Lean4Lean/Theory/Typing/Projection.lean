@@ -19,34 +19,49 @@ namespace VConstructor
 variable (c : VConstructor)
 open Classical
 
+/-- The positions before `i` of the fields that are not `P`. -/
+noncomputable def keptIdxBy (P : Nat → Prop) (i : Nat) : List Nat :=
+  (List.range i).filter fun j => ¬P j
+
 /-- The positions before `i` of the fields the `k`th projection does not skip. -/
-noncomputable def keptIdx (k i : Nat) : List Nat := (List.range i).filter fun j => ¬c.Skipped k j
+noncomputable def keptIdx (k i : Nat) : List Nat := keptIdxBy (c.Skipped k) i
+
+theorem keptIdxBy_succ (P : Nat → Prop) (i : Nat) :
+    keptIdxBy P (i + 1) = keptIdxBy P i ++ if P i then [] else [i] := by
+  simp only [keptIdxBy, List.range_succ, List.filter_append, List.filter_cons, List.filter_nil]
+  split <;> simp_all
 
 theorem keptIdx_succ (k i : Nat) :
-    c.keptIdx k (i + 1) = c.keptIdx k i ++ if c.Skipped k i then [] else [i] := by
-  simp only [keptIdx, List.range_succ, List.filter_append, List.filter_cons, List.filter_nil]
-  split <;> simp_all
+    c.keptIdx k (i + 1) = c.keptIdx k i ++ if c.Skipped k i then [] else [i] :=
+  keptIdxBy_succ _ i
+
+theorem keptFieldsBy_eq (P : Nat → Prop) (k : Nat) : c.keptFieldsBy P k =
+    (keptIdxBy P k).map fun j => strippedTypeBy P j ((c.fields[j]?.map VField.type).getD default) :=
+  rfl
 
 theorem keptFields_eq (k : Nat) : c.keptFields k =
     (c.keptIdx k k).map fun j => c.strippedType k j ((c.fields[j]?.map VField.type).getD default) :=
   rfl
 
+theorem keptLiftBy_succ (P : Nat → Prop) (i : Nat) : keptLiftBy P (i + 1) =
+    if P i then .skip (keptLiftBy P i) else .cons (keptLiftBy P i) := rfl
+
 theorem keptLift_succ (k i : Nat) : c.keptLift k (i + 1) =
     if c.Skipped k i then .skip (c.keptLift k i) else .cons (c.keptLift k i) := rfl
 
 /-- Substituting entries for the parameters and the fields before the `i`th, through the lift
-that keeps the fields the `k`th projection does not skip, substitutes just the kept entries. -/
-theorem lift_l_keptLift (k : Nat) (σ : Subst) (As : List VExpr) (g : Nat → VExpr) :
-    ∀ i, Subst.lift_l (c.keptLift k i) (σ.consList (As ++ (List.range i).map g)) =
-      σ.consList (As ++ (c.keptIdx k i).map g)
-  | 0 => by simp [keptLift, keptIdx]
+that keeps the fields that are not `P`, substitutes just the kept entries. -/
+theorem lift_l_keptLiftBy (P : Nat → Prop) (σ : Subst) (As : List VExpr) (g : Nat → VExpr) :
+    ∀ i, Subst.lift_l (keptLiftBy P i) (σ.consList (As ++ (List.range i).map g)) =
+      σ.consList (As ++ (keptIdxBy P i).map g)
+  | 0 => by simp [keptLiftBy, keptIdxBy]
   | i + 1 => by
-    rw [keptLift_succ, keptIdx_succ, List.range_succ, List.map_append, ← List.append_assoc,
+    rw [keptLiftBy_succ, keptIdxBy_succ, List.range_succ, List.map_append, ← List.append_assoc,
       List.map_singleton, Subst.consList_concat]
     split
     · simp only [Subst.lift_l_skip, Subst.cons_tail, List.append_nil]
-      exact lift_l_keptLift k σ As g i
-    · rw [Subst.lift_l_cons, lift_l_keptLift k σ As g i, List.map_append, List.map_singleton,
+      exact lift_l_keptLiftBy P σ As g i
+    · rw [Subst.lift_l_cons, lift_l_keptLiftBy P σ As g i, List.map_append, List.map_singleton,
         ← List.append_assoc, Subst.consList_concat]
 
 theorem lift'_keptLift_consN_skip {ρ : Lift} {n : Nat} {B : VExpr} :
@@ -54,17 +69,17 @@ theorem lift'_keptLift_consN_skip {ρ : Lift} {n : Nat} {B : VExpr} :
   rw [← lift'_consN_skipN, ← lift'_comp, ← Lift.consN_comp]; rfl
 
 /-- A term over the parameters, the fields before the `i`th and `n` further binders that does not
-mention the fields the `k`th projection skips is a lift by `keptLift`. -/
-theorem exists_lift'_keptLift (k : Nat) : ∀ (i n : Nat) (A : VExpr),
-    (∀ j < i, c.Skipped k j → A.Skips 1 (n + (i - 1 - j))) →
-    ∃ A' : VExpr, A = A'.lift' ((c.keptLift k i).consN n)
-  | 0, n, A, _ => ⟨A, by rw [lift'_depth_zero]; simp [keptLift]⟩
+mention the fields that are `P` is a lift by `keptLiftBy`. -/
+theorem exists_lift'_keptLiftBy (P : Nat → Prop) : ∀ (i n : Nat) (A : VExpr),
+    (∀ j < i, P j → A.Skips 1 (n + (i - 1 - j))) →
+    ∃ A' : VExpr, A = A'.lift' ((keptLiftBy P i).consN n)
+  | 0, n, A, _ => ⟨A, by rw [lift'_depth_zero]; simp [keptLiftBy]⟩
   | i + 1, n, A, hA => by
-    rw [keptLift_succ]
+    rw [keptLiftBy_succ]
     split
     · rename_i hi
       obtain ⟨B, rfl⟩ := skips_iff_exists.1 (by simpa using hA i (Nat.lt_succ_self _) hi)
-      have hB : ∀ j < i, c.Skipped k j → B.Skips 1 (n + (i - 1 - j)) := by
+      have hB : ∀ j < i, P j → B.Skips 1 (n + (i - 1 - j)) := by
         intro j hj hs
         have := hA j (by omega) hs
         obtain ⟨C, hC⟩ := skips_iff_exists.1 this
@@ -72,24 +87,30 @@ theorem exists_lift'_keptLift (k : Nat) : ∀ (i n : Nat) (A : VExpr),
           rw [hC]; congr 1; omega
         obtain ⟨D, -, rfl⟩ := of_liftN_eq_liftN (k1 := i - 1 - j) (k2 := n) e
         rw [Nat.add_comm]; exact .liftN
-      obtain ⟨B', rfl⟩ := exists_lift'_keptLift k i n B hB
+      obtain ⟨B', rfl⟩ := exists_lift'_keptLiftBy P i n B hB
       exact ⟨B', lift'_keptLift_consN_skip⟩
-    · obtain ⟨A', rfl⟩ := exists_lift'_keptLift k i (n + 1) A fun j hj hs => by
+    · obtain ⟨A', rfl⟩ := exists_lift'_keptLiftBy P i (n + 1) A fun j hj hs => by
         have := hA j (by omega) hs; rwa [show n + (i + 1 - 1 - j) = n + 1 + (i - 1 - j) by omega]
           at this
       refine ⟨A', ?_⟩
-      show _ = A'.lift' ((Lift.consN (c.keptLift k i) 1).consN n)
+      show _ = A'.lift' ((Lift.consN (keptLiftBy P i) 1).consN n)
       rw [Lift.consN_consN, Nat.add_comm]
+
+/-- A type that does not mention the fields that are `P` is the lift of its stripped type. -/
+theorem strippedTypeBy_lift' {P : Nat → Prop} {i : Nat} {A : VExpr}
+    (hA : ∀ j < i, P j → A.Skips 1 (i - 1 - j)) :
+    A = (strippedTypeBy P i A).lift' (keptLiftBy P i) := by
+  obtain ⟨A', hA'⟩ := exists_lift'_keptLiftBy P i 0 A (by simpa using hA)
+  simp only [Lift.consN] at hA'
+  subst hA'
+  rw [strippedTypeBy, subst_lift', lift_l_inv, subst_id]
 
 /-- A field type that does not mention the fields the `k`th projection skips is the lift of its
 stripped type. -/
 theorem strippedType_lift' {k i : Nat} {A : VExpr}
     (hA : ∀ j < i, c.Skipped k j → A.Skips 1 (i - 1 - j)) :
-    A = (c.strippedType k i A).lift' (c.keptLift k i) := by
-  obtain ⟨A', hA'⟩ := c.exists_lift'_keptLift k i 0 A (by simpa using hA)
-  simp only [Lift.consN] at hA'
-  subst hA'
-  rw [strippedType, subst_lift', lift_l_inv, subst_id]
+    A = (c.strippedType k i A).lift' (c.keptLift k i) :=
+  strippedTypeBy_lift' hA
 
 /-- The `j`th field, for `j ≤ k`, does not mention the fields before it the `k`th projection
 skips. -/
@@ -97,13 +118,22 @@ theorem field_skips {k j : Nat} {f : VField} (hf : c.fields[j]? = some f) (hjk :
     ∀ j' < j, c.Skipped k j' → f.type.Skips 1 (j - 1 - j') :=
   fun _ hj' h => h.2 _ _ hj' hjk hf
 
+/-- A type over the parameters and the earlier fields that does not mention those that are `P`,
+at the parameters and the earlier projections, through its stripped type. -/
+theorem subst_strippedTypeBy {P : Nat → Prop} {i : Nat} {A : VExpr}
+    (hA : ∀ j < i, P j → A.Skips 1 (i - 1 - j)) (ls : List VLevel) (σ : Subst)
+    (As : List VExpr) (g : Nat → VExpr) :
+    (A.instL ls).subst (σ.consList (As ++ (List.range i).map g)) =
+      ((strippedTypeBy P i A).instL ls).subst (σ.consList (As ++ (keptIdxBy P i).map g)) := by
+  conv => lhs; rw [strippedTypeBy_lift' hA]
+  rw [instL_lift', subst_lift', lift_l_keptLiftBy]
+
 /-- A field's type at the parameters and the earlier projections, through its stripped type. -/
 theorem field_subst_stripped {k j : Nat} {f : VField} (hf : c.fields[j]? = some f)
     (hjk : j ≤ k) (ls : List VLevel) (σ : Subst) (As : List VExpr) (g : Nat → VExpr) :
     (f.type.instL ls).subst (σ.consList (As ++ (List.range j).map g)) =
-      ((c.strippedType k j f.type).instL ls).subst (σ.consList (As ++ (c.keptIdx k j).map g)) := by
-  conv => lhs; rw [c.strippedType_lift' (c.field_skips hf hjk)]
-  rw [instL_lift', subst_lift', lift_l_keptLift]
+      ((c.strippedType k j f.type).instL ls).subst (σ.consList (As ++ (c.keptIdx k j).map g)) :=
+  subst_strippedTypeBy (c.field_skips hf hjk) ls σ As g
 
 end VConstructor
 
@@ -215,29 +245,65 @@ theorem WF.inducts {env : VEnv} (henv : env.WF) (h : env.inducts s = some (d, t)
         exact (addConstList_le hC).trans <| (addConstList_le hR).trans <|
           addDefEqList_le.trans (addBlock_le hB)
 
+/-- A block a well-formed environment records was added, by `addInduct`, to a well-formed
+environment it extends. -/
+theorem WF.inducts_block {env : VEnv} (henv : env.WF) (h : env.inducts s = some (d, t)) :
+    ∃ env₀ env₂, env₀.WF ∧ d.WF env₀ ∧ env₀.addInduct d = some env₂ ∧ env₂ ≤ env ∧
+      ∃ T, d.types[t]? = some T ∧ T.name = s := by
+  obtain ⟨ds, H⟩ := henv
+  induction H with
+  | empty => cases h
+  | @decl _ env₂ _ env₁ hD hW ih =>
+    have IH : env₁.inducts s = some (d, t) → ∃ env₀ env₃, env₀.WF ∧ d.WF env₀ ∧
+        env₀.addInduct d = some env₃ ∧ env₃ ≤ env₂ ∧
+        ∃ T, d.types[t]? = some T ∧ T.name = s := fun h =>
+      let ⟨a, b, c, d', e, f, g⟩ := ih h
+      ⟨a, b, c, d', e, f.trans hD.le, g⟩
+    cases hD with
+    | «axiom» _ h1 | «opaque» _ h1 => exact IH (addConst_inducts h1 ▸ h)
+    | «def» _ h1 => exact IH (addConst_inducts h1 ▸ h)
+    | mutualDef _ h1 _ => exact IH (addConsts_inducts h1 ▸ addDefEqs_inducts ▸ h)
+    | «example» => exact IH h
+    | quot _ h1 => exact IH (addQuot_inducts h1 ▸ h)
+    | @induct _ d' _ hd hg h1 =>
+      have h1' := h1
+      simp [addInduct, Option.bind_eq_some_iff] at h1
+      obtain ⟨envT, hT, envC, hC, envR, hR, hB⟩ := h1
+      rcases addBlock_inducts hB h with h | ⟨rfl, T, hT', rfl⟩
+      · rw [addDefEqList_inducts, addConstList_inducts hR, addConstList_inducts hC,
+          addConstList_inducts hT] at h
+        exact IH h
+      · exact ⟨_, _, ⟨_, hW⟩, hd, h1', .rfl, T, hT', rfl⟩
+
 end VEnv
 
 namespace VConstructor
 variable (c : VConstructor)
 open Classical
 
-theorem mem_keptIdx {k i j : Nat} : j ∈ c.keptIdx k i ↔ j < i ∧ ¬c.Skipped k j := by
-  simp [keptIdx]
+theorem mem_keptIdxBy {P : Nat → Prop} {i j : Nat} : j ∈ keptIdxBy P i ↔ j < i ∧ ¬P j := by
+  simp [keptIdxBy]
 
-theorem keptIdx_take (k : Nat) : ∀ (i r : Nat) (h : r < (c.keptIdx k i).length),
-    (c.keptIdx k i).take r = c.keptIdx k ((c.keptIdx k i)[r])
-  | 0, r, h => by simp [keptIdx] at h
+theorem mem_keptIdx {k i j : Nat} : j ∈ c.keptIdx k i ↔ j < i ∧ ¬c.Skipped k j := mem_keptIdxBy
+
+theorem keptIdxBy_take (P : Nat → Prop) : ∀ (i r : Nat) (h : r < (keptIdxBy P i).length),
+    (keptIdxBy P i).take r = keptIdxBy P ((keptIdxBy P i)[r])
+  | 0, r, h => by simp [keptIdxBy] at h
   | i + 1, r, h => by
-    have e := c.keptIdx_succ k i
-    by_cases hr : r < (c.keptIdx k i).length
+    have e := keptIdxBy_succ P i
+    by_cases hr : r < (keptIdxBy P i).length
     · simp only [e, List.take_append_of_le_length (Nat.le_of_lt hr),
         List.getElem_append_left hr]
-      exact keptIdx_take k i r hr
+      exact keptIdxBy_take P i r hr
     · split at e
       · rw [e] at h; simp at h; omega
-      · have hr' : r = (c.keptIdx k i).length := by rw [e] at h; simp at h; omega
+      · have hr' : r = (keptIdxBy P i).length := by rw [e] at h; simp at h; omega
         subst hr'
         simp [e]
+
+theorem keptIdx_take (k : Nat) : ∀ (i r : Nat) (h : r < (c.keptIdx k i).length),
+    (c.keptIdx k i).take r = c.keptIdx k ((c.keptIdx k i)[r]) :=
+  keptIdxBy_take _
 
 end VConstructor
 
@@ -282,24 +348,25 @@ variable {env : VEnv} {U : Nat} {Γ : List VExpr} {s : Name} {d : VInductDecl} {
   {T : VInductiveType} {c : VConstructor} {ls : List VLevel} {As As' I I' : List VExpr}
   {x x' : VExpr}
 
-/-- The parameters and the projections the `k`th projection does not skip, at two terms: arguments
-for the parameters and the kept fields. -/
-theorem keptSubstEq (hF : ProjFacts env d c) (hls : ∀ l ∈ ls, l.WF U)
+/-- The parameters and the projections the `k`th projection does not skip, against arguments
+`g` the earlier projections are definitionally equal to. -/
+theorem keptSubstEqG (hF : ProjFacts env d c) (hls : ∀ l ∈ ls, l.WF U)
     (W : Ctx.SubstEq env U Γ (Subst.dflt.consList As) (Subst.dflt.consList As')
       (d.params.map (·.instL ls)).reverse)
     {k : Nat} {f : VField} (hf : c.fields[k]? = some f) (hP : d.ProjAllowed c ls k)
+    {g : Nat → VExpr}
     (ih : ∀ j < k, ∀ fj : VField, c.fields[j]? = some fj → d.ProjAllowed c ls j →
-      env.IsDefEq U Γ (.proj s j x) (.proj s j x') (c.projType ls s j As x)) :
+      env.IsDefEq U Γ (.proj s j x) (g j) (c.projType ls s j As x)) :
     Ctx.SubstEq env U Γ
       (Subst.dflt.consList (As ++ (c.keptIdx k k).map (.proj s · x)))
-      (Subst.dflt.consList (As' ++ (c.keptIdx k k).map (.proj s · x')))
+      (Subst.dflt.consList (As' ++ (c.keptIdx k k).map g))
       (((c.keptFields k).map (·.instL ls)).reverse ++ (d.params.map (·.instL ls)).reverse) := by
   have hk : k < c.fields.length := (List.getElem?_eq_some_iff.1 hf).1
   have hFt := (hF.fields k f hf).1.instL hls
   simp only [List.map_reverse] at hFt
   rw [Subst.consList_append, Subst.consList_append]
   refine Ctx.SubstEq.ofGetElemDF W (c.keptIdx k k).length
-    (as := (c.keptIdx k k).map (.proj s · x)) (bs := (c.keptIdx k k).map (.proj s · x'))
+    (as := (c.keptIdx k k).map (.proj s · x)) (bs := (c.keptIdx k k).map g)
     (by simp) hFt (by simp [keptFields_eq]) (by simp [keptFields_eq]) fun r h h' h'' => ?_
   simp only [List.length_map] at h
   have hj := List.getElem_mem h
@@ -312,6 +379,20 @@ theorem keptSubstEq (hF : ProjFacts env d c) (hls : ∀ l ∈ ls, l.WF U)
     ← List.map_take, keptIdx_take _ _ _ _ h, ← Subst.consList_append]
   rwa [VConstructor.projType, hfj, Option.map_some, Option.getD_some, VExpr.projs,
     c.field_subst_stripped hfj (Nat.le_of_lt hjk)] at this
+
+/-- The parameters and the projections the `k`th projection does not skip, at two terms: arguments
+for the parameters and the kept fields. -/
+theorem keptSubstEq (hF : ProjFacts env d c) (hls : ∀ l ∈ ls, l.WF U)
+    (W : Ctx.SubstEq env U Γ (Subst.dflt.consList As) (Subst.dflt.consList As')
+      (d.params.map (·.instL ls)).reverse)
+    {k : Nat} {f : VField} (hf : c.fields[k]? = some f) (hP : d.ProjAllowed c ls k)
+    (ih : ∀ j < k, ∀ fj : VField, c.fields[j]? = some fj → d.ProjAllowed c ls j →
+      env.IsDefEq U Γ (.proj s j x) (.proj s j x') (c.projType ls s j As x)) :
+    Ctx.SubstEq env U Γ
+      (Subst.dflt.consList (As ++ (c.keptIdx k k).map (.proj s · x)))
+      (Subst.dflt.consList (As' ++ (c.keptIdx k k).map (.proj s · x')))
+      (((c.keptFields k).map (·.instL ls)).reverse ++ (d.params.map (·.instL ls)).reverse) :=
+  keptSubstEqG hF hls W hf hP ih
 
 theorem projType_eq {k : Nat} {f : VField} (hf : c.fields[k]? = some f) (ls : List VLevel)
     (As : List VExpr) (x : VExpr) :
@@ -372,6 +453,52 @@ theorem projType_congr (henv : Ordered env) (hΓ : OnCtx Γ (env.IsType U))
   have H := IsDefEq.substDF henv W2.wf hΓ W2 H
   rw [← projType_eq hf, ← projType_eq hf] at H
   exact H
+
+theorem _root_.List.map_range_getD_eq_take {l : List α} {k : Nat} (dflt : α) (hk : k ≤ l.length) :
+    (List.range k).map (fun j => l[j]?.getD dflt) = l.take k := by
+  apply List.ext_getElem (by simp; omega)
+  intro i h1 h2
+  simp at h1
+  simp [List.getElem?_eq_getElem (show i < l.length by omega)]
+
+/-- A projection of the constructor applied to the parameters and fields is the field: by the
+iota rule for projections, once the field is seen to have the projection's type, which
+substitutes the earlier projections, themselves the earlier fields, for the earlier fields. -/
+theorem projIota_ctor (henv : Ordered env) (hΓ : OnCtx Γ (env.IsType U))
+    (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T) (hc : T.ctors = [c])
+    (hF : ProjFacts env d c) (hls : ∀ l ∈ ls, l.WF U) (hlen : ls.length = d.uvars)
+    {fs : List VExpr} (hA : As.length = d.params.length) (hI : I.length = T.indices.length)
+    (hfs : fs.length = c.fields.length)
+    (W : Ctx.SubstEq env U Γ (Subst.dflt.consList As) (Subst.dflt.consList As)
+      (d.params.map (·.instL ls)).reverse)
+    (hS : env.IsDefEq U Γ (.appN (.const s ls) (As ++ I)) (.appN (.const s ls) (As ++ I))
+      (.sort u))
+    (hX : env.HasType U Γ (.appN (.const c.name ls) (As ++ fs)) (.appN (.const s ls) (As ++ I)))
+    (hfsT : ∀ k (h : k < fs.length) (f : VField), c.fields[k]? = some f →
+      env.HasType U Γ fs[k] ((f.type.instL ls).subst (Subst.dflt.consList (As ++ fs.take k)))) :
+    ∀ k (f : VField) (a : VExpr), c.fields[k]? = some f → fs[k]? = some a →
+      d.ProjAllowed c ls k →
+      env.IsDefEq U Γ (.proj s k (.appN (.const c.name ls) (As ++ fs))) a
+        (c.projType ls s k As (.appN (.const c.name ls) (As ++ fs))) := by
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+  intro f a hf ha hP
+  have hkf : k < fs.length := (List.getElem?_eq_some_iff.1 ha).1
+  have hPC := projCongr henv hΓ hs ht hc hF hls hlen hA hI hA hI W hS hX k f hf hP
+  have W2 := keptSubstEqG hF hls W hf hP (x := .appN (.const c.name ls) (As ++ fs))
+    (g := fun j => fs[j]?.getD default) fun j hj fj hfj hPj => by
+      have hjf : j < fs.length := by omega
+      exact ih j hj fj (fs[j]?.getD default) hfj
+        (by simp [List.getElem?_eq_getElem hjf]) hPj
+  have hFk := (hF.fields k f hf).2.instL hls
+  simp only [List.map_append, List.map_reverse] at hFk
+  have H := IsDefEq.substDF henv W2.wf hΓ W2 hFk
+  rw [← projType_eq hf, ← c.field_subst_stripped hf (Nat.le_refl _),
+    List.map_range_getD_eq_take _ (Nat.le_of_lt hkf)] at H
+  have haT := hfsT k hkf f hf
+  rw [show fs[k] = a from (List.getElem?_eq_some_iff.1 ha).2] at haT
+  exact .projIota hs ht hc hf ha hls hlen hA hfs hI hX hP hPC.1 (.defeqDF H.symm haT)
 
 end
 end VEnv

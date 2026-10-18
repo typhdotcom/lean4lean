@@ -116,6 +116,18 @@ theorem List.Forall₂.append_of_right {l₁ l₂ r₁ r₂} (H : length r₁ = 
 theorem List.Forall₂.reverse : Forall₂ R l.reverse l'.reverse ↔ Forall₂ R l l' := by
   induction l generalizing l' <;> cases l' <;> simp [List.Forall₂.append_of_right, and_comm, *]
 
+theorem List.Forall₂.getElem?_r {R : α → β → Prop} : ∀ {l₁ l₂} {j : Nat} {b : β},
+    List.Forall₂ R l₁ l₂ → l₂[j]? = some b → ∃ a, l₁[j]? = some a ∧ R a b
+  | _, _, _, _, .nil, e => by simp at e
+  | _, _, 0, _, .cons h _, e => by cases e; exact ⟨_, rfl, h⟩
+  | _ :: _, _ :: _, j + 1, _, .cons _ t, e => List.Forall₂.getElem?_r (j := j) t (by simpa using e)
+
+theorem List.Forall₂.getElem?_l {R : α → β → Prop} : ∀ {l₁ l₂} {j : Nat} {a : α},
+    List.Forall₂ R l₁ l₂ → l₁[j]? = some a → ∃ b, l₂[j]? = some b ∧ R a b
+  | _, _, _, _, .nil, e => by simp at e
+  | _, _, 0, _, .cons h _, e => by cases e; exact ⟨_, rfl, h⟩
+  | _ :: _, _ :: _, j + 1, _, .cons _ t, e => List.Forall₂.getElem?_l (j := j) t (by simpa using e)
+
 theorem List.map_id''' {f : α → α} (l : List α) (h : ∀ x ∈ l, f x = x) : map f l = l := by
   induction l <;> simp_all
 

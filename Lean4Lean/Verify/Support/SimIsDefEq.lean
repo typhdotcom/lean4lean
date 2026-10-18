@@ -201,14 +201,25 @@ theorem tryEtaStructCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : A
   refine (isDefEq.SS hA hS (ht₁.dom wf h₁) (ht₂.dom wf' h₂) (ht₁ S hS hs₁)
     (ht₂ S hS hs₂)).bind fun _ _ _ _ => ?_
   split <;> [skip; exact .pure trivial]
+  refine (getSortLevel.SS hA hS (ht₂.dom wf' h₂) (ht₂ S hS hs₂)).bind fun _ _ _ _ => ?_
   have hargs : ∀ a ∈ e₂.getAppArgs, Dom c₁ a := fun a ha =>
     dom_iff.2 (Expr.SuppIn.getAppArgs (dom_iff.1 h₂) a ha)
   refine (RecM.SS.forIn'_range (Inv := fun _ => True) (fun i hi b s _ => ?_) trivial).bind
     fun _ _ _ _ => ?_
   · dsimp only
-    refine (isDefEq.SS hA hS (show Dom c₁ (.proj _ _ e₁) from h₁) (hargs _ (Array.getElem_mem _))
-      hs₁ (hs₂.getAppArgs _ (Array.getElem_mem _))).bind fun _ _ _ _ => ?_
-    split <;> exact .pure trivial
+    have ha := hargs _ (Array.getElem_mem hi.2.1)
+    have has := hs₂.getAppArgs _ (Array.getElem_mem hi.2.1)
+    split
+    · refine (inferType.SS hA hS ha has).bind fun _ _ _ hty => .stateWF fun wf => ?_
+      refine (isProp.SS hA hS (hty.dom wf ha) (hty S hS has)).bind fun _ _ _ _ => ?_
+      split
+      · refine (isDefEq.SS hA hS (show Dom c₁ (.proj _ _ e₁) from h₁) ha hs₁ has).bind
+          fun _ _ _ _ => ?_
+        split <;> exact .pure trivial
+      · exact .pure trivial
+    · refine (isDefEq.SS hA hS (show Dom c₁ (.proj _ _ e₁) from h₁) ha hs₁ has).bind
+        fun _ _ _ _ => ?_
+      split <;> exact .pure trivial
   · dsimp only; split <;> exact .pure trivial
 
 theorem tryEtaStruct.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)

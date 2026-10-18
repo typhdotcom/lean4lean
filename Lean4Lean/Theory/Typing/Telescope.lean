@@ -281,6 +281,26 @@ theorem HasType.appN_substT {Γ : List VExpr} : ∀ {Δ As B τ f as},
     exact HasType.appN_substT (Δ := A :: Δ) (As := As) (τ := τ.cons a) (f := f.app a) (as := as)
       hfa (Nat.succ.inj hlen) W
 
+/-- Definitionally equal functions whose type is a pi telescope under `τ`, applied to pairs of
+definitionally equal arguments for the telescope. -/
+theorem IsDefEq.appN_substTDF {Γ : List VExpr} : ∀ {Δ As B} {τ τ' : Subst} {f g as bs},
+    env.IsDefEq U Γ f g ((VExpr.foralls As B).subst τ) → as.length = As.length →
+    bs.length = As.length →
+    Ctx.SubstEq env U Γ (τ.consList as) (τ'.consList bs) (As.reverse ++ Δ) →
+    env.IsDefEq U Γ (f.appN as) (g.appN bs) (B.subst (τ.consList as))
+  | _, [], _, _, _, _, _, [], [], hf, _, _, _ => hf
+  | Δ, A :: As, B, τ, τ', f, g, a :: as, b :: bs, hf, hlen, hlen', W => by
+    rw [List.reverse_cons, List.append_assoc] at W
+    have W' := Ctx.SubstEq.dropList (as := as) (as' := bs) (Bs := As) (Δ := A :: Δ)
+      (Nat.succ.inj hlen) (Nat.succ.inj hlen') W
+    have ha : env.IsDefEq U Γ a b (A.subst τ) := by
+      cases W' with | cons _ _ h => exact h
+    have hfa := hf.appDF ha
+    rw [inst_lift_cons] at hfa
+    exact IsDefEq.appN_substTDF (Δ := A :: Δ) (As := As) (τ := τ.cons a) (τ' := τ'.cons b)
+      (f := f.app a) (g := g.app b) (as := as) (bs := bs) hfa (Nat.succ.inj hlen)
+      (Nat.succ.inj hlen') W
+
 /-- The arguments of a well-typed application extend the substitution its function's pi
 telescope is typed under. -/
 theorem IsTele.weak' (henv : Ordered env) : ∀ {ρ Γ Γ' As}, Ctx.Lift' ρ Γ Γ' →

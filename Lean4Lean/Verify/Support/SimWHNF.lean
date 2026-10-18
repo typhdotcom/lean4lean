@@ -118,7 +118,8 @@ theorem reduceProjCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agr
       have hmk := getAppFn_const_supp (h S hS hs) heq
       refine .getEnv <| (RecM.SS.liftExcept envGet.SWF (envGet_agree hA hmk)).bind
         fun _ _ _ _ => ?_
-      split <;> [(split <;> exact .pure trivial); exact .pure trivial]
+      split <;> [(split <;> [exact .pure trivial; (split <;> exact .pure trivial)]);
+        exact .pure trivial]
     · exact .pure trivial
   simp only [c0]; split
   · rename_i str
@@ -140,22 +141,40 @@ theorem reduceProj.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S
 
 theorem quotReduceRec.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
-    RecM.SS c₁ c₂ s (quotReduceRec e whnf : RecM _) (quotReduceRec e whnf) fun oe _ =>
-      ∀ e₁, oe = some e₁ → SuppBelow c₁ e e₁ := by
+    RecM.SS c₁ c₂ s (quotReduceRec e whnf isDefEq : RecM _) (quotReduceRec e whnf isDefEq)
+      fun oe _ => ∀ e₁, oe = some e₁ → SuppBelow c₁ e e₁ := by
   refine .of_swf (Q' := fun _ _ => True) (quotReduceRec.SWF he) ?_
   unfold quotReduceRec
   split
   · lift_lets; intro args jp cont
     have hargs : ∀ a ∈ args, a.SuppIn S := Expr.SuppIn.getAppArgs hs
+    have hdargs : ∀ a ∈ args, Dom c₁ a := fun a ha =>
+      dom_iff.2 (Expr.SuppIn.getAppArgs (dom_iff.1 he) _ ha)
     have hcont {a b s} : RecM.SS c₁ c₂ s (cont a b) (cont a b) fun _ _ => True := by
       simp only [cont, jp]; split
       · rename_i h
-        have hd : Dom c₁ args[a] :=
-          dom_iff.2 (Expr.SuppIn.getAppArgs (dom_iff.1 he) _ (Array.getElem_mem h))
-        refine (whnf.SS hA hS hd (hargs _ (Array.getElem_mem h))).bind fun mk _ _ hmk => ?_
+        have hd : Dom c₁ args[a] := hdargs _ (Array.getElem_mem h)
+        refine .stateWF fun wf => (whnf.SS hA hS hd (hargs _ (Array.getElem_mem h))).bind
+          fun mk _ _ hmk => ?_
+        have hmkd := dom_iff.1 (hmk.dom wf hd)
+        have hmks := hmk S hS (hargs _ (Array.getElem_mem h))
+        have hget {i : Nat} : Dom c₁ args[i]! :=
+          dom_iff.2 (Expr.SuppIn.getElem! trivial fun a ha => dom_iff.1 (hdargs a ha))
+        have hgets {i : Nat} : Expr.SuppIn S args[i]! := Expr.SuppIn.getElem! hS.2.dummy hargs
         split
         · exact .pure trivial
-        · split <;> exact .pure trivial
+        · refine (isDefEq.SS hA hS
+            (dom_iff.2 (Expr.SuppIn.appArg! trivial (Expr.SuppIn.appFn! trivial
+              (Expr.SuppIn.appFn! trivial hmkd)))) hget
+            (Expr.SuppIn.appArg! hS.2.dummy (Expr.SuppIn.appFn! hS.2.dummy
+              (Expr.SuppIn.appFn! hS.2.dummy hmks))) hgets).bind fun _ _ _ _ => ?_
+          split <;> [skip; exact .pure trivial]
+          refine (isDefEq.SS hA hS
+            (dom_iff.2 (Expr.SuppIn.appArg! trivial (Expr.SuppIn.appFn! trivial hmkd))) hget
+            (Expr.SuppIn.appArg! hS.2.dummy (Expr.SuppIn.appFn! hS.2.dummy hmks)) hgets).bind
+            fun _ _ _ _ => ?_
+          split <;> [skip; exact .pure trivial]
+          split <;> exact .pure trivial
       · exact .pure trivial
     split; · exact hcont
     split; · exact hcont
@@ -217,7 +236,7 @@ theorem toCtorWhenStruct.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : A
   rw [expandEtaStruct_agree hA hS (het' S hS hs)]
   split
   · split <;> exact .pure trivial
-  · exact .panic trivial
+  · exact .pure trivial
 
 theorem inductiveReduceRec.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (he : Dom c₁ e) (hs : e.SuppIn S) :
@@ -232,10 +251,21 @@ theorem inductiveReduceRec.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA :
   rw [hA.env recFn hrec]
   split <;> [skip; exact .pure trivial]
   rename_i info hfind
-  extract_lets recArgs majorIdx jp3 jp2 jp1 jp1'
+  extract_lets recArgs majorIdx jp3 jp2 jp1 jp2' jp1'
   have hargs : ∀ a ∈ recArgs, a.SuppIn S := Expr.SuppIn.getAppArgs hs
-  have hjp2 {major s} : RecM.SS c₁ c₂ s (jp2 () major) (jp2 () major) fun _ _ => True := by
-    simp only [jp2, jp3]
+  have hjp2 {major s} (hm : major.SuppIn S) :
+      RecM.SS c₁ c₂ s (jp2 () major) (jp2' () major) fun _ _ => True := by
+    simp only [jp2, jp2', jp3]
+    split <;> [skip; exact .pure trivial]
+    rename_i rule hrule
+    have hctor : S.const rule.ctor := by
+      unfold getRecRuleFor at hrule
+      split at hrule <;> [skip; cases hrule]
+      rename_i fn _ hfn
+      have := List.find?_some hrule
+      simp only [beq_iff_eq] at this
+      rw [this]; exact getAppFn_const_supp hm hfn
+    rw [hA.env _ hctor]
     split <;> [skip; exact .pure trivial]
     split; · exact .pure trivial
     split; · exact .pure trivial
@@ -247,14 +277,16 @@ theorem inductiveReduceRec.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA :
       fun major' _ _ hm' => ?_
     have hm' := hm.trans hm'
     split
-    · exact hjp2
+    · rename_i n _
+      exact hjp2 (Expr.SuppIn.natLitToConstructor (hm' S hS hs : Expr.SuppIn S (.lit (.natVal n))))
     · rename_i str _
       have hd : Dom c₁ (Expr.strLitToConstructor str) :=
         dom_iff.2 (Expr.SuppIn.strLitToConstructor ⟨⟨⟩, ⟨⟩, ⟨⟩, ⟨⟩, ⟨⟩, ⟨⟩, ⟨⟩, ⟨⟩, ⟨⟩⟩)
-      exact (whnf.SS hA hS hd (Expr.SuppIn.strLitToConstructor
-        (hm' S hS hs : Expr.SuppIn S (.lit (.strVal str))))).bind fun _ _ _ _ => hjp2
+      have hss := Expr.SuppIn.strLitToConstructor
+        (hm' S hS hs : Expr.SuppIn S (.lit (.strVal str)))
+      exact (whnf.SS hA hS hd hss).bind fun _ _ _ h => hjp2 (h S hS hss)
     · refine .stateWF fun wf => (toCtorWhenStruct.SS hA hS (hm'.dom wf he) (hm' S hS hs)
-        (hS.2.find _ _ hfind hrec).2.1).bind fun _ _ _ _ => hjp2
+        (hS.2.find _ _ hfind hrec).2.1).bind fun _ _ _ h => hjp2 (h S hS (hm' S hS hs))
   split <;> [skip; exact .pure trivial]
   rename_i major0 hmajor0
   have hm0 : SuppBelow c₁ e major0 := fun S hS h =>

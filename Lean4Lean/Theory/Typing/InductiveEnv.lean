@@ -114,8 +114,8 @@ theorem VInductDecl.FieldsWF.mono (H : decl.FieldsWF env Γ k Ds fs) :
       (let ⟨u, a, b⟩ := h4; ⟨u, a.mono henv, b⟩) (fun h => (h5 h).mono henv) (h6.mono henv) ih
 
 theorem VConstructor.WF.mono (H : c.WF env decl T) : c.WF env' decl T :=
-  have ⟨ps, Ds, h1, h2, h3⟩ := H.shape
-  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv⟩, H.indices,
+  have ⟨ps, Ds, h1, h2, h3, h4⟩ := H.shape
+  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv, h4⟩, H.indices,
     fun k f hf => (H.projFields k f hf).imp (·.mono henv) (·.mono henv)⟩
 
 theorem VInductiveType.WF.mono (H : T.WF env decl) : T.WF env' decl :=

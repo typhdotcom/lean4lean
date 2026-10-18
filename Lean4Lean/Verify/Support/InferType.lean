@@ -293,7 +293,9 @@ theorem inferProj.SWF {c : Context} {s : State} {struct structType : Expr}
   · rename_i I_name I_levels heq
     have hI S (hS : S.Closed c) (h : (Expr.proj typeName idx struct).SuppIn S) : type.SuppIn S :=
       htype S hS (hst S hS h)
-    split; · exact .failBind
+    by_cases h1 : (typeName != I_name) = true
+    · rw [if_pos h1]; exact .failBind
+    rw [if_neg h1]
     refine (M.SWF.liftExcept envGet.SWF).lift.bind fun ci _ _ hci => ?_
     split
     · rename_i I_val
@@ -301,6 +303,8 @@ theorem inferProj.SWF {c : Context} {s : State} {struct structType : Expr}
       · rename_i ctor hctor
         split; · exact .failBind
         refine (M.SWF.liftExcept envGet.SWF).lift.bind fun ci' _ _ hci' => ?_
+        split <;> [rename_i cval; exact RecM.SWF.getLCtx .throw]
+        split; · exact .failBind
         split; · exact .failBind
         rename_i hlen
         let P r := SuppBelow c (.proj typeName idx struct) r
@@ -308,7 +312,7 @@ theorem inferProj.SWF {c : Context} {s : State} {struct structType : Expr}
         have hP {s r} (wf : SuppState c s) (h : P r) : Dom c r := h.dom wf hdP
         have hfacts S (hS : S.Closed c) (h : (Expr.proj typeName idx struct).SuppIn S) :
             S.const I_name ∧ (∀ a ∈ type.getAppArgs, a.SuppIn S) ∧
-            (ci'.instantiateTypeLevelParams I_levels).SuppIn S := by
+            ((ConstantInfo.ctorInfo cval).instantiateTypeLevelParams I_levels).SuppIn S := by
           have h1 := hI S hS h
           have h2 : Expr.SuppIn S (.const I_name I_levels) := heq ▸ h1.getAppFn
           have h3 := (hS.2.find _ _ hci h2.1).2 ctor (by simp [hctor])

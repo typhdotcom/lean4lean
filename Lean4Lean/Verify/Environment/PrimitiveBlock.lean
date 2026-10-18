@@ -406,10 +406,10 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
           have hfty : f.type = .const I [] :=
             TrExprS.unique (TrExprS.IsUnique.all _) hftr (.const hIAx rfl rfl)
           rw [hf0] at hFE ⊢
-          cases hFE with | cons hdefA hsA hlwf hraA hrest => ?_
+          cases hFE with | cons hdefA hwA hsA hlwf hraA hrest => ?_
           rw [hdu, hdp] at hsA
           have hlv1 := primField_level henvAx hIAx (hfty ▸ hsA)
-          refine .cons ?_ ?_ hlwf ?_ (by cases hrest; exact .nil)
+          refine .cons ?_ hwA ?_ hlwf ?_ (by cases hrest; exact .nil)
           · rw [hfty, hdu]; exact ⟨_, primConst_isType hIT⟩
           · rw [hfty, hdu]
             exact .defeqDF (.sortDF (by simp [VLevel.WF]) (by simpa [hdu] using hlwf)

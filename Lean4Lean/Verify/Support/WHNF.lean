@@ -73,6 +73,7 @@ theorem reduceProjCore.SWF {c : Context} {s : State} (he : Dom c struct) :
     · refine .getEnv <| (M.SWF.liftExcept envGet.SWF).lift.bind fun _ _ _ _ => ?_
       split
       · split; · exact .pure nofun
+        split; · exact .pure nofun
         refine .pure fun e₁ he₁ S hS hs => ?_
         exact Expr.SuppIn.getAppArgs (h S hS hs) _ (Array.mem_of_getElem? he₁)
       · exact .pure nofun
@@ -94,25 +95,35 @@ theorem reduceProj.SWF {c : Context} {s : State} (he : Dom c struct) :
   exact (reduceProjCore.SWF (h.dom wf he)).mono fun _ _ _ H e₁ eq => h.trans (H e₁ eq)
 
 theorem quotReduceRec.SWF {c : Context} {s : State} (he : Dom c e) :
-    (quotReduceRec e whnf : RecM _).SWF c s fun oe _ =>
+    (quotReduceRec e whnf isDefEq : RecM _).SWF c s fun oe _ =>
       ∀ e₁, oe = some e₁ → SuppBelow c e e₁ := by
   unfold quotReduceRec
   split
   · lift_lets; intro args jp cont
     have hargs S (hS : S.Closed c) (h : e.SuppIn S) : ∀ a ∈ args, a.SuppIn S :=
       Expr.SuppIn.getAppArgs h
+    have hdargs : ∀ a ∈ args, Dom c a := fun a ha =>
+      dom_iff.2 (Expr.SuppIn.getAppArgs (dom_iff.1 he) _ ha)
     have hcont {a b s} : (cont a b).SWF c s fun oe _ => ∀ e₁, oe = some e₁ → SuppBelow c e e₁ := by
       simp only [cont, jp]; split
       · rename_i h
-        have hd : Dom c args[a] :=
-          dom_iff.2 (Expr.SuppIn.getAppArgs (dom_iff.1 he) _ (Array.getElem_mem h))
-        refine (whnf.SWF hd).bind fun mk _ _ hmk => ?_
+        have hd : Dom c args[a] := hdargs _ (Array.getElem_mem h)
+        refine .stateWF fun wf => (whnf.SWF hd).bind fun mk _ _ hmk => ?_
         have hr : SuppBelow c e (args[b]!.app mk.appArg!) := fun S hS h' =>
           ⟨Expr.SuppIn.getElem! hS.2.dummy (hargs S hS h'), Expr.SuppIn.appArg! hS.2.dummy
             (hmk S hS (hargs S hS h' _ (Array.getElem_mem _)))⟩
+        have hmkd := dom_iff.1 (hmk.dom wf hd)
+        have hget {i} : Dom c args[i]! :=
+          dom_iff.2 (Expr.SuppIn.getElem! trivial fun a ha => dom_iff.1 (hdargs a ha))
         split
         · exact .pure nofun
-        · split
+        · refine (isDefEq.SWF (dom_iff.2 (Expr.SuppIn.appArg! trivial (Expr.SuppIn.appFn! trivial
+            (Expr.SuppIn.appFn! trivial hmkd)))) hget).bind fun _ _ _ _ => ?_
+          split <;> [skip; exact .pure nofun]
+          refine (isDefEq.SWF (dom_iff.2 (Expr.SuppIn.appArg! trivial (Expr.SuppIn.appFn! trivial
+            hmkd))) hget).bind fun _ _ _ _ => ?_
+          split <;> [skip; exact .pure nofun]
+          split
           · refine .pure ?_; rintro _ ⟨⟩; intro S hS h'
             exact Expr.SuppIn.mkAppRange hS.2.dummy (hargs S hS h') (hr S hS h')
           · refine .pure ?_; rintro _ ⟨⟩; exact hr
@@ -173,7 +184,7 @@ theorem toCtorWhenStruct.SWF {c : Context} {s : State} (he : Dom c e) :
   · split
     · exact .pure fun S hS h => expandEtaStruct_supp hS.2 (het' S hS h) h
     · exact .pure .rfl
-  · exact .panic fun S hS _ => Expr.SuppIn.default hS.2.dummy
+  · exact .pure .rfl
 
 theorem inductiveReduceRec.SWF {c : Context} {s : State} (he : Dom c e) :
     (inductiveReduceRec c.env e whnf inferType isDefEq : RecM _).SWF c s fun oe _ =>
@@ -196,6 +207,7 @@ theorem inductiveReduceRec.SWF {c : Context} {s : State} (he : Dom c e) :
     have hmem : rule ∈ info.rules := by
       unfold getRecRuleFor at hrule
       split at hrule <;> [exact List.mem_of_find?_eq_some hrule; cases hrule]
+    split <;> [skip; exact .pure nofun]
     split; · exact .pure nofun
     split; · exact .pure nofun
     rename_i hlen

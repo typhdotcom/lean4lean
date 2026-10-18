@@ -15,11 +15,6 @@ open Kernel
 
 /-! ### Carrying the step to other safety levels -/
 
-theorem List.Forall₂.map_eq {f : α → γ} {g : β → γ} :
-    ∀ {l₁ l₂}, List.Forall₂ (fun a b => f a = g b) l₁ l₂ → l₁.map f = l₂.map g
-  | [], [], .nil => rfl
-  | _ :: _, _ :: _, .cons h t => by simp [h, map_eq t]
-
 theorem List.Forall₂.append {R : α → β → Prop} :
     ∀ {l₁ l₂ l₃ l₄}, List.Forall₂ R l₁ l₂ → List.Forall₂ R l₃ l₄ → List.Forall₂ R (l₁ ++ l₃) (l₂ ++ l₄)
   | [], [], _, _, .nil, h => h

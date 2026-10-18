@@ -60,7 +60,7 @@ def toCtorWhenStruct (inductName : Name) (e : Expr) : m Expr := do
     return e
   let eType ← whnf (← inferType e)
   if !eType.getAppFn.isConstOf inductName then return e
-  let .sort u ← whnf (← inferType eType) | unreachable!
+  let .sort u ← whnf (← inferType eType) | return e
   unless u.isNeverZero do return e
   return expandEtaStruct env eType e
 
@@ -94,7 +94,9 @@ def inductiveReduceRec [Monad m] (env : Environment) (e : Expr)
   | e => major ← toCtorWhenStruct env whnf inferType info.getMajorInduct e
   let some rule := getRecRuleFor info major | return none
   let majorArgs := major.getAppArgs
-  if rule.nfields > majorArgs.size then return none
+  -- a complete constructor application: its parameters and its fields
+  let some (.ctorInfo mkInfo) := env.find? rule.ctor | return none
+  if majorArgs.size != mkInfo.numParams + rule.nfields then return none
   if ls.length != info.levelParams.length then return none
   let mut rhs := rule.rhs.instantiateLevelParams info.levelParams ls
   -- get the parameters, motives and minor premises from the recursor application (recursor rules

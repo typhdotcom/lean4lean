@@ -103,13 +103,17 @@ Quot.ind.{u} {α : Sort u} {r : α → α → Prop} {β : @Quot.{u} α r → Pro
 Quot.ind p (Quot.mk r a) ... ⟶ p a ...
 ```
 -/
-def quotReduceRec [Monad m] (e : Expr) (whnf : Expr → m Expr) : m (Option Expr) := do
+def quotReduceRec [Monad m] (e : Expr) (whnf : Expr → m Expr)
+    (isDefEq : Expr → Expr → m Bool) : m (Option Expr) := do
   let .const fn _ := e.getAppFn | return none
   let cont mkPos argPos := do
     let args := e.getAppArgs
     if h : mkPos < args.size then
       let mk ← whnf args[mkPos]
       if !mk.isAppOfArity ``Quot.mk 3 then return none
+      -- the constructor is at the eliminator's quotient
+      unless ← isDefEq mk.appFn!.appFn!.appArg! args[0]! do return none
+      unless ← isDefEq mk.appFn!.appArg! args[1]! do return none
       let mut r := Expr.app args[argPos]! mk.appArg!
       let elimArity := mkPos + 1
       if elimArity < args.size then

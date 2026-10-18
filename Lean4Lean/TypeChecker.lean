@@ -242,6 +242,8 @@ def inferProj (typeName : Name) (idx : Nat) (struct structType : Expr) : RecM Ex
   let [c] := I_val.ctors | fail
   if args.size != I_val.numParams + I_val.numIndices then fail
   let c_info ← env.get c
+  let .ctorInfo c_val := c_info | fail
+  if idx ≥ c_val.numFields then fail
   if c_info.levelParams.length != I_levels.length then fail
   let mut r := c_info.instantiateTypeLevelParams I_levels
   for i in [:I_val.numParams] do
@@ -327,7 +329,7 @@ def whnfCore (e : Expr) (cheapProj := false) : RecM Expr :=
 def reduceRecursor (e : Expr) : RecM (Option Expr) := do
   let env ← getEnv
   if env.quotInit then
-    if let some r ← quotReduceRec e whnf then
+    if let some r ← quotReduceRec e whnf isDefEq then
       return r
   if let some r ← inductiveReduceRec env e whnf inferType isDefEq then
     return r
@@ -350,6 +352,7 @@ def reduceProjCore (typeName : Name) (idx : Nat) (struct : Expr) : RecM (Option 
   let env ← getEnv
   let .ctorInfo mkInfo ← env.get mkC | return none
   if mkInfo.induct != typeName then return none
+  if args.size != mkInfo.numParams + mkInfo.numFields then return none
   return args[mkInfo.numParams + idx]?
 
 /-- Reduces a projection of `struct` at index `idx` (when `struct` is reducible to a constructor
@@ -644,9 +647,15 @@ def tryEtaStructCore (t s : Expr) : RecM Bool := do
   let .ctorInfo fInfo ← env.get f | return false
   unless s.getAppNumArgs == fInfo.numParams + fInfo.numFields do return false
   unless env.isNonRecStructure fInfo.induct do return false
-  unless ← isDefEq (← inferType t) (← inferType s) do return false
+  let tType ← inferType t
+  let sType ← inferType s
+  unless ← isDefEq tType sType do return false
+  -- out of a structure that may be a proposition, only proofs can be projected
+  let maybeProp := !(← getSortLevel sType).isNeverZero
   let args := s.getAppArgs
   for h : i in [fInfo.numParams:args.size] do
+    if maybeProp then
+      unless ← isProp (← inferType args[i]) do return false
     -- since `t` is in WHNF, and assuming it is not a constructor application, this projection
     -- cannot reduce (so we are directly checking if `s` is defeq to the struct-η-expansion of `t`)
     unless ← isDefEq (.proj fInfo.induct (i - fInfo.numParams) t) args[i] do return false

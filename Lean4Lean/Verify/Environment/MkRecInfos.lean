@@ -203,14 +203,15 @@ theorem FieldsElab.of_getElem {venv : VEnv} {d : VInductDecl} :
     ∀ {Γ : List VExpr} {k : Nat} {Ds : List VExpr} {fs : List VField}, Ds.length = fs.length →
     (∀ j D f, Ds[j]? = some D → fs[j]? = some f →
       venv.IsDefEqU d.uvars (((fs.take j).map (·.type)).reverse ++ Γ) D f.type ∧
+      (∀ i, D.Skips 1 i → f.type.Skips 1 i) ∧
       venv.HasType d.uvars (((fs.take j).map (·.type)).reverse ++ Γ) f.type (.sort f.level) ∧
       f.level.WF d.uvars ∧
       d.RecArgWF venv (((fs.take j).map (·.type)).reverse ++ Γ) (k + j) f) →
     FieldsElab venv d Γ k Ds fs
   | _, _, [], [], _, _ => .nil
   | Γ, k, D :: Ds, f :: fs, hl, H => by
-    obtain ⟨h1, h2, h3, h4⟩ := H 0 D f rfl rfl
-    refine .cons (by simpa using h1) (by simpa using h2) h3 (by simpa using h4)
+    obtain ⟨h1, hw, h2, h3, h4⟩ := H 0 D f rfl rfl
+    refine .cons (by simpa using h1) hw (by simpa using h2) h3 (by simpa using h4)
       (FieldsElab.of_getElem (by simpa using hl) fun j D' f' e1 e2 => ?_)
     have := H (j + 1) D' f' (by simpa using e1) (by simpa using e2)
     simpa [List.take_succ_cons, Nat.add_assoc, Nat.add_comm 1 j] using this
@@ -254,7 +255,8 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
     by rw [hout.type, hout.indices]; exact hsh, ?_, ?_⟩
   · rw [hdp]
     refine FieldsElab.of_getElem (by rw [hout.len]) fun k D f hD hf =>
-      ⟨hdu ▸ hout.defeq k D f hD hf, hdu ▸ (hout.sort k f hf).1, hdu ▸ (hout.sort k f hf).2, ?_⟩
+      ⟨hdu ▸ hout.defeq k D f hD hf, hout.within k D f hD hf, hdu ▸ (hout.sort k f hf).1,
+        hdu ▸ (hout.sort k f hf).2, ?_⟩
     unfold VInductDecl.RecArgWF
     split
     · rename_i ra hra

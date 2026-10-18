@@ -232,23 +232,25 @@ variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ
 /-- Stripping type annotations the kernel checked does not change a translation, up to defeq. -/
 theorem TrExprS.consumeTypeAnnotations' {e e'} (hok : env.StripOK e) (H : TrExprS env Us Δ e e') :
     ∃ e'', TrExprS env Us Δ e.consumeTypeAnnotations' e'' ∧
-      env.IsDefEqU Us.length Δ.toCtx e' e'' := by
+      env.IsDefEqU Us.length Δ.toCtx e' e'' ∧ ∀ n k, e'.Skips n k → e''.Skips n k := by
   have hΓ := hΔ.toCtx
   induction e using Lean.Expr.consumeTypeAnnotations'.induct generalizing e' with
   | case1 _ A _ ih | case2 _ A _ ih =>
     cases H with | app h1 h2 hf _ => cases hf with | app _ _ hc hA => cases hc with | const =>
     have := hok.1 _ _ _ [_, _] hΓ rfl ⟨_, h1.app h2⟩
-    obtain ⟨A'', h3, h4⟩ := ih hok.2 hA
-    exact ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
-      this.trans henv hΓ (by simpa using h4)⟩
+    obtain ⟨A'', h3, h4, h5⟩ := ih hok.2 hA
+    refine ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
+      this.trans henv hΓ (by simpa using h4), fun n k h => h5 n k ?_⟩
+    simp only [VExpr.skips_iff, VExpr.Skips'] at h ⊢; exact h.1.2
   | case3 _ A ih | case4 _ A ih =>
     cases H with | app h1 h2 hc hA => cases hc with | const =>
     have := hok.1 _ _ _ [_] hΓ rfl ⟨_, h1.app h2⟩
-    obtain ⟨A'', h3, h4⟩ := ih hok.2 hA
-    exact ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
-      this.trans henv hΓ (by simpa using h4)⟩
+    obtain ⟨A'', h3, h4, h5⟩ := ih hok.2 hA
+    refine ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
+      this.trans henv hΓ (by simpa using h4), fun n k h => h5 n k ?_⟩
+    simp only [VExpr.skips_iff, VExpr.Skips'] at h ⊢; exact h.2
   | case5 e h1 h2 h3 h4 =>
-    refine ⟨e', ?_, H.wf henv.ordered hΔ⟩
+    refine ⟨e', ?_, H.wf henv.ordered hΔ, fun _ _ h => h⟩
     unfold Lean.Expr.consumeTypeAnnotations'
     split <;> first | exact H | (exfalso; simp_all)
 

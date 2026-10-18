@@ -439,17 +439,25 @@ theorem inferProj.SS {S : Supp} {c₁ c₂ : Context} {s : State} {struct struct
     · rename_i I_val
       split
       · rename_i ctor hctor
-        split; · exact .failBind
+        by_cases h2 : (type.getAppArgs.size != I_val.numParams + I_val.numIndices) = true
+        · rw [if_pos h2, if_pos h2]; exact .failBind
+        rw [if_neg h2, if_neg h2]
         have hcS : S.const ctor := (hS.2.find _ _ hci hIS).2 ctor (by simp [hctor])
         refine (RecM.SS.liftExcept envGet.SWF (envGet_agree hA hcS)).bind fun ci' _ _ hci' => ?_
-        split; · exact .failBind
-        rename_i hlen
+        split <;> [rename_i cval; exact .fail (RecM.SWF.getLCtx .throw)]
+        by_cases h3 : idx ≥ cval.numFields
+        · rw [if_pos h3, if_pos h3]; exact .failBind
+        rw [if_neg h3, if_neg h3]
+        by_cases h4 : ((ConstantInfo.ctorInfo cval).levelParams.length != I_levels.length) = true
+        · rw [if_pos h4, if_pos h4]; exact .failBind
+        rw [if_neg h4, if_neg h4]
+        have hlen := h4
         let P r := SuppBelow c₁ (.proj typeName idx struct) r
         have hdP : Dom c₁ (.proj typeName idx struct) := hd
         have hP {s r} (wf : SuppState c₁ s) (h : P r) : Dom c₁ r := h.dom wf hdP
         have hfacts S (hS : S.Closed c₁) (h : (Expr.proj typeName idx struct).SuppIn S) :
             S.const I_name ∧ (∀ a ∈ type.getAppArgs, a.SuppIn S) ∧
-            (ci'.instantiateTypeLevelParams I_levels).SuppIn S := by
+            ((ConstantInfo.ctorInfo cval).instantiateTypeLevelParams I_levels).SuppIn S := by
           have h1 := hI S hS h
           have h2 : Expr.SuppIn S (.const I_name I_levels) := heq ▸ h1.getAppFn
           have h3 := (hS.2.find _ _ hci h2.1).2 ctor (by simp [hctor])

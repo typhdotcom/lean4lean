@@ -184,16 +184,24 @@ theorem tryEtaStructCore.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂
   refine (inferType.SWF h₂).bind fun _ _ _ ht₂ => .stateWF fun wf' => ?_
   refine (isDefEq.SWF (ht₁.dom wf h₁) (ht₂.dom wf' h₂)).bind fun _ _ _ _ => ?_
   split <;> [skip; exact .pure trivial]
+  refine (getSortLevel.SWF (ht₂.dom wf' h₂)).bind fun _ _ _ _ => ?_
   have hargs : ∀ a ∈ e₂.getAppArgs, Dom c a := fun a ha =>
     dom_iff.2 (Expr.SuppIn.getAppArgs (dom_iff.1 h₂) a ha)
   refine (RecM.SWF.forIn'_range (Inv := fun _ => True) (fun i hi b s _ => ?_) trivial).bind
     fun _ _ _ _ => ?_
   · dsimp only
-    refine (isDefEq.SWF (show Dom c (.proj _ _ e₁) from h₁) (hargs _ (Array.getElem_mem _))).bind
-      fun _ _ _ _ => ?_
     split
-    · exact .pure trivial
-    · exact .pure trivial
+    · refine (inferType.SWF (hargs _ (Array.getElem_mem _))).bind fun _ _ _ hty => ?_
+      refine .stateWF fun wf => (isProp.SWF (hty.dom wf (hargs _ (Array.getElem_mem _)))).bind
+        fun _ _ _ _ => ?_
+      split
+      · refine (isDefEq.SWF (show Dom c (.proj _ _ e₁) from h₁)
+          (hargs _ (Array.getElem_mem _))).bind fun _ _ _ _ => ?_
+        split <;> exact .pure trivial
+      · exact .pure trivial
+    · refine (isDefEq.SWF (show Dom c (.proj _ _ e₁) from h₁)
+        (hargs _ (Array.getElem_mem _))).bind fun _ _ _ _ => ?_
+      split <;> exact .pure trivial
   · dsimp only; split <;> exact .pure trivial
 
 theorem tryEtaStruct.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂ : Dom c e₂) :

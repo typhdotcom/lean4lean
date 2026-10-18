@@ -392,34 +392,6 @@ theorem OnCtx.of_append : ∀ {l Γ : List VExpr}, OnCtx (l ++ Γ) P → OnCtx �
   | [], _, h => h
   | _ :: l, _, h => OnCtx.of_append (l := l) h.1
 
-/-- Both halves of an application are well formed. `app_inv` gives the typings, which is more
-than a caller peeling a spine apart wants to name: this is the form that chains. -/
-theorem VExpr.WF.app_inv₂ (henv : VEnv.Ordered env) (hΓ : OnCtx Γ (env.IsType U)) {f a : VExpr}
-    (H : VExpr.WF env U Γ (f.app a)) : VExpr.WF env U Γ f ∧ VExpr.WF env U Γ a :=
-  let ⟨_, _, hf, ha⟩ := H.app_inv henv hΓ; ⟨⟨_, hf⟩, ⟨_, ha⟩⟩
-
-variable! (henv : VEnv.Ordered env) (hΓ : OnCtx Γ (env.IsType U)) in
-theorem VExpr.WF.appN_inv : ∀ {vs : List VExpr} {e},
-    VExpr.WF env U Γ (e.appN vs) → VExpr.WF env U Γ e
-  | [], _, h => h
-  | v :: vs, e, h =>
-    let ⟨_, _, h, _⟩ := (VExpr.WF.appN_inv (vs := vs) (e := e.app v) h).app_inv henv hΓ
-    ⟨_, h⟩
-
-/-- Congruence for `appN`: the arguments' typings come from the application being well formed, so
-no separate hypothesis about them is needed. -/
-theorem VEnv.IsDefEqU.appN {env : VEnv} (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U)) :
-    ∀ {vs : List VExpr} {f g}, env.IsDefEqU U Γ f g → VExpr.WF env U Γ (f.appN vs) →
-      env.IsDefEqU U Γ (f.appN vs) (g.appN vs) := by
-  intro vs
-  induction vs with
-  | nil => intro _ _ h _; exact h
-  | cons v vs ih =>
-    intro f g h hwf
-    obtain ⟨A, B, hf, hv⟩ :=
-      (VExpr.WF.appN_inv henv.ordered hΓ (vs := vs) (e := f.app v) hwf).app_inv henv.ordered hΓ
-    exact ih ⟨_, (h.of_l henv hΓ hf).appDF hv⟩ hwf
-
 /-- The arguments a lambda telescope is closed at, each typed at its own binder's domain under
 the substitution built so far. This is the shape the induction over `lams` produces and consumes,
 which is why it is a relation rather than a `Forall₂`: the domain of the `i`th binder is
@@ -521,21 +493,6 @@ theorem VEnv.HasType.appN_forallEs {env : VEnv} {U} {Γ : List VExpr} :
     have h := VEnv.HasType.app hf hv
     rwa [show ((VExpr.forallEs As T).subst σ.lift).inst _ = (VExpr.forallEs As T).subst (σ.cons _)
       from by rw [VExpr.inst_eq, VExpr.subst_subst, VExpr.Subst.lift_comp_one]] at h
-
-/-- Congruence for a whole application spine, arguments included. `IsDefEqU.appN` covers only the
-function; the typings each step needs come from the application's own well-typedness, the same
-way `TrExprS.appN` gets them. -/
-theorem VEnv.IsDefEqU.appN' {env : VEnv} {U Γ} (henv : VEnv.WF env)
-    (hΓ : OnCtx Γ (env.IsType U)) :
-    ∀ {xs ys : List VExpr} {f f'}, env.IsDefEqU U Γ f f' →
-      List.Forall₂ (env.IsDefEqU U Γ) xs ys →
-      VExpr.WF env U Γ (f.appN xs) →
-      env.IsDefEqU U Γ (f.appN xs) (f'.appN ys)
-  | [], _, _, _, hf, h, _ => by cases h; exact hf
-  | x :: xs, y :: ys, f, f', hf, .cons hx hxs, hwf =>
-    have ⟨_, _, hfT, hxT⟩ := (VExpr.WF.appN_inv (vs := xs) henv hΓ hwf).app_inv henv hΓ
-    VEnv.IsDefEqU.appN' henv hΓ (f := f.app x) (f' := f'.app y)
-      ⟨_, (hf.of_l henv hΓ hfT).appDF (hx.of_l henv hΓ hxT)⟩ hxs hwf
 
 /-- The converse of `appN_inv`: an application's translation is the head's applied to the
 arguments', *given* that the result is well typed. The typings `TrExprS.app` needs at each step

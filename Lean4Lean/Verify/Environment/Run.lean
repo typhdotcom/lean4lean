@@ -193,18 +193,6 @@ theorem VEnv.IsDefEq.foralls_congr {env : VEnv} {U : Nat} {e₁ e₂ : VExpr} :
     let ⟨_, ih⟩ := VEnv.IsDefEq.foralls_congr t (by simpa using h)
     ⟨_, .forallEDF hA ih⟩
 
-theorem List.Forall₂.getElem?_r {R : α → β → Prop} : ∀ {l₁ l₂} {j : Nat} {b : β},
-    List.Forall₂ R l₁ l₂ → l₂[j]? = some b → ∃ a, l₁[j]? = some a ∧ R a b
-  | _, _, _, _, .nil, e => by simp at e
-  | _, _, 0, _, .cons h _, e => by cases e; exact ⟨_, rfl, h⟩
-  | _ :: _, _ :: _, j + 1, _, .cons _ t, e => List.Forall₂.getElem?_r (j := j) t (by simpa using e)
-
-theorem List.Forall₂.getElem?_l {R : α → β → Prop} : ∀ {l₁ l₂} {j : Nat} {a : α},
-    List.Forall₂ R l₁ l₂ → l₁[j]? = some a → ∃ b, l₂[j]? = some b ∧ R a b
-  | _, _, _, _, .nil, e => by simp at e
-  | _, _, 0, _, .cons h _, e => by cases e; exact ⟨_, rfl, h⟩
-  | _ :: _, _ :: _, j + 1, _, .cons _ t, e => List.Forall₂.getElem?_l (j := j) t (by simpa using e)
-
 namespace VExpr
 
 /-- The arguments of an application spine. -/
@@ -241,11 +229,6 @@ theorem foralls_inj : ∀ {xs ys : List VExpr} {X Y : VExpr}, X.NotPi → Y.NotP
 
 end VExpr
 
-theorem VEnv.TeleDefEq.length_eq {env : VEnv} {U : Nat} : ∀ {Γ As Bs},
-    env.TeleDefEq U Γ As Bs → As.length = Bs.length
-  | _, [], [], .nil => rfl
-  | _, _ :: _, _ :: _, .cons _ h => congrArg (· + 1) h.length_eq
-
 namespace VInductDecl
 variable {d : VInductDecl} {venv : VEnv}
 
@@ -268,14 +251,6 @@ theorem Positive.defeq (henv : venv.WF) {Γ} (hΓ : OnCtx Γ (venv.IsType d.uvar
   | app hT hlen h1 his => exact .app hT hlen (h.symm.trans henv hΓ h1) his
 
 end VInductDecl
-
-theorem List.forall₂_of_getElem? {R : α → β → Prop} : ∀ {l₁ : List α} {l₂ : List β},
-    l₁.length = l₂.length → (∀ (j : Nat) a b, l₁[j]? = some a → l₂[j]? = some b → R a b) →
-    List.Forall₂ R l₁ l₂
-  | [], [], _, _ => .nil
-  | a :: l₁, b :: l₂, hl, H =>
-    .cons (H 0 a b rfl rfl) (List.forall₂_of_getElem? (by simpa using hl)
-      fun j a b h₁ h₂ => H (j + 1) a b h₁ h₂)
 
 theorem insertConsts_find?_none {cis : List ConstantInfo} {C : ConstMap} {name : Name}
     (hC : C.WF) (hfr : ∀ ci ∈ cis, C.find? ci.name = none) (hnd : (cis.map (·.name)).Nodup)
@@ -408,7 +383,7 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
       split
       · rw [if_pos (by simp [h₀])]; exact fail
       · exact fail
-    obtain ⟨ty', hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv' hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv' hΔ hok hdom
     have htyT : c.venv.IsType c.lparams.length c.mlctx.vlctx.toCtx ty' :=
       hdomT.defeqU_l henv' hΓ hdefty
     obtain ⟨u, hdomS⟩ := hdomT
@@ -711,7 +686,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
       rw [List.take_of_length_le (Nat.le_refl _)] at hΔ htele hT
       refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
       have hΓ := hΔs.toCtx
-      obtain ⟨tys, hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv' hΔs hok hdom
+      obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv' hΔs hok hdom
       have htyT : c.venv.IsType c.lparams.length Δs.toCtx tys := hdomT.defeqU_l henv' hΓ hdefty
       obtain ⟨u, hdomS⟩ := hdomT
       have hdomty := hdefty.of_l henv' hΓ hdomS
@@ -1224,6 +1199,7 @@ inductive FieldsElab (venv : VEnv) (d : VInductDecl) : List VExpr → Nat → Li
   | nil : FieldsElab venv d Γ k [] []
   | cons :
     venv.IsDefEqU d.uvars Γ D f.type →
+    (∀ j, D.Skips 1 j → f.type.Skips 1 j) →
     venv.HasType d.uvars Γ f.type (.sort f.level) →
     f.level.WF d.uvars →
     d.RecArgWF venv Γ k f →
@@ -1263,13 +1239,25 @@ theorem FieldsWF.of_checked {venv : VEnv} {d : VInductDecl} (henv : venv.WF) {Γ
     (H2 : FieldsElab venv d Γ k Ds fs) : d.FieldsWF venv Γ k Ds fs := by
   induction H2 with
   | nil => exact .nil
-  | cons hD hf hl hra _ ih =>
+  | cons hD _ hf hl hra _ ih =>
     cases H1 with
     | cons hu hpos hrest =>
     obtain ⟨u, hDu, hb⟩ := hu
     have hDf := hD.of_l henv hΓ hDu
     exact .cons hD hf hl ⟨u, hDf.hasType.2, hb⟩ (fun h => (hpos h).defeq henv hΓ hD) hra
       (ih ⟨hΓ, _, hf⟩ (hrest.defeqDFC henv.ordered (.succ .zero hDf)))
+
+theorem FieldsElab.within {venv : VEnv} {d : VInductDecl} {Γ k Ds fs}
+    (H : FieldsElab venv d Γ k Ds fs) :
+    ∀ (i : Nat) (D : VExpr) (f : VField), Ds[i]? = some D → fs[i]? = some f →
+      ∀ j, D.Skips 1 j → f.type.Skips 1 j := by
+  induction H with
+  | nil => simp
+  | cons _ hw _ _ _ _ ih =>
+    intro i D f hD hf
+    cases i with
+    | zero => simp at hD hf; subst hD hf; exact hw
+    | succ i => exact ih i D f (by simpa using hD) (by simpa using hf)
 
 /-- A constructor that `checkConstructors` checked, as `mkRecInfos` elaborated it. -/
 theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {d : VInductDecl}
@@ -1300,7 +1288,7 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   simp only [List.append_nil] at hctx
   have hFW := FieldsWF.of_checked henv (by simpa using hparams.onCtx trivial)
     (hfc.defeqDFC henv.ordered hctx) hfe
-  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW⟩, ⟨hidx.trans hnidx, hmen⟩,
+  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within⟩, ⟨hidx.trans hnidx, hmen⟩,
     VInductDecl.FieldsWF.projFields henv hparams hFW⟩, by rw [har, hps, hDs]⟩
   rw [hty, hname, hU, hnp, hDs]
 
@@ -1545,6 +1533,14 @@ theorem params_size {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
   obtain ⟨_, _, fvs, h1, h2⟩ := hT.paramsCtx
   rw [← Array.length_toList, h2, List.length_map, h1.length_eq, hT.nparams]
 
+theorem arity_leadingForalls : ∀ (e : Expr) (i : Nat),
+    declareConstructors.arity i e = e.leadingForalls + i
+  | .forallE _ _ b _, i => by
+    rw [declareConstructors.arity, arity_leadingForalls b]; simp [Expr.leadingForalls]; omega
+  | .bvar .., _ | .fvar .., _ | .mvar .., _ | .sort .., _ | .const .., _ | .app .., _ | .lam .., _
+  | .letE .., _ | .lit .., _ | .mdata .., _ | .proj .., _ => by
+    simp [declareConstructors.arity, Expr.leadingForalls]
+
 theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     {isUnsafe : Bool} (hsafety : c.safety = inductSafety isUnsafe)
@@ -1580,9 +1576,12 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
   subst hv'
   obtain ⟨-, har⟩ := ctor_WF henvAx hU hlen hps hname rfl
     (hC hcompat j t ht ct (List.mem_of_getElem? hct) _ (hR.nindices j T hTj)) hrel
-  refine ⟨⟨T, hTj, hc', hrel.1.symm, rfl, hname.symm, hlen.symm, ?_, hR.isUnsafe.symm⟩, ?_, ?_, ?_⟩
+  refine ⟨⟨T, hTj, hc', hrel.1.symm, rfl, hname.symm, hlen.symm, ?_, hR.isUnsafe.symm, ?_⟩,
+    ?_, ?_, ?_⟩
   · show declareConstructors.arity 0 ct.type - nparams = c'.fields.length
     omega
+  · show ct.type.leadingForalls = _
+    have := arity_leadingForalls ct.type 0; omega
   · rw [hsafety]
     simp only [ConstantInfo.safety, ConstantInfo.isUnsafe, ConstantInfo.isPartial, ctorVal]
     cases isUnsafe <;> exact DefinitionSafety.le_rfl

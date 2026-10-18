@@ -1,4 +1,5 @@
 import Lean4Lean.Verify.TypeChecker.Reduce
+import Lean4Lean.Verify.TypeChecker.Proj
 import Lean4Lean.Verify.EquivManager
 
 open Lean4Lean
@@ -39,10 +40,6 @@ theorem inferFVar.WF {c : VContext} :
   let ⟨e', ty', h1, _, h2, _, h3⟩ :=
     c.trlctx.find?_of_mem c.Ewf (List.mem_of_find?_eq_some h)
   exact ⟨_, _, h2, .fvar h1, h3, c.Δwf.find?_wf c.Ewf h1⟩
-
-theorem envGet.WF {c : VContext} :
-    (c.env.get name).WF fun ci => c.env.find? name = some ci := by
-  simp [Environment.get]; split <;> [refine .pure ‹_›; exact .throw]
 
 theorem inferConstant.WF {c : VContext}
     (H : ∀ l ∈ ls, l.hasMVar' = false)
@@ -385,11 +382,6 @@ theorem inferLet.WF
   refine (c.withMLC_self ▸ inferLet.loop.WF (Nat.zero_le _) [] rfl rfl rfl rfl rfl ?_ hr) hinf
   exact fun P hP he => ⟨(AllAbove.wf wf.trctx.wf.fvwf).2 hP, he.mono fun _ h _ => h, fun _ => id⟩
 
-theorem inferProj.WF
-    (he : c.TrExprS e e') (hty : c.TrExprS ety ety') (hasty : c.HasType e' ty') :
-    (inferProj st i e ety).WF c s fun ty _ =>
-      ∃ ty', c.TrTyping (.proj st i e) ty e' ty' := sorry
-
 theorem literal_is_primitive (H : n = ``Nat ∨ n = ``Char.ofNat ∨ n = ``String.ofList)  :
     Environment.primitives.contains n := by
   simp [Environment.primitives, NameSet.ofList]
@@ -457,7 +449,7 @@ theorem inferType'.WF
     exact hF ⟨hb, .mdata h1, h⟩
   · refine (inferType'.WF (by exact h1) ?_).bind fun _ _ _ ⟨_, _, hb, h1, h2, h3⟩ => ?_
     · exact fun h => let ⟨_, .proj h ..⟩ := hinf h; ⟨_, h⟩
-    exact (inferProj.WF h1 h2 h3).bind fun ty _ _ ⟨ty', h⟩ => hF h
+    exact (inferProj.WF' h1 h2 h3 hb).bind fun ty _ _ ⟨ty', h⟩ => hF h
   · exact .readThe <| (M.WF.liftExcept inferFVar.WF).lift.bind fun _ _ _ ⟨_, _, h⟩ => hF h
   · exact .throw
   · rename_i h _; simp [Expr.hasLooseBVars, Expr.looseBVarRange'] at h

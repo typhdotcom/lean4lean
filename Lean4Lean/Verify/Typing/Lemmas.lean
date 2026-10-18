@@ -1602,6 +1602,92 @@ theorem TrExpr.instL (H : TrExpr env ps Δ e e') :
 
 end
 
+/-- Local contexts of the same shape whose types and values agree up to universe levels. -/
+inductive VLCtx.EqUpToLevels (U : Nat) : VLCtx → VLCtx → Prop
+  | nil : VLCtx.EqUpToLevels U [] []
+  | vlam : VLCtx.EqUpToLevels U Δ₁ Δ₂ → VEnv.EqUpToLevels U A₁ A₂ →
+    VLCtx.EqUpToLevels U ((ofv, .vlam A₁) :: Δ₁) ((ofv, .vlam A₂) :: Δ₂)
+  | vlet : VLCtx.EqUpToLevels U Δ₁ Δ₂ → VEnv.EqUpToLevels U A₁ A₂ → VEnv.EqUpToLevels U v₁ v₂ →
+    VLCtx.EqUpToLevels U ((ofv, .vlet A₁ v₁) :: Δ₁) ((ofv, .vlet A₂ v₂) :: Δ₂)
+
+theorem VLCtx.EqUpToLevels.find? {U : Nat} :
+    ∀ {Δ₁ Δ₂ : VLCtx}, VLCtx.EqUpToLevels U Δ₁ Δ₂ → ∀ {v e₁ A₁ e₂ A₂},
+      Δ₁.find? v = some (e₁, A₁) → Δ₂.find? v = some (e₂, A₂) → VEnv.EqUpToLevels U e₁ e₂
+  | _, _, .nil, _, _, _, _, _, h, _ => nomatch h
+  | _, _, @vlam _ _ _ _ _ ofv H _, v, _, _, _, _, h1, h2 => by
+    simp only [VLCtx.find?] at h1 h2
+    split at h1 <;> rename_i h <;> rw [h] at h2
+    · cases h1; cases h2; exact .bvar
+    · simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq,
+        Prod.mk.injEq] at h1 h2
+      obtain ⟨⟨_, _⟩, h1, rfl, rfl⟩ := h1
+      obtain ⟨⟨_, _⟩, h2, rfl, rfl⟩ := h2
+      exact (H.find? h1 h2).weakN
+  | _, _, @vlet _ _ _ _ _ _ _ ofv H _ hv, v, _, _, _, _, h1, h2 => by
+    simp only [VLCtx.find?] at h1 h2
+    split at h1 <;> rename_i h <;> rw [h] at h2
+    · cases h1; cases h2; exact hv
+    · simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq,
+        Prod.mk.injEq] at h1 h2
+      obtain ⟨⟨_, _⟩, h1, rfl, rfl⟩ := h1
+      obtain ⟨⟨_, _⟩, h2, rfl, rfl⟩ := h2
+      exact (H.find? h1 h2).weakN
+
+/-- The translation of a term with its universe parameters instantiated agrees up to universe
+levels with the instantiation of the term's translation. -/
+theorem TrExprS.instL_eqUpTo {Us ps : List Name} {ls : List Level} {ls' : List VLevel}
+    (Hls : ls.mapM (VLevel.ofLevel Us) = some ls') (eq : ps.length = ls.length)
+    {Δ₁ Δ₂ : VLCtx} {e : Expr} {e' X : VExpr} (H1 : TrExprS env ps Δ₁ e e')
+    (H2 : TrExprS env Us Δ₂ (e.instantiateLevelParams ps ls) X)
+    (hΔ : VLCtx.EqUpToLevels Us.length (Δ₁.instL ls') Δ₂) :
+    EqUpToLevels Us.length (e'.instL ls') X := by
+  simp only [Expr.instantiateLevelParams_eq] at H2
+  generalize (_ && _) = red, eqF : (fun x : Name => _) = F at H2
+  have Hls' := VLevel.WF.of_mapM_ofLevel Hls
+  induction H1 generalizing Δ₂ X with
+  | bvar h1 => cases H2 with | bvar h2 => exact hΔ.find? (VLCtx.find?_instL h1) h2
+  | fvar h1 => cases H2 with | fvar h2 => exact hΔ.find? (VLCtx.find?_instL h1) h2
+  | sort h1 =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | sort h2 =>
+    have ⟨_, a1, a2⟩ := substParams_wf Hls eq eqF red h1
+    cases a1.symm.trans h2
+    exact .sort (.inst Hls') (.of_ofLevel h2) a2.symm
+  | const h1 h2 h3 =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | const _ h2' _ =>
+    have ⟨_, a1, a2⟩ := substParams_wf_list Hls eq eqF red h2
+    cases a1.symm.trans h2'
+    refine .const ?_ (.of_mapM_ofLevel h2') (List.Forall₂.flip (Lean4Lean.List.Forall₂.imp
+      (fun _ _ h => h.symm) a2))
+    simp only [List.mem_map]; rintro _ ⟨_, _, rfl⟩; exact .inst Hls'
+  | app _ _ _ _ ih1 ih2 =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | app _ _ a3 a4 => exact .app (ih1 hΔ a3) (ih2 hΔ a4)
+  | lam _ _ _ ih1 ih2 =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | lam _ a2 a3 =>
+    have e1 := ih1 hΔ a2
+    exact .lam e1 (ih2 (.vlam hΔ e1) a3)
+  | forallE _ _ _ _ ih1 ih2 =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | forallE _ _ a3 a4 =>
+    have e1 := ih1 hΔ a3
+    exact .forallE e1 (ih2 (.vlam hΔ e1) a4)
+  | letE _ _ _ _ ih1 ih2 ih3 =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | letE _ a2 a3 a4 =>
+    exact ih3 (.vlet hΔ (ih1 hΔ a2) (ih2 hΔ a3)) a4
+  | lit _ _ ih =>
+    cases H2 with | lit _ a2 =>
+    exact ih hΔ (Expr.instantiateLevelParamsCore_eq_self Literal.toConstructor_hasLevelParam ▸ a2 :)
+  | mdata _ ih =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | mdata a1 => exact ih hΔ a1
+  | proj _ _ ih =>
+    simp only [Expr.instantiateLevelParamsCore'] at H2
+    cases H2 with | proj a1 _ => exact .proj (ih hΔ a1)
+
 theorem TrExprS.abstract (W : VLCtx.Abstract Δ₀ v₀ d₀ dk k Δ₁ Δ) (H : TrExprS env Us Δ₁ e e') :
     TrExprS env Us Δ (e.abstract1 v₀ dk) e' := by
   induction H generalizing dk k Δ with
@@ -1929,6 +2015,26 @@ theorem FVarsBelow.rfl : FVarsBelow Δ e e := fun _ _ => id
 
 theorem FVarsBelow.trans (H1 : FVarsBelow Δ e₁ e₂) (H2 : FVarsBelow Δ e₂ e₃) :
     FVarsBelow Δ e₁ e₃ := fun _ h => H2 _ h ∘ H1 _ h
+
+theorem TrExprS.mkAppRevList_inv {env : VEnv} {Us : List Name} {Δ : VLCtx} {f : Expr} :
+    ∀ {rs : List Expr} {e'}, TrExprS env Us Δ (f.mkAppRevList rs) e' →
+    ∃ f' rs', e' = f'.appN rs'.reverse ∧ TrExprS env Us Δ f f' ∧
+      List.Forall₂ (TrExprS env Us Δ) rs rs'
+  | [], _, h => ⟨_, [], rfl, h, .nil⟩
+  | _ :: _, _, h => by
+    cases h with
+    | app _ _ h1 h2 =>
+      obtain ⟨f', rs', rfl, hf, hrs⟩ := mkAppRevList_inv h1
+      exact ⟨f', _ :: rs', by simp [VExpr.appN_append, VExpr.appN], hf, .cons h2 hrs⟩
+
+theorem TrExprS.mkAppList_inv {env : VEnv} {Us : List Name} {Δ : VLCtx} {f : Expr}
+    {as : List Expr} {e'} (h : TrExprS env Us Δ (f.mkAppList as) e') :
+    ∃ f' as', e' = f'.appN as' ∧ TrExprS env Us Δ f f' ∧
+      List.Forall₂ (TrExprS env Us Δ) as as' := by
+  rw [← Expr.mkAppRevList_reverse] at h
+  obtain ⟨f', rs', rfl, hf, hrs⟩ := mkAppRevList_inv h
+  refine ⟨f', rs'.reverse, rfl, hf, ?_⟩
+  simpa using (Lean4Lean.List.Forall₂.reverse (R := TrExprS env Us Δ)).2 hrs
 
 def TrTyping (env : VEnv) (Us : List Name) (Δ : VLCtx) (e A : Expr) (e' A' : VExpr) : Prop :=
   FVarsBelow Δ e A ∧ TrExprS env Us Δ e e' ∧ TrExprS env Us Δ A A' ∧

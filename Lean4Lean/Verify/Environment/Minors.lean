@@ -54,7 +54,7 @@ theorem isRecArg.loop.WF {X : Name → Prop} {pre : List Name} {stats : Inductiv
     have hΓ := hΔ.toCtx
     refine WF.bind hsub.consumeTypeAnnotations fun dom_s hds => ?_
     obtain ⟨rfl, hok⟩ := hds
-    obtain ⟨ty', hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
     have htyT : cs.IsType ty' := hdomT.defeqU_l henv hΓ hdefty
     obtain ⟨wf, hsub'⟩ := hsub.push (name := name) (bi := bi) hty htyT
     refine WF.withLocalDecl (hsub.trExprS hty) (hsub.isType htyT) ?_
@@ -343,7 +343,7 @@ theorem isRecArg.loop.noOcc {X : Name → Prop} {pre : List Name} {stats : Induc
     have hΓ := hΔ.toCtx
     refine WF.bind hsub.consumeTypeAnnotations fun dom_s hds => ?_
     obtain ⟨rfl, hok⟩ := hds
-    obtain ⟨ty', hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
     have htyT : cs.IsType ty' := hdomT.defeqU_l henv hΓ hdefty
     obtain ⟨wf, hsub'⟩ := hsub.push (name := name) (bi := bi) hty htyT
     refine WF.withLocalDecl (hsub.trExprS hty) (hsub.isType htyT) ?_
@@ -504,6 +504,8 @@ structure CtorArgsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
       TrExprS cT.venv cT.lparams Mf.vlctx t (.foralls (Ds.drop fvs.length) R))
   fields : ∀ j D fty, Ds[j]? = some D → ftys[j]? = some fty →
     cT.venv.IsDefEqU cT.lparams.length ((ftys.take j).reverse ++ params.reverse) D fty
+  within : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty →
+    ∀ i, D.Skips 1 i → fty.Skips 1 i
   /-- The view `N₀` of the kernel's context, with the fields pushed. -/
   comp : ∃ N ρN, Ext N cb ρN ∧
     VLCtx.FVLift' (Mf.instL (VLevel.shift pre.length cT.lparams.length)).vlctx N.vlctx 0
@@ -607,7 +609,8 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
       have hbody' := TrExprS.inst_fvar_defeq henv hΔ' (hAB.of_l henv hΓ hpsS) hbody
       rw [← Lean.Expr.instantiate1_eq] at hbody'
       refine ih _ (i + 1) [] [] [] Mp hMf cb ρ
-        ⟨hI.tele, hI.base, hI.sub, hI.pred, hI.fvars, hI.rsLen, hI.le, ?_, ?_, hI.fields, hI.comp,
+        ⟨hI.tele, hI.base, hI.sub, hI.pred, hI.fvars, hI.rsLen, hI.le, ?_, ?_, hI.fields, hI.within,
+          hI.comp,
           fun hz => let ⟨h1, h2, h3⟩ := hI.free hz; ⟨spineIn_inst1 trivial h1.2, h2, h3⟩,
           fun h => absurd h (by omega), fun hp0 => absurd hi (by omega)⟩
       · rw [Lean.Expr.instantiate1_eq, declareConstructors.arity_instantiate1']; omega
@@ -636,7 +639,7 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
       have hΓ := hΔ.toCtx
       refine WF.bind hI.sub.consumeTypeAnnotations fun dom_s hds => ?_
       obtain ⟨rfl, hok⟩ := hds
-      obtain ⟨ty', hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+      obtain ⟨ty', hty, hdefty, hwty⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
       have htyT : (cT.small Mf hMf).IsType ty' := hdomT.defeqU_l henv hΓ hdefty
       obtain ⟨N, ρN, hE, hW, hNT, hNk, hNb⟩ := hI.comp
       obtain ⟨wf, hsub', hE', hW'⟩ := hI.sub.push_ext (name := name) (bi := bi) hE hW hty htyT
@@ -674,7 +677,8 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
       refine ih _ _ _ (ftys ++ [ty']) _ _ wf _ _
         ⟨?_, hbase', hsub',
           hP _ _ _ _ _ _ _ hI.pred, ?_, by simp [hI.rsLen], by simp; omega, ?_, .inr ⟨by simp; omega, ?_⟩,
-          fun j D fty hD hf => ?_, ⟨_, _, hE', by rw [List.length_append, List.length_singleton]; exact hW',
+          fun j D fty hD hf => ?_, fun j D fty hD hf => ?_,
+          ⟨_, _, hE', by rw [List.length_append, List.length_singleton]; exact hW',
           ?_, by simp [TypeChecker.MLCtx.length]; omega, ?_⟩, ?_, fun h => absurd h (by omega), ?_⟩
       · simpa using hI.tele.vlam
       · show VLCtx.fvars (_ :: cb.mlctx.vlctx) = _
@@ -698,6 +702,18 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
           have : (cT.small Mf hMf).vlctx.toCtx = ftys.reverse ++ params.reverse := by
             show Mf.vlctx.toCtx = _; simp [hmtele]
           rw [← this]; exact hdefty
+      · rcases Nat.lt_or_ge j ftys.length with hj | hj
+        · rw [List.getElem?_append_left hj] at hf
+          exact hI.within j D fty hD hf
+        · rw [List.getElem?_append_right hj] at hf
+          obtain ⟨hj0, rfl⟩ : j - ftys.length = 0 ∧ ty' = fty := by
+            cases h : j - ftys.length <;> simp_all
+          have hjf : j = ftys.length := by omega
+          subst hjf
+          have hfl : ftys.length = fvs.length := by
+            have := hI.tele.length_eq; simp [hlenp] at this; omega
+          rw [hfl, List.getElem?_eq_getElem hn] at hD; cases hD
+          exact fun i h => hwty 1 i h
       · have hfl : ftys.length = fvs.length := by
           have := hI.tele.length_eq; simp [hlenp] at this; omega
         have := hNT.vlam (fv := ⟨cb.ngen.curr⟩) (name := name) (ty := dom.consumeTypeAnnotations')
@@ -934,7 +950,7 @@ theorem loopUArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       show Mx.vlctx.toCtx = _; simp [hI.tele.toCtx]
     refine WF.bind hI.sub.consumeTypeAnnotations fun dom_s hds => ?_
     obtain ⟨rfl, hok⟩ := hds
-    obtain ⟨ty', hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
+    obtain ⟨ty', hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv hΔ hok hdom
     have htyT : (cT.small Mx hMx).IsType ty' := hdomT.defeqU_l henv hΓ hdefty
     obtain ⟨N, ρN, hE, hW, hNT, hNk, hNb⟩ := hI.comp
     obtain ⟨wf, hsub', hE', hW'⟩ := hI.sub.push_ext (name := name) (bi := bi) hE hW hty htyT
@@ -2243,6 +2259,9 @@ structure CtorOut (cT : VContext) (pre : List Name) (params : List VExpr) (d₀ 
   defeq : ∀ k D f, Ds[k]? = some D → c.fields[k]? = some f →
     cT.venv.IsDefEqU cT.lparams.length
       (((c.fields.take k).map (·.type)).reverse ++ params.reverse) D f.type
+  /-- A field's view mentions no variable its declared domain does not. -/
+  within : ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+    ∀ j, D.Skips 1 j → f.type.Skips 1 j
   sort : ∀ k f, c.fields[k]? = some f →
     cT.venv.HasType cT.lparams.length
       (((c.fields.take k).map (·.type)).reverse ++ params.reverse) f.type (.sort f.level) ∧
@@ -2398,6 +2417,7 @@ theorem ctorMinor.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       arity := by simpa using harity
       tr := ?tr
       fields := by simp
+      within := by simp
       comp := ⟨Mmin, ρmin, hEmin, hWmin, by simpa using hMminT, ⟨Nat.zero_le _, rfl⟩⟩
       free := fun hz => ⟨hz, nofun, hS.MpB⟩
       start := fun _ => rfl
@@ -2736,12 +2756,16 @@ theorem ctorMinor.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       exact this
   have htake : ∀ k, (c.fields.take k).map (·.type) = ftys.take k := fun k => by
     rw [List.map_take, hU.types]
-  refine H _ _ _ c _ _ _ _ _ ⟨hcn', hcty, hcidx, by rw [hcl, hfD], ?_, ?_, ?_, hU.ctor, ?_, ?_⟩
+  refine H _ _ _ c _ _ _ _ _ ⟨hcn', hcty, hcidx, by rw [hcl, hfD], ?_, ?_, ?_, ?_, hU.ctor, ?_, ?_⟩
     (hsubP.skip _ _) (hEm2.push htrM hTM) (hP _ _ _ _ _ _ _ hP2) ⟨_, hP2, rfl⟩ ?kd
   · intro k D f hD hk
     obtain ⟨hkl, hft, -⟩ := hfget k f hk
     rw [htake, hft]
     exact hI.fields k D _ hD (List.getElem?_eq_getElem hkl)
+  · intro k D f hD hk
+    obtain ⟨hkl, hft, -⟩ := hfget k f hk
+    rw [hft]
+    exact hI.within k D _ hD (List.getElem?_eq_getElem hkl)
   · intro k f hk
     obtain ⟨hkl, hft, hfl'⟩ := hfget k f hk
     rw [htake, hft, hfl']

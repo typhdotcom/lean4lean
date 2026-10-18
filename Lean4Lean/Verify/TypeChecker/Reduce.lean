@@ -142,7 +142,64 @@ theorem reduceNat.WF {c : VContext} (he : c.TrExprS e e') :
 
 theorem reduceProjCore.WF (he : c.TrExprS (.proj n i e) e') :
     RecM.WF c s (reduceProjCore n i e) fun oe _ =>
-      ∀ e₁, oe = some e₁ → c.FVarsBelow (.proj n i e) e₁ ∧ c.TrExpr e₁ e' := sorry
+      ∀ e₁, oe = some e₁ → c.FVarsBelow (.proj n i e) e₁ ∧ c.TrExpr e₁ e' := by
+  have .proj (e' := s') a1 a2 := he
+  -- the projection of any structure term translating to something defeq to `s'`
+  have H (c₀ : Expr) (s₀ : VState) (sC : VExpr) (hb : c.FVarsBelow e c₀) (htr : c.TrExprS c₀ sC)
+      (hdf : c.IsDefEqU sC s') : RecM.WF c s₀ (c₀.withApp fun mk args => do
+        let .const mkC _ := mk | return none
+        let env ← getEnv
+        let .ctorInfo mkInfo ← env.get mkC | return none
+        if mkInfo.induct != n then return none
+        if args.size != mkInfo.numParams + mkInfo.numFields then return none
+        return args[mkInfo.numParams + i]?) fun oe _ =>
+          ∀ e₁, oe = some e₁ → c.FVarsBelow (.proj n i e) e₁ ∧ c.TrExpr e₁ (.proj n i s') := by
+    rw [Expr.withApp_eq]
+    split <;> [rename_i mkC us hmk; exact .pure nofun]
+    refine .getEnv <| (M.WF.liftExcept envGet.WF).lift.bind fun ci _ _ hci => ?_
+    split <;> [rename_i mkInfo; exact .pure nofun]
+    split <;> [exact .pure nofun; rename_i hind]
+    split <;> [exact .pure nofun; rename_i hsize]
+    refine .pure fun a ha => ?_
+    simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hind hsize
+    have hc₀ := Expr.mkAppRevList_getAppArgsRevList c₀
+    rw [hmk] at hc₀
+    rw [Expr.getAppArgs_eq_rev, List.getElem?_toArray] at ha
+    have hmem : a ∈ (Expr.getAppArgsRevList c₀) := by
+      have := List.mem_of_getElem? ha
+      simpa using this
+    refine ⟨fun P hP hfv => ?_, ?_⟩
+    · have := hb P hP hfv
+      rw [← hc₀, FVarsIn.mkAppRevList] at this
+      exact this.2 a hmem
+    · rw [← hc₀] at htr
+      obtain ⟨f', rs', rfl, hf', hrs⟩ := htr.mkAppRevList_inv
+      let .const hcs hls' hlen' := hf'
+      have mapWF := c.trenv.map_wf
+      obtain ⟨hname, hsafe, -, -⟩ := c.trenv.find?_uniq hci hcs
+      rw [Kernel.Environment.find?, mapWF.find?'_eq_find?] at hci
+      obtain ⟨d, t, c', hs, hcv, -⟩ := c.trenv.ctorInfo hci hsafe
+      obtain ⟨T, ht, hcidx, hcn, -, -, hnp, hnf, -⟩ := hcv
+      rw [hind] at hs
+      have hmkC : mkInfo.name = mkC := hname
+      have hrs' := (Lean4Lean.List.Forall₂.reverse (R := TrExprS c.venv c.lparams c.vlctx)).2 hrs
+      obtain ⟨a', ha', hj⟩ := List.Forall₂.getElem?_l hrs' ha
+      have hlenargs : rs'.reverse.length = d.params.length + c'.fields.length := by
+        rw [← hnp, ← hnf, ← hsize, Expr.getAppArgs_eq_rev, List.size_toArray, List.length_reverse,
+          List.length_reverse, Lean4Lean.List.Forall₂.length_eq hrs]
+      have hpc := VExpr.WF.proj_congr c.Ewf c.Δwf.toCtx a2 hdf.symm
+      have hmc : mkC = c'.name := hmkC.symm.trans hcn
+      subst hmc
+      have := c.Ewf.proj_ctorApp c.Δwf.toCtx hs ht (List.mem_of_getElem? hcidx) hlenargs
+        (by rw [← hnp]; exact ha') (let ⟨_, h⟩ := hpc; ⟨_, h.hasType.2⟩)
+      exact ⟨a', hj, (this.symm.trans c.Ewf c.Δwf.toCtx hpc.symm)⟩
+  unfold reduceProjCore
+  dsimp only
+  split
+  · rename_i str
+    refine (whnf.WF (let .lit _ h := a1; h)).bind fun c₁ _ _ ⟨h1, sC, h2, h3⟩ => ?_
+    exact H c₁ _ sC (fun P hP _ => h1 P hP FVarsIn.strLitToConstructor) h2 h3
+  · exact H e _ s' .rfl a1 (a1.wf c.Ewf c.Δwf)
 
 theorem reduceProj.WF (he : c.TrExprS (.proj n i e) e') :
     RecM.WF c s (reduceProj n i e cheapProj) fun oe _ =>

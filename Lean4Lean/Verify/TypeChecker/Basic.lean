@@ -1,4 +1,5 @@
 import Lean4Lean.Verify.Environment.Lemmas
+import Lean4Lean.Verify.Environment.InductInfo
 import Lean4Lean.Verify.Typing.ConditionallyTyped
 import Lean4Lean.TypeChecker
 
@@ -318,6 +319,10 @@ structure Methods.WF (m : Methods) where
     (m.whnfCore e cheapProj).WF c s fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e'
   whnf : c.TrExprS e e' →
     (m.whnf e).WF c s fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e'
+  /-- A pi type is already in weak head normal form, and comes back as it is, without the
+  metadata around it. -/
+  whnf_forallE : e.consumeMData = .forallE n ty body bi →
+    (m.whnf e).WF c s fun e₁ _ => e₁ = .forallE n ty body bi
   inferType : e.FVarsIn (· ∈ c.vlctx.fvars) →
     (inferOnly = true → ∃ e', c.TrExprS e e') →
     (m.inferType e inferOnly).WF c s fun ty _ => ∃ e' ty', c.TrTyping e ty e' ty'
@@ -335,6 +340,10 @@ theorem M.WF.lift {c : VContext} {s : VState} {x : M α} {Q} (h : x.WF c s Q) :
     RecM.WF c s x Q := fun _ _ => h
 
 instance : Coe (M.WF c s x Q) (RecM.WF c s x Q) := ⟨M.WF.lift⟩
+
+theorem Inner.envGet.WF {c : VContext} :
+    (c.env.get name).WF fun ci => c.env.find? name = some ci := by
+  simp [Environment.get]; split <;> [refine .pure ‹_›; exact .throw]
 
 theorem RecM.WF.bind {c : VContext} {s : VState} {x : RecM α} {f : α → RecM β} {Q R}
     (h1 : x.WF c s Q) (h2 : ∀ a s', s ≤ s' → Q a s' → (f a).WF c s' R) : (x >>= f).WF c s R :=
@@ -362,6 +371,71 @@ theorem RecM.WF.throw {c : VContext} {s : VState} {Q} : (throw e : RecM α).WF c
 theorem RecM.WF.le {c : VContext} {s : VState} {Q R} {x : RecM α}
     (h1 : x.WF c s Q) (H : ∀ a s', s ≤ s' → Q a s' → R a s') :
     x.WF c s R := fun _ h => (h1 _ h).le H
+
+/-- Loop invariant rule for `for h : i in [n:m] do ...`, with an invariant indexed by the next
+position and a postcondition for an early `return`. -/
+theorem RecM.WF.forIn'_range' {c : VContext} {Inv : Nat → β → VState → Prop}
+    {Done : β → VState → Prop} :
+    ∀ {l : List Nat} {n : Nat} {f : (a : Nat) → a ∈ l → β → RecM (ForInStep β)} {b : β}
+      {s : VState}, l = List.range' n l.length →
+    (∀ a h b s, Inv a b s → (f a h b).WF c s fun r s' =>
+      (∀ b', r = .yield b' → Inv (a + 1) b' s') ∧ (∀ b', r = .done b' → Done b' s')) →
+    Inv n b s → (∀ b s, Inv (n + l.length) b s → Done b s) →
+    (ForIn'.forIn' l b f).WF c s Done
+  | [], n, _, b, s, _, _, h, hD => by simpa using RecM.WF.pure (hD b s (by simpa using h))
+  | a :: l, n, f, b, s, hl, H, h, hD => by
+    simp only [List.length_cons, List.range'_succ, List.cons.injEq] at hl
+    obtain ⟨rfl, hl⟩ := hl
+    rw [List.forIn'_cons]
+    refine (H a (.head _) b s h).bind fun r s' _ hr => ?_
+    cases r with
+    | done b' => exact .pure (hr.2 _ rfl)
+    | yield b' =>
+      exact RecM.WF.forIn'_range' hl (fun a' h' b s => H a' (.tail _ h') b s) (hr.1 _ rfl)
+        (fun b s h => hD b s (by simpa [Nat.add_assoc, Nat.add_comm 1] using h))
+
+theorem RecM.WF.forIn'_range {c : VContext} {Inv : Nat → β → VState → Prop}
+    {Done : β → VState → Prop} {n m : Nat}
+    {f : (a : Nat) → a ∈ [n:m] → β → RecM (ForInStep β)} {b : β} {s : VState}
+    (H : ∀ a h b s, Inv a b s → (f a h b).WF c s fun r s' =>
+      (∀ b', r = .yield b' → Inv (a + 1) b' s') ∧ (∀ b', r = .done b' → Done b' s'))
+    (h : Inv n b s) (hD : ∀ b s, Inv (max n m) b s → Done b s) :
+    (ForIn'.forIn' [n:m] b f).WF c s Done := by
+  rw [Std.Legacy.Range.forIn'_eq_forIn'_range']
+  refine RecM.WF.forIn'_range' (by simp) (fun a h' b s => H a _ b s) h fun b s h => hD b s ?_
+  simpa [Std.Legacy.Range.size, show n + (m - n) = max n m by omega] using h
+
+/-- Loop invariant rule for `for i in l do ...` over consecutive numbers, with a body that only
+continues. -/
+theorem RecM.WF.forIn_list_range' {c : VContext} {Inv : Nat → β → VState → Prop} :
+    ∀ {l : List Nat} {n : Nat} {f : Nat → β → RecM (ForInStep β)} {b : β} {s : VState},
+    l = List.range' n l.length →
+    (∀ a b s, a ∈ l → Inv a b s → (f a b).WF c s fun r s' =>
+      (∀ b', r = .yield b' → Inv (a + 1) b' s') ∧ ∀ b', r ≠ .done b') →
+    Inv n b s → (forIn l b f).WF c s fun b' s' => Inv (n + l.length) b' s'
+  | [], n, _, b, s, _, _, h => by simpa using RecM.WF.pure h
+  | a :: l, n, f, b, s, hl, H, h => by
+    simp only [List.length_cons, List.range'_succ, List.cons.injEq] at hl
+    obtain ⟨rfl, hl⟩ := hl
+    rw [List.forIn_cons]
+    refine (H a b s (.head _) h).bind fun r s' _ hr => ?_
+    cases r with
+    | done b' => exact (hr.2 b' rfl).elim
+    | yield b' =>
+      refine (RecM.WF.forIn_list_range' hl (fun a' b s h' => H a' b s (.tail _ h'))
+        (hr.1 _ rfl)).mono fun _ _ _ h => ?_
+      simpa [Nat.add_assoc, Nat.add_comm 1] using h
+
+/-- Loop invariant rule for `for i in [:n] do ...`, with a body that only continues. -/
+theorem RecM.WF.forIn_range {c : VContext} {Inv : Nat → β → VState → Prop} {n : Nat}
+    {f : Nat → β → RecM (ForInStep β)} {b : β} {s : VState}
+    (H : ∀ a b s, a < n → Inv a b s → (f a b).WF c s fun r s' =>
+      (∀ b', r = .yield b' → Inv (a + 1) b' s') ∧ ∀ b', r ≠ .done b')
+    (h : Inv 0 b s) : (forIn [:n] b f).WF c s fun b' s' => Inv n b' s' := by
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
+  refine (RecM.WF.forIn_list_range' (n := 0) (by simp [Std.Legacy.Range.size])
+    (fun a b s h' => H a b s (by simp [Std.Legacy.Range.size] at h'; omega)) h).mono
+    fun _ _ _ h => by simpa [Std.Legacy.Range.size] using h
 
 theorem RecM.WF.pureBind {c : VContext} {s : VState} {f : β → RecM α} {Q}
     {x : β} (H : WF c s (f x) Q) : ((Pure.pure x : RecM β) >>= f).WF c s Q := H
@@ -933,6 +1007,10 @@ namespace Inner
 theorem whnf.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (whnf e) fun e₁ _ => c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' :=
   fun _ wf => wf.whnf he
+
+theorem whnf.forallE_eq {c : VContext} {s : VState} (h : e.consumeMData = .forallE n ty body bi) :
+    RecM.WF c s (whnf e) fun e₁ _ => e₁ = .forallE n ty body bi :=
+  fun _ wf => wf.whnf_forallE h
 
 theorem isDefEqCore.WF {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :

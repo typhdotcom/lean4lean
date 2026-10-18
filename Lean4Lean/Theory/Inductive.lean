@@ -93,22 +93,35 @@ mentions it (`VConstructor.Unused`). -/
 def Skipped (k j : Nat) : Prop := j < k ∧ c.Unused k j
 
 open Classical in
+/-- The lift from the parameters and the fields before the `i`th that are not `P`, to the
+parameters and all the fields before the `i`th. -/
+noncomputable def keptLiftBy (P : Nat → Prop) : Nat → Lift
+  | 0 => .refl
+  | i + 1 => if P i then .skip (keptLiftBy P i) else .cons (keptLiftBy P i)
+
+/-- A type under the parameters and the fields before the `i`th, with the fields that are `P`
+removed. -/
+noncomputable def strippedTypeBy (P : Nat → Prop) (i : Nat) (A : VExpr) : VExpr :=
+  A.subst (keptLiftBy P i).inv
+
+open Classical in
+/-- The types of the fields before the `k`th that are not `P`, each with the fields before it that
+are removed. -/
+noncomputable def keptFieldsBy (P : Nat → Prop) (k : Nat) : List VExpr :=
+  ((List.range k).filter fun j => ¬P j).map fun j =>
+    strippedTypeBy P j ((c.fields[j]?.map VField.type).getD default)
+
 /-- The lift from the parameters and the fields before the `i`th that the `k`th projection does not
 skip, to the parameters and all the fields before the `i`th. -/
-noncomputable def keptLift (k : Nat) : Nat → Lift
-  | 0 => .refl
-  | i + 1 => if c.Skipped k i then .skip (keptLift k i) else .cons (keptLift k i)
+noncomputable def keptLift (k : Nat) : Nat → Lift := keptLiftBy (c.Skipped k)
 
 /-- A type under the parameters and the fields before the `i`th, with the fields the `k`th
 projection skips removed. -/
-noncomputable def strippedType (k i : Nat) (A : VExpr) : VExpr := A.subst (c.keptLift k i).inv
+noncomputable def strippedType (k i : Nat) (A : VExpr) : VExpr := strippedTypeBy (c.Skipped k) i A
 
-open Classical in
 /-- The types of the fields before the `k`th that its projection does not skip, each with the
 skipped fields before it removed. -/
-noncomputable def keptFields (k : Nat) : List VExpr :=
-  ((List.range k).filter fun j => ¬c.Skipped k j).map fun j =>
-    c.strippedType k j ((c.fields[j]?.map VField.type).getD default)
+noncomputable def keptFields (k : Nat) : List VExpr := c.keptFieldsBy (c.Skipped k) k
 
 end VConstructor
 
@@ -300,13 +313,18 @@ structure VInductiveType.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType) 
 
 /-- A constructor of `T`, as `checkConstructors` checks it, in an environment with the block's
 types. Its declared type is syntactically a telescope of parameters agreeing with the block's,
-then fields, ending in `T` at the parameters and indices that do not mention the block. -/
+then fields, ending in `T` at the parameters and indices that do not mention the block. Each
+field's view mentions no variable its declared domain does not: the kernel reads it off the
+domain by stripping annotations, and `inferProj` decides which projections it may skip from the
+declared domains. -/
 structure VConstructor.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType)
     (c : VConstructor) : Prop where
   type : env.IsType d.uvars [] c.type
   shape : ∃ ps Ds, c.type = .foralls (ps ++ Ds) (.appN (.const T.name (VLevel.params d.uvars))
       (VExpr.bvars d.params.length c.fields.length ++ c.indices)) ∧
-    env.TeleDefEq d.uvars [] ps d.params ∧ d.FieldsWF env d.params.reverse 0 Ds c.fields
+    env.TeleDefEq d.uvars [] ps d.params ∧ d.FieldsWF env d.params.reverse 0 Ds c.fields ∧
+    ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      ∀ j, D.Skips 1 j → f.type.Skips 1 j
   indices : c.indices.length = T.indices.length ∧ c.indices.all (!·.mentions d.names)
   /-- With the earlier fields its projection skips removed, each field's type is still a type of
   its sort. This is the strengthening `inferProj` relies on when it lets a projection past an

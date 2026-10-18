@@ -45,17 +45,27 @@ theorem VEnvs.WF.toVEnvAt {env : Environment} {ves : VEnvs} (wf : ves.WF env)
 namespace TypeChecker
 open Inner
 
+theorem whnf'_forallE {m : Methods} {c : VContext} {s : VState} :
+    ∀ {e : Expr}, e.consumeMData = .forallE n ty body bi →
+      M.WF c s (whnf' e m) fun e₁ _ => e₁ = .forallE n ty body bi
+  | .mdata _ e, h => by unfold whnf'; exact whnf'_forallE (e := e) h
+  | .forallE .., h => by cases h; unfold whnf'; exact M.WF.pure rfl
+  | .bvar _, h | .fvar _, h | .mvar _, h | .sort _, h | .const .., h | .app .., h | .lam .., h
+  | .letE .., h | .lit _, h | .proj .., h => by cases h
+
 theorem Methods.withFuel.WF : ∀ {n}, (withFuel n).WF
   | 0 =>
     { isDefEqCore _ _ := .throw
       whnfCore _ := .throw
       whnf _ := .throw
+      whnf_forallE _ := .throw
       inferType _ _ := .throw }
   | n + 1 =>
     have := withFuel.WF (n := n)
     { isDefEqCore h1 h2 := isDefEqCore'.WF h1 h2 _ this
       whnfCore h1 := whnfCore'.WF h1 _ this
       whnf h1 := whnf'.WF h1 _ this
+      whnf_forallE h := whnf'_forallE h
       inferType h1 h2 := inferType'.WF h1 h2 _ this }
 
 theorem RecM.WF.run {x : RecM α} (H : x.WF c s Q) : (RecM.run x).WF c s Q :=

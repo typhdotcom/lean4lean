@@ -8,3 +8,6 @@ import Lean4Lean.Theory.Typing.TelescopeInv
 import Lean4Lean.Theory.Typing.InductiveEnv
 import Lean4Lean.Theory.Typing.Recursor
 import Lean4Lean.Theory.Typing.InductiveRules
+import Lean4Lean.Theory.Typing.QuotReduce
+import Lean4Lean.Theory.Typing.Iota
+import Lean4Lean.Theory.Typing.ProjKernel

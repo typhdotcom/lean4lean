@@ -6,6 +6,11 @@ namespace Lean4Lean
 open Lean hiding Environment Exception
 open Kernel
 
+/-- The number of binders a term's syntactic pi telescope opens. -/
+def _root_.Lean.Expr.leadingForalls : Expr → Nat
+  | .forallE _ _ body _ => body.leadingForalls + 1
+  | _ => 0
+
 theorem ConstantInfo.hasValue_eq (ci : ConstantInfo) : ci.hasValue = ci.value?.isSome := by
   cases ci <;> rfl
 
@@ -112,11 +117,13 @@ def TrInductVal (T : VInductiveType) (v : InductiveVal) : Prop :=
   v.numIndices = T.indices.length ∧ v.all = decl.names ∧ v.ctors = T.ctors.map (·.name) ∧
   v.numNested = 0 ∧ v.isRec = decl.isRec ∧ v.isUnsafe = decl.isUnsafe
 
-/-- What `addInductive` records about constructor `c` of the `j`th type, besides its type. -/
+/-- What `addInductive` records about constructor `c` of the `j`th type, besides its type, whose
+leading binders are syntactically its parameters and fields. -/
 def TrCtorVal (j : Nat) (c : VConstructor) (v : ConstructorVal) : Prop :=
   ∃ T, decl.types[j]? = some T ∧ T.ctors[v.cidx]? = some c ∧
   v.name = c.name ∧ v.levelParams = lparams ∧ v.induct = T.name ∧
-  v.numParams = decl.params.length ∧ v.numFields = c.fields.length ∧ v.isUnsafe = decl.isUnsafe
+  v.numParams = decl.params.length ∧ v.numFields = c.fields.length ∧ v.isUnsafe = decl.isUnsafe ∧
+  v.type.leadingForalls = decl.params.length + c.fields.length
 
 /-- What `addInductive` records about the `i`th type's recursor, besides its type: in particular
 each rule's right-hand side, which translates to that of `VEnv.addInduct`'s iota rule, in `env`,
