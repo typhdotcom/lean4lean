@@ -107,7 +107,7 @@ inductive IsDefEqStrong : List VExpr → VExpr → VExpr → VExpr → Prop wher
   | projEta :
     env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] → T.indices = [] →
     d.isRec = false → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
-    As.length = d.params.length → u.WF uvars →
+    As.length = d.params.length → (∀ k < c.fields.length, d.ProjAllowed c ls k) → u.WF uvars →
     Γ ⊢ .appN (.const s ls) As : .sort u →
     Γ ⊢ e : .appN (.const s ls) As →
     Γ ⊢ .appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e) : .appN (.const s ls) As →
@@ -229,10 +229,10 @@ theorem IsDefEqStrong.weakN (W : Ctx.LiftN n k Γ Γ') (H : env.IsDefEqStrong U 
     simp only [VConstructor.projType_liftN, liftN, liftN_appN, List.map_append] at a1 a2 a3 a4 ⊢
     exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 (by simpa using h8) (by simpa using h9)
       (by simpa using h10) h11 h12 h13 a1 a2 a3 a4
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 _ _ _ ih1 ih2 ih3 =>
     have a1 := ih1 W; have a2 := ih2 W; have a3 := ih3 W
     simp only [liftN, liftN_appN, List.map_append, VExpr.projs_liftN] at a1 a2 a3 ⊢
-    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) h9 a1 a2 a3
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) hPA h9 a1 a2 a3
 
 theorem IsDefEqStrong.defeq (H : IsDefEqStrong env U Γ e1 e2 A) : env.IsDefEq U Γ e1 e2 A := by
   induction H with
@@ -253,8 +253,8 @@ theorem IsDefEqStrong.defeq (H : IsDefEqStrong env U Γ e1 e2 A) : env.IsDefEq U
     exact .projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 ih1 ih2 h13 ih3
   | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ _ _ _ _ ih2 ih3 ih4 =>
     exact .projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 ih2 h13 ih3 ih4
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ _ _ _ ih2 ih3 =>
-    exact .projEta h1 h2 h3 h4 h5 h6 h7 h8 ih2 ih3
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA _ _ _ _ _ ih2 ih3 =>
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA ih2 ih3
 
 variable! {env env' : VEnv} (henv : env ≤ env') in
 theorem IsDefEqStrong.mono
@@ -279,8 +279,8 @@ theorem IsDefEqStrong.mono
     exact .projDF (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 ih1 ih2 ih3
   | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
     exact .projIota (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 ih1 ih2 ih3 ih4
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
-    exact .projEta (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 ih1 ih2 ih3
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 _ _ _ ih1 ih2 ih3 =>
+    exact .projEta (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 hPA h9 ih1 ih2 ih3
 
 variable! (henv : Ordered env) in
 theorem IsDefEqStrong.weak0 (H : env.IsDefEqStrong U [] e1 e2 A) :
@@ -315,7 +315,7 @@ theorem EqUpToLevels.instL (H : env.IsDefEqStrong U' Γ e1 e2 A) :
   | eta _ _ _ _ _ _ _ _ ih1 _ _ ih4 ih5 => exact ⟨.lam ih1.1 (.app ih5.1 .bvar), ih4.1⟩
   | projDF _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 => exact ⟨.proj ih2.1, .proj ih2.2⟩
   | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 _ ih4 => exact ⟨.proj ih2.1, ih4.2⟩
-  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 => exact ⟨ih2.1, ih3.2⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 => exact ⟨ih2.1, ih3.2⟩
 
 
 variable! {env : VEnv} (W : OnCtx Γ fun _ A => A.LevelWF U) in
@@ -477,10 +477,10 @@ theorem IsDefEqStrong.instL (H : env.IsDefEqStrong U Γ e1 e2 A) :
     exact .projIota h1 h2 h3 h4 (by simp [h5]) (by simp [VLevel.WF.inst hls]) (by simp [h7])
       (by simpa using h8) (by simpa using h9) (by simpa using h10) (.inst hls)
       (by rw [← VLevel.inst_inst]; exact .inst hls) (h13.instL _) ih1 ih2 ih3 ih4
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ _ _ ih1 ih2 ih3 =>
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA _ _ _ _ ih1 ih2 ih3 =>
     simp only [VExpr.instL, instL_appN, List.map_append, VExpr.projs_instL] at ih1 ih2 ih3 ⊢
     exact .projEta h1 h2 h3 h4 h5 (by simp [VLevel.WF.inst hls]) (by simp [h7])
-      (by simpa using h8) (.inst hls) ih1 ih2 ih3
+      (by simpa using h8) (fun k hk => (hPA k hk).instL _) (.inst hls) ih1 ih2 ih3
 
 def CtxStrong (env : VEnv) (U Γ) :=
   OnCtx Γ fun Γ A => ∃ u, env.IsDefEqStrong U Γ A A (.sort u)
@@ -576,10 +576,10 @@ theorem IsDefEqStrong.instN (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : env.
     simp only [VConstructor.projType_inst, inst, inst_appN, List.map_append] at a1 a2 a3 a4 ⊢
     exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 (by simpa using h8) (by simpa using h9)
       (by simpa using h10) h11 h12 h13 a1 a2 a3 a4
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 _ _ _ ih1 ih2 ih3 =>
     have a1 := ih1 W hΓ; have a2 := ih2 W hΓ; have a3 := ih3 W hΓ
     simp only [inst, inst_appN, List.map_append, VExpr.projs_inst] at a1 a2 a3 ⊢
-    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) h9 a1 a2 a3
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) hPA h9 a1 a2 a3
 
 theorem IsDefEqStrong.defeqDF_l (henv : Ordered env) (hΓ : CtxStrong env U Γ)
     (h1 : env.IsDefEqStrong U Γ A A' (.sort u))
@@ -641,7 +641,7 @@ theorem IsDefEqStrong.forallE_inv' (hΓ : CtxStrong env U Γ)
   | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih4 =>
     obtain ⟨⟨⟩⟩ | eq := eq
     exact ih4 hΓ (.inl eq)
-  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 =>
+  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 =>
     obtain eq | eq := eq
     · exact ih2 hΓ (.inl eq)
     · exact absurd eq appN_const_ne_forallE
@@ -673,7 +673,7 @@ theorem IsDefEqStrong.isType' (hΓ : CtxStrong env U Γ) (H : env.IsDefEqStrong 
     exact ⟨_, (h.instL h2).weak0 henv⟩
   | projDF _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h16 => exact ⟨_, h16.hasType.1⟩
   | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h16 => exact ⟨_, h16⟩
-  | projEta _ _ _ _ _ _ _ _ _ h10 => exact ⟨_, h10⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ h10 => exact ⟨_, h10⟩
 
 theorem IsDefEqStrong.instDF
     (henv : Ordered env) (hΓ : CtxStrong env U Γ) (hu : u.WF U) (hv : v.WF U)
@@ -811,11 +811,11 @@ theorem EqUpToLevels.defeq (H : env.IsDefEqStrong U Γ e1 e2 A)
       (ih2 W rm.1 Hm) (ih3 W rt.1 (EqUpToLevels.projType _ h6 h6 (.rfl fun _ _ => by rfl) hAs Hm))
     have M := IsDefEqStrong.projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 h17
     exact L.symm.trans (M.trans (ih4 W ra.1 H2))
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 _ ih2 ih3 =>
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 h10 h11 h12 _ ih2 ih3 =>
     have re := EqUpToLevels.refl W.levelWF h11
     have rm := EqUpToLevels.refl W.levelWF h12
     exact (ih2 W H1 re.1).trans
-      ((IsDefEqStrong.projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12).trans (ih3 W rm.1 H2))
+      ((IsDefEqStrong.projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 h10 h11 h12).trans (ih3 W rm.1 H2))
 
 variable! (henv : Ordered env) (envIH : env.OnTypes (EnvStrong env)) in
 theorem IsDefEq.strong' (hΓ : CtxStrong env U Γ)
@@ -883,10 +883,10 @@ theorem IsDefEq.strong' (hΓ : CtxStrong env U Γ)
     have ⟨_, hS⟩ := a1.isType' henv envIH hΓ
     exact .projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 (hS.defeq.sort_r henv hΓ.defeq)
       (a2.defeq.sort_r henv hΓ.defeq) h12 hS a1 a2 a3
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ ih1 ih2 =>
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA _ _ ih1 ih2 =>
     have a1 := ih1 hΓ
     have ⟨_, hS⟩ := a1.isType' henv envIH hΓ
-    exact .projEta h1 h2 h3 h4 h5 h6 h7 h8 (hS.defeq.sort_r henv hΓ.defeq) hS a1 (ih2 hΓ)
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA (hS.defeq.sort_r henv hΓ.defeq) hS a1 (ih2 hΓ)
 
 theorem CtxStrong.strong' (henv : Ordered env) (envIH : env.OnTypes (EnvStrong env))
     (hΓ : OnCtx Γ (env.IsType U)) : CtxStrong env U Γ := by
@@ -973,7 +973,7 @@ theorem IsDefEqStrong.hasType' {env : VEnv}
           (.defeq h11 h14 ih1.1 ih1.2 ih2.2) ih3.2⟩
   | projIota h1 h2 h3 h4 _ h6 h7 h8 _ h10 h11 h12 h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
     exact ⟨.base <| .proj h1 h2 h3 h4 h6 h7 h8 h10 h11 h12 h13 ih1.1 ih2.1 ih3.1, ih4.1⟩
-  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 => exact ⟨ih2.1, ih3.1⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 => exact ⟨ih2.1, ih3.1⟩
 
 theorem HasTypeStrong.refl {env : VEnv}
     (H : env.HasTypeStrong U Γ e A b) : env.IsDefEqStrong U Γ e e A := by
@@ -1445,7 +1445,7 @@ theorem IsDefEqStrong.substEq' (henv : Ordered env)
       h11 h12 h13 l1 l2 l3, l4, .trans ?_ l4⟩
     exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 ((hl _).trans h8) ((hl _).trans h9) ((hl _).trans h10)
       h11 h12 h13 d1 d2 d3 d4
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 _ _ _ ih1 ih2 ih3 =>
     have l2 := (ih2 hΓ hΓ₀ W).1
     have l3 := (ih3 hΓ hΓ₀ W).1
     have d1 := (ih1 hΓ hΓ₀ W.left).1
@@ -1453,7 +1453,7 @@ theorem IsDefEqStrong.substEq' (henv : Ordered env)
     have d3 := (ih3 hΓ hΓ₀ W.left).1
     simp only [subst_appN, subst_const, List.map_append, VExpr.projs_subst] at l2 l3 d1 d2 d3 ⊢
     refine ⟨l2, l3, .trans ?_ l3⟩
-    exact .projEta h1 h2 h3 h4 h5 h6 h7 ((List.length_map ..).trans h8) h9 d1 d2 d3
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 ((List.length_map ..).trans h8) hPA h9 d1 d2 d3
 
 /-- Simultaneous substitution of a related pair `σ ≡ σ'` into a strong defeq: the cross
 projection of `substEq'`. -/

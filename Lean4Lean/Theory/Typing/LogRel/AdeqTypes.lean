@@ -54,7 +54,8 @@ theorem typeFormer_good (henvW : env.WF) (X : AxInterp) (hMX : @ModelEnv _ X env
     (hcon : ∀ T ∈ d.types, ∀ c' ∈ T.ctors, ∀ ci, env.constants c'.name = some ci →
       ci.type = c'.type)
     (HY : ∀ T ∈ d.types, ∀ {ls ls₃ : List VLevel} {n} (rargs : List (WShape n)) {F : VExpr}
-      {σ σ' : VExpr.Subst}, ConstAt U T.name ls F →
+      {σ σ' : VExpr.Subst}, (∀ l ∈ ls₃, l.WF U) → List.Forall₂ (· ≈ ·) ls ls₃ →
+      ls.length = d.uvars → ConstAt U T.name ls F →
       @LR.SubstWF env U _ X henv hU Γ₀ σ σ'
         (((d.params ++ T.indices).map (·.instL ls₃)).reverse ++ Γ₀) (valOf rargs) →
       rargs.length = d.params.length + T.indices.length →
@@ -130,7 +131,7 @@ theorem typeFormer_good (henvW : env.WF) (X : AxInterp) (hMX : @ModelEnv _ X env
     exact this.instL
   refine ⟨_, _, typeFormer_spineAtB (Γ₀ := Γ₀) (E := E) (ci := ⟨d.uvars, T.type⟩) hMX henvW hΓ₀
     hs' hT' (hdomX T hTm) hP hI w3 e3 hinterp hconvE (fun hb ht => hconv hb ht) ?_
-    (fun rargs => HY T hTm rargs)⟩
+    (fun rargs => HY T hTm rargs w3 e3 hlen)⟩
   intro n' rargs ctys F F' σ σ' hF hF' W hlen hcl hcty l hl htel
   refine typeFormer_HC (Γ₀ := Γ₀) X (GoodOverC (U := U) henv hU X Γ₀ d.typeConsts) hMG hsXG hsGX hn (hcon T hTm) hBp hRG ?_ rargs ctys hF hF' W
     hlen hcl hcty l hl htel
@@ -205,12 +206,13 @@ theorem typeFormers_adeq (henvW : env.WF)
     (hΓ₀ : OnCtx Γ₀ (env.IsType U)) (X : AxInterp) (hX : @AxOK _ X) (hXD : @DomRole _ X env)
     {ds : List VDecl} {E E' envT : VEnv} {d : VInductDecl} (hW : VEnv.WF' ds E)
     (hD : VDecl.WF E (.induct d) E') (hext : Extends E' env)
-    (hdom : ∀ c, X.dom c → E'.constants c = none)
+    (hdom : ∀ c, X.dom c → envT.constants c = none)
     (IHall : ∀ X' : AxInterp, @AxOK _ X' → @DomRole _ X' env →
       (∀ c, X'.dom c → E.constants c = none) → @AdequacyHyps env U _ X' henv hU E Γ₀)
     (h1 : E.addConstList d.typeConsts = some envT) (hIT : envT.Inj)
     (HY : ∀ T ∈ d.types, ∀ {ls ls₃ : List VLevel} {n} (rargs : List (WShape n)) {F : VExpr}
-      {σ σ' : VExpr.Subst}, ConstAt U T.name ls F →
+      {σ σ' : VExpr.Subst}, (∀ l ∈ ls₃, l.WF U) → List.Forall₂ (· ≈ ·) ls ls₃ →
+      ls.length = d.uvars → ConstAt U T.name ls F →
       @LR.SubstWF env U _ X henv hU Γ₀ σ σ'
         (((d.params ++ T.indices).map (·.instL ls₃)).reverse ++ Γ₀) (valOf rargs) →
       rargs.length = d.params.length + T.indices.length →
@@ -233,7 +235,7 @@ theorem typeFormers_adeq (henvW : env.WF)
   have hDle : E ≤ E' := hD.le
   have hTle : envT ≤ env := hTE'.trans hle
   have hdomE : ∀ c, X.dom c → E.constants c = none :=
-    fun c h => VEnv.constants_none_of_le hDle (hdom c h)
+    fun c h => VEnv.constants_none_of_le (VEnv.addConstList_le h1) (hdom c h)
   have hMX := hModel X hX hXD
   have hndc : (d.typeConsts.map (·.1)).Nodup := (VEnv.addConstList_spec h1).1
   have hfr : ∀ p ∈ d.typeConsts, E.constants p.1 = none := (VEnv.addConstList_spec h1).2.1
@@ -243,7 +245,7 @@ theorem typeFormers_adeq (henvW : env.WF)
     exact hcT T hT
   have hdomX : ∀ T ∈ d.types, ¬X.dom T.name := fun T hT hx => by
     have h := hdom _ hx
-    have h' := hTE'.constants (VEnv.addConstList_constants_of_mem h1
+    have h' := (VEnv.addConstList_constants_of_mem h1
       (List.mem_map_of_mem (f := fun T => (T.name, (⟨d.uvars, T.type⟩ : VConstant))) hT))
     rw [h'] at h; cases h
   have hGax : @AxOK _ (GoodOverC (U := U) henv hU X Γ₀ d.typeConsts) := GoodOverC.axOK X hX hMX hJ hndc
@@ -298,12 +300,13 @@ theorem adequacyHyps_envT (henvW : env.WF)
     (hΓ₀ : OnCtx Γ₀ (env.IsType U)) (X : AxInterp) (hX : @AxOK _ X) (hXD : @DomRole _ X env)
     {ds : List VDecl} {E E' envT : VEnv} {d : VInductDecl} (hW : VEnv.WF' ds E)
     (hD : VDecl.WF E (.induct d) E') (hext : Extends E' env)
-    (hdom : ∀ c, X.dom c → E'.constants c = none)
+    (hdom : ∀ c, X.dom c → envT.constants c = none)
     (IHall : ∀ X' : AxInterp, @AxOK _ X' → @DomRole _ X' env →
       (∀ c, X'.dom c → E.constants c = none) → @AdequacyHyps env U _ X' henv hU E Γ₀)
     (h1 : E.addConstList d.typeConsts = some envT) (hIT : envT.Inj)
     (HY : ∀ T ∈ d.types, ∀ {ls ls₃ : List VLevel} {n} (rargs : List (WShape n)) {F : VExpr}
-      {σ σ' : VExpr.Subst}, ConstAt U T.name ls F →
+      {σ σ' : VExpr.Subst}, (∀ l ∈ ls₃, l.WF U) → List.Forall₂ (· ≈ ·) ls ls₃ →
+      ls.length = d.uvars → ConstAt U T.name ls F →
       @LR.SubstWF env U _ X henv hU Γ₀ σ σ'
         (((d.params ++ T.indices).map (·.instL ls₃)).reverse ++ Γ₀) (valOf rargs) →
       rargs.length = d.params.length + T.indices.length →
@@ -315,7 +318,7 @@ theorem adequacyHyps_envT (henvW : env.WF)
   have hext₁ : Extends E env := .step hD hext
   have hDle : E ≤ E' := hD.le
   have hdomE : ∀ c, X.dom c → E.constants c = none :=
-    fun c h => VEnv.constants_none_of_le hDle (hdom c h)
+    fun c h => VEnv.constants_none_of_le (VEnv.addConstList_le h1) (hdom c h)
   have IHX := IHall X hX hXD hdomE
   have hinds : envT.inducts = E.inducts := VEnv.addConstList_inducts h1
   have hdfs : envT.defeqs = E.defeqs := VEnv.addConstList_defeqs' h1
@@ -372,12 +375,13 @@ theorem ctors_adeq (henvW : env.WF)
     (hΓ₀ : OnCtx Γ₀ (env.IsType U)) (X : AxInterp) (hX : @AxOK _ X) (hXD : @DomRole _ X env)
     {ds : List VDecl} {E E' envT : VEnv} {d : VInductDecl} (hW : VEnv.WF' ds E)
     (hD : VDecl.WF E (.induct d) E') (hext : Extends E' env)
-    (hdom : ∀ c, X.dom c → E'.constants c = none)
+    (hdom : ∀ c, X.dom c → envT.constants c = none)
     (IHall : ∀ X' : AxInterp, @AxOK _ X' → @DomRole _ X' env →
       (∀ c, X'.dom c → E.constants c = none) → @AdequacyHyps env U _ X' henv hU E Γ₀)
     (h1 : E.addConstList d.typeConsts = some envT) (hIT : envT.Inj)
     (HY : ∀ T ∈ d.types, ∀ {ls ls₃ : List VLevel} {n} (rargs : List (WShape n)) {F : VExpr}
-      {σ σ' : VExpr.Subst}, ConstAt U T.name ls F →
+      {σ σ' : VExpr.Subst}, (∀ l ∈ ls₃, l.WF U) → List.Forall₂ (· ≈ ·) ls ls₃ →
+      ls.length = d.uvars → ConstAt U T.name ls F →
       @LR.SubstWF env U _ X henv hU Γ₀ σ σ'
         (((d.params ++ T.indices).map (·.instL ls₃)).reverse ++ Γ₀) (valOf rargs) →
       rargs.length = d.params.length + T.indices.length →
@@ -399,7 +403,7 @@ theorem ctors_adeq (henvW : env.WF)
   have hDle : E ≤ E' := hD.le
   have hMX := hModel X hX hXD
   have hdomE : ∀ c, X.dom c → E.constants c = none :=
-    fun c h => VEnv.constants_none_of_le hDle (hdom c h)
+    fun c h => VEnv.constants_none_of_le (VEnv.addConstList_le h1) (hdom c h)
   obtain ⟨dsT, hWT⟩ : envT.WF := VEnv.WF.addConstList hEW (fun p hp => by
     obtain ⟨T, hT, rfl⟩ := List.mem_map.1 hp; exact (hd.types T hT).1) h1
   have hTo : envT.Ordered := VEnv.WF.ordered ⟨_, hWT⟩
@@ -445,7 +449,7 @@ theorem ctors_adeq (henvW : env.WF)
   have hci' := hcC T hTm c' hc'
   have hndT : ¬X.dom T.name := fun hx => by
     have h := hdom _ hx
-    have h' := hTE'.constants (VEnv.addConstList_constants_of_mem h1
+    have h' := (VEnv.addConstList_constants_of_mem h1
       (List.mem_map_of_mem (f := fun T => (T.name, (⟨d.uvars, T.type⟩ : VConstant))) hTm))
     rw [h'] at h; cases h
   have onT : OnCtx (Ps ++ Ds').reverse (envT.IsType U) := by
@@ -509,12 +513,13 @@ theorem adequacyHyps_envC (henvW : env.WF)
     (hΓ₀ : OnCtx Γ₀ (env.IsType U)) (X : AxInterp) (hX : @AxOK _ X) (hXD : @DomRole _ X env)
     {ds : List VDecl} {E E' envT : VEnv} {d : VInductDecl} (hW : VEnv.WF' ds E)
     (hD : VDecl.WF E (.induct d) E') (hext : Extends E' env)
-    (hdom : ∀ c, X.dom c → E'.constants c = none)
+    (hdom : ∀ c, X.dom c → envT.constants c = none)
     (IHall : ∀ X' : AxInterp, @AxOK _ X' → @DomRole _ X' env →
       (∀ c, X'.dom c → E.constants c = none) → @AdequacyHyps env U _ X' henv hU E Γ₀)
     (h1 : E.addConstList d.typeConsts = some envT) (hIT : envT.Inj)
     (HY : ∀ T ∈ d.types, ∀ {ls ls₃ : List VLevel} {n} (rargs : List (WShape n)) {F : VExpr}
-      {σ σ' : VExpr.Subst}, ConstAt U T.name ls F →
+      {σ σ' : VExpr.Subst}, (∀ l ∈ ls₃, l.WF U) → List.Forall₂ (· ≈ ·) ls ls₃ →
+      ls.length = d.uvars → ConstAt U T.name ls F →
       @LR.SubstWF env U _ X henv hU Γ₀ σ σ'
         (((d.params ++ T.indices).map (·.instL ls₃)).reverse ++ Γ₀) (valOf rargs) →
       rargs.length = d.params.length + T.indices.length →

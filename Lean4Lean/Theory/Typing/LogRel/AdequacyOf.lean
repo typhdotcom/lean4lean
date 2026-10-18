@@ -135,6 +135,10 @@ structure AdequacyHyps (E : VEnv) (Γ₀ : List VExpr) : Prop where
     AdeqStmt (U := U) henv hU Γ₀ Γ e e' (.appN (.const s ls) (As ++ I)) →
     AdeqStmt (U := U) henv hU Γ₀ Γ (c.projType ls s k As e) (c.projType ls s k As' e')
       (.sort (f.level.inst ls)) →
+    StrongSoundEq env U Γ (.appN (.const s ls) (As ++ I)) (.appN (.const s ls) (As' ++ I'))
+      (.sort u) →
+    StrongSoundEq env U Γ (c.projType ls s k As e) (c.projType ls s k As' e')
+      (.sort (f.level.inst ls)) →
     StrongSoundEq env U Γ e e' (.appN (.const s ls) (As ++ I)) →
     StrongSoundEq env U Γ (.proj s k e) (.proj s k e') (c.projType ls s k As e) →
     AdeqStmt (U := U) henv hU Γ₀ Γ (.proj s k e) (.proj s k e') (c.projType ls s k As e)
@@ -165,7 +169,7 @@ structure AdequacyHyps (E : VEnv) (Γ₀ : List VExpr) : Prop where
   projEta : ∀ {Γ s d t T c ls As e u}, OnCtx Γ (env.IsType U) →
     E.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] → T.indices = [] →
     d.isRec = false → (∀ l ∈ ls, l.WF U) → ls.length = d.uvars →
-    As.length = d.params.length → u.WF U →
+    As.length = d.params.length → (∀ k < c.fields.length, d.ProjAllowed c ls k) → u.WF U →
     env.IsDefEqStrong U Γ (.appN (.const s ls) As) (.appN (.const s ls) As) (.sort u) →
     env.IsDefEqStrong U Γ e e (.appN (.const s ls) As) →
     env.IsDefEqStrong U Γ (.appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e))
@@ -381,17 +385,17 @@ theorem LR.adequacy_of (hM : ModelEnv env) {E : VEnv} (hE : E ≤ env)
   | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 ih14 ih15 ih16 =>
     exact hH.projDF hΓ h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 (h14.mono hE) (h15.mono hE)
       (h16.mono hE)
-      (ih14 hΓ) (ih15 hΓ) (ih16 hΓ) (hS h15)
+      (ih14 hΓ) (ih15 hΓ) (ih16 hΓ) (hS h14) (hS h16) (hS h15)
       (hS (.projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16))
   | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 h17 ih14 ih15 ih16 ih17 =>
     exact hH.projIota hΓ h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 (h14.mono hE) (h15.mono hE)
       (h16.mono hE) (h17.mono hE)
       (ih14 hΓ) (ih15 hΓ) (ih16 hΓ) (ih17 hΓ)
       (hS (.projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 h17))
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 ih10 ih11 ih12 =>
-    exact hH.projEta hΓ h1 h2 h3 h4 h5 h6 h7 h8 h9 (h10.mono hE) (h11.mono hE) (h12.mono hE)
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 h10 h11 h12 ih10 ih11 ih12 =>
+    exact hH.projEta hΓ h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 (h10.mono hE) (h11.mono hE) (h12.mono hE)
       (ih10 hΓ) (ih11 hΓ) (ih12 hΓ)
-      (hS (.projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12))
+      (hS (.projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA h9 h10 h11 h12))
   | @forallEDF Γ A A' u body body' v _ _ HA HB HB' ihA ihB _ =>
     intro ρ n m a hM' hA hmem
     have hΓA : OnCtx (A::Γ) (env.IsType U) := ⟨hΓ, _, (HA.defeq.mono hE).hasType.1⟩

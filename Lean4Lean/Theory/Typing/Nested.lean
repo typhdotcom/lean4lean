@@ -517,12 +517,12 @@ theorem IsDefEq.replaceConst {F : Name → Option VExpr} {E₁ E₀ : VEnv} (H�
       List.map_append] at ih1 ih2 ih3 ⊢
     refine .projIota (hS.inducts _ _ h1) h2 h3 h4 (by simp [h5]) h6 h7 (by simpa using h8)
       (by simpa using h9) (by simpa using h10) ih1 h12 ih2 ih3
-  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ ih1 ih2 =>
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 hPA _ _ ih1 ih2 =>
     obtain ⟨hs, hcs⟩ := hS.block _ _ _ _ h1 h2
     have hcn := (hcs _ h3).1
     simp only [replaceConst_appN, VExpr.replaceConst, hs, hcn, List.map_append,
       replaceConst_projs] at ih1 ih2 ⊢
-    exact .projEta (hS.inducts _ _ h1) h2 h3 h4 h5 h6 h7 (by simpa using h8) ih1 ih2
+    exact .projEta (hS.inducts _ _ h1) h2 h3 h4 h5 h6 h7 (by simpa using h8) hPA ih1 ih2
 
 section
 variable {F : Name → Option VExpr} {E₁ E₀ : VEnv} (H₀ : E₀.Ordered) (hS : ConstSubst F E₁ E₀)

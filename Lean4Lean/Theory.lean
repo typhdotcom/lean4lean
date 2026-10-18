@@ -22,6 +22,7 @@ import Lean4Lean.Theory.Typing.LogRel.BlockStage
 import Lean4Lean.Theory.Typing.LogRel.IndTeleCtors
 import Lean4Lean.Theory.Typing.LogRel.AdeqTypes
 import Lean4Lean.Theory.Typing.LogRel.AdeqQuotTy
+import Lean4Lean.Theory.Typing.LogRel.IndStepOf
 import Lean4Lean.Theory.Typing.LogRel.Prefix
 import Lean4Lean.Theory.Typing.LogRel.AdeqProj
 import Lean4Lean.Theory.Typing.LogRel.AdequacyWF
@@ -77,3 +78,17 @@ import Lean4Lean.Theory.Typing.LogRel.AdeqQuotMk
 import Lean4Lean.Theory.Typing.LogRel.AdeqStruct
 import Lean4Lean.Theory.Typing.LogRel.StructProj
 import Lean4Lean.Theory.Typing.LogRel.AnnotStep
+import Lean4Lean.Theory.Typing.LogRel.IndHYOf
+import Lean4Lean.Theory.Typing.LogRel.AdeqProjDF
+import Lean4Lean.Theory.Typing.LogRel.ProjRed
+import Lean4Lean.Theory.Typing.LogRel.ProjDFNew
+import Lean4Lean.Theory.Typing.LogRel.AdeqIota
+import Lean4Lean.Theory.Typing.LogRel.IotaReplace
+import Lean4Lean.Theory.Typing.LogRel.InjTele
+import Lean4Lean.Theory.Typing.LogRel.AdeqIotaRepl
+import Lean4Lean.Theory.Typing.LogRel.IotaFields
+import Lean4Lean.Theory.Typing.LogRel.AdeqIotaK
+import Lean4Lean.Theory.Typing.LogRel.AdeqIotaEta
+import Lean4Lean.Theory.Typing.LogRel.AdeqRec
+import Lean4Lean.Theory.Typing.LogRel.AdeqRecSat
+import Lean4Lean.Theory.Typing.LogRel.InjRest

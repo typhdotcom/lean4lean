@@ -66,7 +66,7 @@ theorem IsDefEq.constsSat' (H : env.IsDefEq U Γ e1 e2 A) (hΓ : OnCtx Γ fun _ 
     exact ⟨(ih2 hΓ).1, (ih2 hΓ).2.1, (ih3 hΓ).1⟩
   | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih1 _ ih3 =>
     exact ⟨(ih1 hΓ).1, (ih3 hΓ).1, (ih3 hΓ).2.2⟩
-  | projEta _ _ _ _ _ _ _ _ _ _ ih1 ih2 =>
+  | projEta _ _ _ _ _ _ _ _ _ _ _ ih1 ih2 =>
     exact ⟨(ih1 hΓ).1, (ih2 hΓ).1, (ih1 hΓ).2.2⟩
 
 /-- An ordered environment's types and rules mention only its constants. -/

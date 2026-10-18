@@ -161,7 +161,7 @@ a K-like reduction of a recursor at indices `is`: a field that is an index is re
 every field is typed at its declared type, and the constructor's indices at the fields are `is`. -/
 structure KFields (env : VEnv) (U : Nat) (Γ : List VExpr) (T : VInductiveType) (c : VConstructor)
     (lsB : List VLevel) (ps is fs : List VExpr) : Prop where
-  idx : ∀ k i, VInductDecl.fieldIdx c k = some i → fs[k]? = is[i]?
+  idx : ∀ k i, k < c.fields.length → VInductDecl.fieldIdx c k = some i → fs[k]? = is[i]?
   fields : ∀ k (h : k < fs.length) (h' : k < c.fields.length),
     env.HasType U Γ fs[k] ((c.fields[k].type.instL lsB).subst
       (VExpr.Subst.id.consList (ps ++ fs.take k)))
@@ -789,8 +789,8 @@ theorem map {s : Name} {d : VInductDecl} {t q j : Nat} {c : VConstructor} {T : V
     simp only [Function.comp_apply]
     rw [hF, List.map_append]
     simpa [hps, hfs] using (hk.ctorIdx h1 h2 he).instL (ls := lsB)
-  refine ⟨fun k i h => ?_, fun k hk1 hk2 => ?_, fun i hi1 hi2 hi3 => ?_⟩
-  · simp [List.getElem?_map, H.idx k i h]
+  refine ⟨fun k i hk h => ?_, fun k hk1 hk2 => ?_, fun i hi1 hi2 hi3 => ?_⟩
+  · simp [List.getElem?_map, H.idx k i hk h]
   · have hk1' : k < fs.length := by simpa using hk1
     have := hD (H.fields k hk1' hk2)
     simp only [List.getElem_map]

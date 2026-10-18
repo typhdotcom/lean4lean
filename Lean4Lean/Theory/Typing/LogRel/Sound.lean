@@ -759,8 +759,8 @@ theorem strongSound_of (hM : ModelEnv env) (hE : E ≤ env) (hL : LevelInv env)
     exact ⟨hD, hPI a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a13 ih14.left ih15.left ih16.left ih17.left,
       ⟨hD.hasType.1, hP a1 a2 a3 a4 a6 a7 a8 a10 a13 ih14.left ih15.left ih16.left, .proj, .rfl⟩,
       ih17.left⟩
-  | projEta a a1 a2 a3 a4 a5 a6 a7 _ _ _ _ ih9 ih10 ih11 =>
-    exact ⟨.projEta (hE.inducts a) a1 a2 a3 a4 a5 a6 a7 ih10.defeq ih11.defeq,
+  | projEta a a1 a2 a3 a4 a5 a6 a7 hPA _ _ _ _ ih9 ih10 ih11 =>
+    exact ⟨.projEta (hE.inducts a) a1 a2 a3 a4 a5 a6 a7 hPA ih10.defeq ih11.defeq,
       hPE a a1 a2 a3 a4 a5 a6 a7 ih9.left ih10.left ih11.left, ih10.left, ih11.left⟩
 
 end LogRel

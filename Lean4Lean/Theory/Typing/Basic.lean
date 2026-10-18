@@ -347,11 +347,12 @@ inductive IsDefEq : List VExpr → VExpr → VExpr → VExpr → Prop where
     Γ ⊢ .proj s k (.appN (.const c.name ls) (As ++ fs)) ≡ a :
       c.projType ls s k As (.appN (.const c.name ls) (As ++ fs))
   /-- Structure eta: a term of a non-recursive single-constructor type without indices is the
-  constructor applied to its projections (`tryEtaStruct`). -/
+  constructor applied to its projections (`tryEtaStruct`), where each of those projections is
+  allowed at the type's levels. -/
   | projEta :
     env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] → T.indices = [] →
     d.isRec = false → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
-    As.length = d.params.length →
+    As.length = d.params.length → (∀ k < c.fields.length, d.ProjAllowed c ls k) →
     Γ ⊢ e : .appN (.const s ls) As →
     Γ ⊢ .appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e) : .appN (.const s ls) As →
     Γ ⊢ e ≡ .appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e) : .appN (.const s ls) As

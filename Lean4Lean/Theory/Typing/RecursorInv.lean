@@ -1189,8 +1189,8 @@ theorem VEnv.WF.unitLike {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.WF
   have hk'' : env.HasType U Γ (.appN (.const c.name ls) (As ++ VExpr.projs T.name c.fields.length e₂))
       (.appN (.const T.name ls) As) := by
     simpa [hf, VExpr.projs] using hk
-  have e₁η := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA h₁ hk'
-  have e₂η := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA h₂ hk''
+  have e₁η := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA (by simp [hf]) h₁ hk'
+  have e₂η := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA (by simp [hf]) h₂ hk''
   simp only [hf, List.length_nil, VExpr.projs, List.range_zero, List.map_nil,
     List.append_nil] at e₁η e₂η
   exact e₁η.trans e₂η.symm
@@ -1331,7 +1331,7 @@ theorem VEnv.WF.structEta {env : VEnv} {U : Nat} {Γ : List VExpr} (henv : env.W
       bvars d.params.length (0 + (VExpr.projs T.name c.fields.length x).length) by
         simp [VExpr.projs],
     subst_bvars_consList_ge, ← hA, subst_bvars_consList] at hcongr
-  have hη := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA hx hcongr.hasType.1
+  have hη := VEnv.IsDefEq.projEta hs ht hc hi hrec hls hlen hA hP hx hcongr.hasType.1
   exact hη.trans hcongr
 
 /-- Congruence for `appN`: the arguments' typings come from the application being well formed, so
