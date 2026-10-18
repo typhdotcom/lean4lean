@@ -182,10 +182,10 @@ private theorem LR.lift_succ_aux :
       · rw [WShape.lift_lam (Nat.le_succ k), WShape.lift_forallE (Nat.le_succ k)]
         simp only [LRS.DefEq.lam_forallE, LR_succ]
         refine or_congr ?_ .rfl
-        constructor <;> intro ⟨A₁, A₂, u, v, rA, hA1, hValA, hA₂, hEdge, hP⟩ <;>
+        constructor <;> intro ⟨A₁, A₂, u, v, rA, eA, hA1, hValA, hA₂, hEdge, hP⟩ <;>
           [ have hEdge' := (LRS.PiDefEq.lift_aux (Nat.le_succ k) htm.1 ih.1 ih.2).1 hEdge;
             have hEdge' := (LRS.PiDefEq.lift_aux (Nat.le_succ k) htm.1 ih.1 ih.2).2 hEdge ] <;>
-          refine ⟨A₁, A₂, u, v, rA, hA1, ?_, hA₂, hEdge', ?_⟩
+          refine ⟨A₁, A₂, u, v, rA, eA, hA1, ?_, hA₂, hEdge', ?_⟩
         · exact (ih.1 (WShape.HasTypePi.iff.1 htpi_a).1.isType).1 hValA
         · exact (LRS.LamDefEq.lift_aux (Nat.le_succ k) htm ih.2 hEdge').1 hP
         · exact (ih.1 (WShape.HasTypePi.iff.1 htpi_a).1.isType).2 hValA

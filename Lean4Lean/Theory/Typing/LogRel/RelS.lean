@@ -23,6 +23,12 @@ variable {env : VEnv} {U : Nat} {Γ : List VExpr}
 
 theorem forallE_whnf : WHNF env U Γ (.forallE A B) := fun _ h => nomatch h
 
+/-- A family of types at equal arguments is equal, by beta through its lambda. -/
+theorem instDF_ty (hA₁ : env.HasType U Γ A₁ (.sort u)) (hA₂ : env.HasType U (A₁::Γ) A₂ (.sort v))
+    (ha : env.IsDefEq U Γ a b A₁) : env.IsDefEq U Γ (A₂.inst a) (A₂.inst b) (.sort v) :=
+  (VEnv.IsDefEq.beta hA₂ ha.hasType.1).symm.trans <|
+    .trans (.appDF (.lamDF hA₁ hA₂) ha) (.beta hA₂ ha.hasType.2)
+
 namespace NeRed
 variable (hU : StepUniq env)
 include hU
@@ -40,54 +46,7 @@ theorem not_inert (hn : Inert env n) (H : NeRed env U Γ M)
 
 end NeRed
 
-theorem _root_.List.Forall₂.swap' {R : α → β → Prop} {S : β → α → Prop}
-    (H : ∀ a b, R a b → S b a) : ∀ {l₁ l₂}, List.Forall₂ R l₁ l₂ → List.Forall₂ S l₂ l₁
-  | _, _, .nil => .nil
-  | _, _, .cons h hs => .cons (H _ _ h) (swap' H hs)
-
-theorem _root_.List.Forall₂.left' {R : α → β → Prop} {S : α → α → Prop}
-    (H : ∀ a b, R a b → S a a) : ∀ {l₁ l₂}, List.Forall₂ R l₁ l₂ → List.Forall₂ S l₁ l₁
-  | _, _, .nil => .nil
-  | _, _, .cons h hs => .cons (H _ _ h) (left' H hs)
-
-/-- Two types that reduce to applications of the same type former at equivalent levels, with
-arguments joined by equalities. -/
-def IndRel (env : VEnv) (U : Nat) (Γ : List VExpr) (h : IndHead) (M N : VExpr) : Prop :=
-  Inert env h.name ∧ ∃ ls ls' As As',
-    StepS env U Γ M ((VExpr.const h.name ls).appN As) ∧
-    StepS env U Γ N ((VExpr.const h.name ls').appN As') ∧
-    List.Forall₂ (· ≈ ·) ls ls' ∧ List.Forall₂ (TmEq env U Γ) As As'
-
 namespace IndRel
-
-theorem left (H : IndRel env U Γ h M N) : IndRel env U Γ h M M := by
-  obtain ⟨hn, ls, _, As, _, h1, -, h3, h4⟩ := H
-  exact ⟨hn, ls, ls, As, As, h1, h1, h3.left' fun _ _ _ => (rfl : VLevel.Equiv _ _),
-    h4.left' fun _ _ h => h.left⟩
-
-theorem symm (H : IndRel env U Γ h M N) : IndRel env U Γ h N M := by
-  obtain ⟨hn, ls, ls', As, As', h1, h2, h3, h4⟩ := H
-  exact ⟨hn, ls', ls, As', As, h2, h1, h3.swap' fun _ _ e => Eq.symm e,
-    h4.swap' fun _ _ e => e.symm⟩
-
-theorem trans (hU : StepUniq env) (H1 : IndRel env U Γ h M₁ M₂) (H2 : IndRel env U Γ h M₂ M₃) :
-    IndRel env U Γ h M₁ M₃ := by
-  obtain ⟨hn, ls, ls', As, As', h1, h2, h3, h4⟩ := H1
-  obtain ⟨-, ls₂, ls'', As₂, As'', h2', h5, h6, h7⟩ := H2
-  have := StepS.determ hU h2 hn.whnf h2' hn.whnf
-  obtain ⟨-, rfl, rfl⟩ := appN_const_inj this
-  exact ⟨hn, ls, ls'', As, As'', h1, h5, List.Forall₂.trans (R := (· ≈ ·)) (S := (· ≈ ·)) (T := (· ≈ ·))
-      (fun _ _ _ (a : VLevel.Equiv _ _) (b : VLevel.Equiv _ _) => (Eq.trans a b : VLevel.Equiv _ _)) h3 h6,
-    List.Forall₂.trans (fun _ _ _ a b => a.trans b) h4 h7⟩
-
-theorem whr (hU : StepUniq env) (hM : StepS env U Γ M M') (hN : StepS env U Γ N N') :
-    IndRel env U Γ h M N ↔ IndRel env U Γ h M' N' := by
-  constructor
-  · rintro ⟨hn, ls, ls', As, As', h1, h2, h3, h4⟩
-    exact ⟨hn, ls, ls', As, As', StepS.determ_l hU hM h1 hn.whnf,
-      StepS.determ_l hU hN h2 hn.whnf, h3, h4⟩
-  · rintro ⟨hn, ls, ls', As, As', h1, h2, h3, h4⟩
-    exact ⟨hn, ls, ls', As, As', hM.trans h1, hN.trans h2, h3, h4⟩
 
 theorem not_neRed (hU : StepUniq env) (H : IndRel env U Γ h M N) : ¬NeRed env U Γ M :=
   fun h' => let ⟨hn, _, _, _, _, h1, _⟩ := H; NeRed.not_inert hU hn h' h1
@@ -126,7 +85,7 @@ def LRS.LamDefEq (M N A₁ A₂ : VExpr) (m : WShapeFun n) (a₁ : WShape n) (a�
 /-- Functions at a type that reduces to a pi type. -/
 def LRS.LamClause (M N A : VExpr) (m : WShapeFun n) (a₁ : WShape n) (a₂ : WShapeFun n) :
     Prop :=
-  ∃ A₁ A₂ u v, StepS env U Γ A (.forallE A₁ A₂) ∧
+  ∃ A₁ A₂ u v, StepS env U Γ A (.forallE A₁ A₂) ∧ TyEq env U Γ A (.forallE A₁ A₂) ∧
     env.HasType U Γ A₁ (.sort u) ∧ IH.TyDefEq A₁ A₁ a₁ ∧ env.HasType U (A₁::Γ) A₂ (.sort v) ∧
     LRS.PiDefEq IH A₁ A₂ A₂ a₁ a₂ ∧ LRS.LamDefEq IH M N A₁ A₂ m a₁ a₂
 
@@ -230,8 +189,8 @@ theorem LRS.TyDefEq.symm (henv : env.Ordered) : LRS.TyDefEq IH M N m → LRS.TyD
     · have hValB' := IH.symm_ty hValB
       refine .inl ⟨_, _, _, _, rN, rM, hB.symm, (TyEq.ctx henv hB hF).symm, hValB',
         fun _ _ _ hp ha a1 => ?_, fun _ _ hp ha a1 => ?_⟩
-      · exact (hE1 hp (hB.symm.defeqDF ha) (IH.conv hValB' a1)).symm
-      · exact IH.symm_ty (hE2 hp (hB.symm.defeqDF ha) (IH.conv hValB' a1))
+      · exact (hE1 hp (hB.symm.defeqDF ha) (IH.conv hB.symm hValB' a1)).symm
+      · exact IH.symm_ty (hE2 hp (hB.symm.defeqDF ha) (IH.conv hB.symm hValB' a1))
     · exact .inr ⟨h2, h1⟩
   · rintro (⟨h, hT⟩ | ⟨h1, h2⟩)
     · exact .inl ⟨h.symm, hT.symm⟩
@@ -246,8 +205,8 @@ theorem LRS.TyDefEq.trans (henv : env.Ordered) (hU : StepUniq env) :
     · cases StepS.determ hU rM₂ forallE_whnf rM₂' forallE_whnf
       refine .inl ⟨_, _, _, _, rM₁, rM₃, hB₁₂.trans hB₂₃, hF₁₂.trans (TyEq.ctx henv hB₁₂.symm hF₂₃),
         IH.trans_ty hValB₁₂ hValB₂₃, fun _ _ _ hp ha a1 => ?_, fun _ _ hp ha a1 => ?_⟩
-      · exact ⟨(hE1.1 hp ha a1).1, (hE2.1 hp (hB₁₂.defeqDF ha) (IH.conv hValB₁₂ a1)).2⟩
-      · exact IH.trans_ty (hE1.2 hp ha a1) (hE2.2 hp (hB₁₂.defeqDF ha) (IH.conv hValB₁₂ a1))
+      · exact ⟨(hE1.1 hp ha a1).1, (hE2.1 hp (hB₁₂.defeqDF ha) (IH.conv hB₁₂ hValB₁₂ a1)).2⟩
+      · exact IH.trans_ty (hE1.2 hp ha a1) (hE2.2 hp (hB₁₂.defeqDF ha) (IH.conv hB₁₂ hValB₁₂ a1))
     · exact (h2'.not_forallE hU rM₂).elim
     · exact (h2.not_forallE hU rM₂').elim
     · exact .inr ⟨h1, h3⟩
@@ -294,15 +253,22 @@ theorem LRS.LamDefEq.trans :
   · exact ⟨(hP1 hp ha a1).1, (hP1' hp ha a1).2⟩
   · exact IH.trans (hP2 hp ha a1) (hP2' hp ha a1)
 
-theorem LRS.LamDefEq.whr (hM : StepS env U Γ M M') (hN : StepS env U Γ N N') :
+theorem LRS.LamDefEq.whr (hA₁ : env.HasType U Γ A₁ (.sort u))
+    (hA₂ : env.HasType U (A₁::Γ) A₂ (.sort v))
+    (hM : TRed env U Γ M M' (.forallE A₁ A₂)) (hN : TRed env U Γ N N' (.forallE A₁ A₂)) :
     LRS.LamDefEq IH M N A₁ A₂ m a₁ a₂ ↔ LRS.LamDefEq IH M' N' A₁ A₂ m a₁ a₂ := by
+  have r2 {M M' a b} (hM : TRed env U Γ M M' (.forallE A₁ A₂)) (ha : env.IsDefEq U Γ a b A₁) :
+      TRed env U Γ (M.app b) (M'.app b) (A₂.inst a) :=
+    (hM.app ha.hasType.2).defeqDF (instDF_ty hA₁ hA₂ ha).symm
   constructor <;> intro ⟨pav, pae⟩ <;> refine ⟨fun _ _ _ hp ha a1 => ?_, fun _ _ hp ha a1 => ?_⟩
   · have ⟨d1, d2⟩ := pav hp ha a1
-    exact ⟨(IH.whr hM.app hM.app).1 d1, (IH.whr hN.app hN.app).1 d2⟩
-  · exact (IH.whr hM.app hN.app).1 (pae hp ha a1)
+    exact ⟨(IH.whr (hM.app ha.hasType.1) (r2 hM ha)).1 d1,
+      (IH.whr (hN.app ha.hasType.1) (r2 hN ha)).1 d2⟩
+  · exact (IH.whr (hM.app ha) (hN.app ha)).1 (pae hp ha a1)
   · have ⟨d1, d2⟩ := pav hp ha a1
-    exact ⟨(IH.whr hM.app hM.app).2 d1, (IH.whr hN.app hN.app).2 d2⟩
-  · exact (IH.whr hM.app hN.app).2 (pae hp ha a1)
+    exact ⟨(IH.whr (hM.app ha.hasType.1) (r2 hM ha)).2 d1,
+      (IH.whr (hN.app ha.hasType.1) (r2 hN ha)).2 d2⟩
+  · exact (IH.whr (hM.app ha) (hN.app ha)).2 (pae hp ha a1)
 
 theorem LRS.LamDefEq.mono_r_1
     (le₁ : a₁ ≤ a₁') (le₂ : a₂ ≤ a₂') (hm : WShape.HasTypeLam m a₁ a₂)
@@ -454,23 +420,27 @@ theorem LRS.PiDefEq.join
   .rfl
 
 theorem LRS.LamClause.left : LRS.LamClause IH M N A f a₁ a₂ → LRS.LamClause IH M M A f a₁ a₂
-  | ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, hP⟩ => ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, hP.left⟩
+  | ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE, hP⟩ =>
+    ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE, hP.left⟩
 
 theorem LRS.LamClause.symm : LRS.LamClause IH M N A f a₁ a₂ → LRS.LamClause IH N M A f a₁ a₂
-  | ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, hP⟩ => ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, hP.symm⟩
+  | ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE, hP⟩ =>
+    ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE, hP.symm⟩
 
 theorem LRS.LamClause.trans (hU : StepUniq env) :
     LRS.LamClause IH M₁ M₂ A f a₁ a₂ → LRS.LamClause IH M₂ M₃ A f a₁ a₂ →
     LRS.LamClause IH M₁ M₃ A f a₁ a₂
-  | ⟨_, _, _, _, rA, hA1, hA2, hA₂, hE, hP⟩, ⟨_, _, _, _, rA', _, _, _, _, hP'⟩ => by
+  | ⟨_, _, _, _, rA, eA, hA1, hA2, hA₂, hE, hP⟩, ⟨_, _, _, _, rA', _, _, _, _, _, hP'⟩ => by
     cases StepS.determ hU rA forallE_whnf rA' forallE_whnf
-    exact ⟨_, _, _, _, rA, hA1, hA2, hA₂, hE, hP.trans hP'⟩
+    exact ⟨_, _, _, _, rA, eA, hA1, hA2, hA₂, hE, hP.trans hP'⟩
 
-theorem LRS.LamClause.whr (hM : StepS env U Γ M M') (hN : StepS env U Γ N N') :
+theorem LRS.LamClause.whr (hM : TRed env U Γ M M' A) (hN : TRed env U Γ N N' A) :
     LRS.LamClause IH M N A f a₁ a₂ ↔ LRS.LamClause IH M' N' A f a₁ a₂ := by
-  constructor <;> intro ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, hP⟩
-  · exact ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, (LRS.LamDefEq.whr hM hN).1 hP⟩
-  · exact ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, (LRS.LamDefEq.whr hM hN).2 hP⟩
+  constructor <;> intro ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE, hP⟩
+  · exact ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE,
+      (LRS.LamDefEq.whr hA1 hA₂ (hM.tyEq eA) (hN.tyEq eA)).1 hP⟩
+  · exact ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE,
+      (LRS.LamDefEq.whr hA1 hA₂ (hM.tyEq eA) (hN.tyEq eA)).2 hP⟩
 
 theorem LRS.LamClause.not_neRed (hU : StepUniq env) :
     LRS.LamClause IH M N A f a₁ a₂ → ¬NeRed env U Γ A
@@ -529,28 +499,28 @@ theorem trans (hU : StepUniq env) :
     · exact .inr (.inl H2)
     · exact .inr (.inr ⟨h1, N1, N3⟩)
 
-theorem conv (hU : StepUniq env)
+theorem conv (hU : StepUniq env) (hE : TyEq env U Γ A B)
     (hAB : (IndRel env U Γ h A B ∧ IndTele IH h l A B) ∨ (NeRed env U Γ A ∧ NeRed env U Γ B)) :
     LRS.IndVal IH A M N h l c fs → LRS.IndVal IH B M N h l c fs := by
   unfold LRS.IndVal
   rintro (H | hA | H)
   · rcases hAB with ⟨hR, hT⟩ | ⟨-, hB⟩
-    · have ⟨_, _, _, _, _, _, rB, _⟩ := hR
-      have hBB := hT.symm.left' hU hR.symm
+    · have hBB := hT.symm.left' hU hR.symm
       refine .inl ?_
       by_cases hs : IsStruct c = true
-      · rw [if_pos hs] at H ⊢; exact H.conv hU ⟨_, _, rB⟩ hT hBB
-      · rw [if_neg hs] at H ⊢; exact H.conv hU ⟨_, _, rB⟩ hT hBB
+      · rw [if_pos hs] at H ⊢; exact H.conv hU hE hR hT hBB
+      · rw [if_neg hs] at H ⊢; exact H.conv hU hE hR hT hBB
     · exact .inr (.inl hB)
   · rcases hAB with ⟨hR, -⟩ | ⟨-, hB⟩
     · exact (hR.not_neRed hU hA).elim
     · exact .inr (.inl hB)
   · exact .inr (.inr H)
 
-theorem whr (hU : StepUniq env) (hM : StepS env U Γ M M') (hN : StepS env U Γ N N') :
+theorem whr (hU : StepUniq env) (hM : TRed env U Γ M M' A) (hN : TRed env U Γ N N' A) :
     LRS.IndVal IH A M N h l c fs ↔ LRS.IndVal IH A M' N' h l c fs := by
   unfold LRS.IndVal
-  refine or_congr ?_ (or_congr .rfl (and_congr .rfl (and_congr (NeRed.whr hU hM) (NeRed.whr hU hN))))
+  refine or_congr ?_
+    (or_congr .rfl (and_congr .rfl (and_congr (NeRed.whr hU hM.1) (NeRed.whr hU hN.1))))
   split
   · exact StructVal.whr hU hM hN
   · exact ⟨fun H => (CtorVal.whr hU H.inert hM hN).1 H, fun H => (CtorVal.whr hU H.inert hM hN).2 H⟩
@@ -645,8 +615,8 @@ theorem LRS.DefEq.mono_l {m m' : WShape (n+1)} (le : m ≤ m') (hm : m.HasType a
           rw [WShape.lam_eq_lam' (hl := hf), hg''] at le
           have le_g := WShape.lam'_le_lam'.1 le
           refine h.imp (fun h => ?_) id
-          let ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, hP⟩ := h
-          exact ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hE, hP.mono_l le_g hm_lam hm'_lam⟩
+          let ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE, hP⟩ := h
+          exact ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hE, hP.mono_l le_g hm_lam hm'_lam⟩
         · simp only [WShape.lam', dif_neg hg''nz] at hg''
           cases WShape.le_bot.1 (hg'' ▸ le)
       · cases hgf'
@@ -725,9 +695,9 @@ theorem LRS.LamClause.join (hU : StepUniq env) {g₁ g₂ : WShapeFun n}
     (hm₁ : WShape.HasTypeLam g₁ a₁ a₂) (hm₂ : WShape.HasTypeLam g₂ a₁ a₂) :
     LRS.LamClause IH M N A g₁ a₁ a₂ → LRS.LamClause IH M N A g₂ a₁ a₂ →
     LRS.LamClause IH M N A (g₁.join g₂) a₁ a₂
-  | ⟨_, _, _, _, rA, hA1, hA2, hA₂, hE, hP⟩, ⟨_, _, _, _, rA', _, _, _, _, hP'⟩ => by
+  | ⟨_, _, _, _, rA, eA, hA1, hA2, hA₂, hE, hP⟩, ⟨_, _, _, _, rA', _, _, _, _, _, hP'⟩ => by
     cases StepS.determ hU rA forallE_whnf rA' forallE_whnf
-    exact ⟨_, _, _, _, rA, hA1, hA2, hA₂, hE, hP.join hC hm₁ hm₂ hP'⟩
+    exact ⟨_, _, _, _, rA, eA, hA1, hA2, hA₂, hE, hP.join hC hm₁ hm₂ hP'⟩
 
 theorem LRS.IndVal.join (hU : StepUniq env) {fs₁ fs₂ : List (WShape n)}
     (hC : fs₁.Forall₂ WShape.Compat fs₂) (htel : ∀ i, (ctorTel h l i).HasType .type)
@@ -837,13 +807,14 @@ def LRS (henv : env.Ordered) (hU : StepUniq env) (IH : LogRel env U Γ n) :
       · exact LRS.IndVal.trans hU
       · exact fun _ => id
   trans' h1 h2 := LRS.TyDefEq.trans henv hU h1 h2
-  conv {A A' a M N m} := by
+  conv {A A' a M N m} hE := by
     cases a using WShape.casesOn' with
     | indTy r h l =>
       rw [LRS.TyDefEq.indTy_iff]
       intro hAA
       cases m using WShape.casesOn' with
-      | ctor c fs hf => rw [LRS.DefEq.ctor_indTy, LRS.DefEq.ctor_indTy]; exact LRS.IndVal.conv hU hAA
+      | ctor c fs hf =>
+        rw [LRS.DefEq.ctor_indTy, LRS.DefEq.ctor_indTy]; exact LRS.IndVal.conv hU hE hAA
       | _ => exact id
     | bot => intros; trivial
     | sort => exact fun _ => id
@@ -857,22 +828,23 @@ def LRS (henv : env.Ordered) (hU : StepUniq env) (IH : LogRel env U Γ n) :
       | bot => intros; trivial
       | _ => intro h; simp at h
       rw [LRS.DefEq.lam_forallE, LRS.DefEq.lam_forallE]
-      rintro (⟨_, _, _, v', rA₁, hA1, hValA, hA₂, hEdge₁, hP⟩ | hA)
+      rintro (⟨_, _, _, v', rA₁, eA, hA1, hValA, hA₂, hEdge₁, hP⟩ | hA)
       · cases StepS.determ hU rA forallE_whnf rA₁ forallE_whnf
         obtain ⟨_, hB'⟩ := hBB'.isType_r
         obtain ⟨_, hF'⟩ := hFF'.isType_r
-        refine .inl ⟨_, _, _, _, rA', hB', IH.left_ty (IH.symm_ty hValB),
-          hBB'.defeqDF_l henv hF', ?_, ?_⟩
+        refine .inl ⟨_, _, _, _, rA', hE.symm.trans (eA.trans (TyEq.forallE henv hBB' hFF')),
+          hB', IH.left_ty (IH.symm_ty hValB), hBB'.defeqDF_l henv hF', ?_, ?_⟩
         · refine ⟨fun _ _ _ hp ha a1 => ?_, fun _ _ hp ha a1 => ?_⟩ <;>
             have ha' := hBB'.symm.defeqDF ha
-          · exact and_self_iff.2 (hEdge.1 hp ha' (IH.conv (IH.symm_ty hValB) a1)).2
-          · exact (hEdge.1 hp ha' (IH.conv (IH.symm_ty hValB) a1)).2
+          · exact and_self_iff.2 (hEdge.1 hp ha' (IH.conv hBB'.symm (IH.symm_ty hValB) a1)).2
+          · exact (hEdge.1 hp ha' (IH.conv hBB'.symm (IH.symm_ty hValB) a1)).2
         refine ⟨fun _ _ _ hp ha a1 => ?_, fun _ _ hp ha a1 => ?_⟩ <;> (
-          have a2 := IH.conv (IH.symm_ty hValB) a1
+          have a2 := IH.conv hBB'.symm (IH.symm_ty hValB) a1
           have ha' := hBB'.symm.defeqDF ha
-          have c := hEdge.2 hp ha'.hasType.1 (IH.left a2))
-        · have ⟨v1, v2⟩ := hP.1 hp ha' a2; exact ⟨IH.conv c v1, IH.conv c v2⟩
-        · exact IH.conv c (hP.2 hp ha' a2)
+          have c := hEdge.2 hp ha'.hasType.1 (IH.left a2)
+          have e := TyEq.inst henv ha'.hasType.1 hFF')
+        · have ⟨v1, v2⟩ := hP.1 hp ha' a2; exact ⟨IH.conv e c v1, IH.conv e c v2⟩
+        · exact IH.conv e c (hP.2 hp ha' a2)
       · exact (hA.not_forallE hU rA).elim
     · cases m using WShape.casesOn' with
       | lam => rw [LRS.DefEq.lam_forallE, LRS.DefEq.lam_forallE]; exact fun _ => .inr hA'
@@ -899,10 +871,10 @@ def LRS (henv : env.Ordered) (hU : StepUniq env) (IH : LogRel env U Γ n) :
           · injection this with this; exact WShapeFun.ext this.symm
           · cases this
         subst hgf
-        let ⟨A₁, A₂, u, v, rA, hA1, hA2, hA₂, hEdge, hP⟩ := h
+        let ⟨A₁, A₂, u, v, rA, eA, hA1, hA2, hA₂, hEdge, hP⟩ := h
         have ht := (WShape.HasTypePi.iff.1 hp).1.isType
         have ht' := (WShape.HasTypePi.iff.1 hp').1.isType
-        refine ⟨A₁, A₂, u, v, rA, hA1, IH.mono_r_2_ty le1 ht ht' hA2, hA₂, ?_⟩
+        refine ⟨A₁, A₂, u, v, rA, eA, hA1, IH.mono_r_2_ty le1 ht ht' hA2, hA₂, ?_⟩
         exact ⟨hEdge.mono_r_2 le1 le2 hp hp' hA2, hP.mono_r_2 le1 le2 hm' hA2 hp'⟩
       | sort => simp [LRS.DefEq.sort_forallE] at h
       | forallE => simp [LRS.DefEq.forallE_forallE] at h
@@ -962,13 +934,13 @@ def LRS (henv : env.Ordered) (hU : StepUniq env) (IH : LogRel env U Γ n) :
             have hgf2 : (WShape.lam g hf).1 = (WShape.lam' g').1 := congrArg (·.1) hg'
             simp only [WShape.lam, WShape.lam'] at hgf2; split at hgf2
             · injection hgf2 with hgf2; have := WShapeFun.ext hgf2.symm; subst this
-              let ⟨A₁, A₂, u, v, rA, hA1, hValA, hA₂, hEdge_src, hP⟩ := h
+              let ⟨A₁, A₂, u, v, rA, eA, hA1, hValA, hA₂, hEdge_src, hP⟩ := h
               simp only [LRS.TyDefEq.forallE_iff] at hA
               rcases hA with ⟨B₁, F₁, B₂, F₂, rA', rA'', hBB_tgt, hFF_tgt, hValB_tgt, hEdge_tgt⟩ |
                 ⟨hn, -⟩
               · cases StepS.determ hU rA forallE_whnf rA' forallE_whnf
                 cases StepS.determ hU rA forallE_whnf rA'' forallE_whnf
-                refine .inl ⟨_, _, _, _, rA, hA1, hValB_tgt, hA₂, hEdge_tgt, ?_⟩
+                refine .inl ⟨_, _, _, _, rA, eA, hA1, hValB_tgt, hA₂, hEdge_tgt, ?_⟩
                 exact hP.mono_r_1 le1 le2 hm_lam hm'_lam hEdge_tgt
               · exact .inr hn
             · cases hgf2
@@ -993,7 +965,7 @@ def LRS (henv : env.Ordered) (hU : StepUniq env) (IH : LogRel env U Γ n) :
   join hC hm₁ hm₂ h1 h2 := LRS.DefEq.join hU hC hm₁ hm₂ h1 h2
   whr {M M' N N' A m a} hM hN := by
     cases a using WShape.casesOn' with
-    | sort => exact LRS.TyDefEq.whr hU hM hN
+    | sort => exact LRS.TyDefEq.whr hU hM.1 hN.1
     | forallE =>
       cases m using WShape.casesOn' with | lam => ?_ | _ => rfl
       exact or_congr (LRS.LamClause.whr hM hN) .rfl

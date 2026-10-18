@@ -65,8 +65,8 @@ theorem LR.SubstWF.symm (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' Γ ρ) :
     · have ⟨⟨_, h1⟩, _⟩ := (h0.2 (n := 0) _ .bot).1 (.bot' .sort)
       exact h1.defeqDF h0.1.symm
     · exact let ⟨⟨u, h1⟩, h2⟩ := (h0.2 a ha).1 ht; ⟨⟨u, h1.symm⟩, (LR _ _ _).symm_ty h2⟩
-    · let ⟨_, h2⟩ := (h0.2 a ha).1 hmem.isType
-      exact (LR _ _ _).conv h2 ((LR _ _ _).symm ((h0.2 a ha).2 hM hmem))
+    · let ⟨⟨_, h1⟩, h2⟩ := (h0.2 a ha).1 hmem.isType
+      exact (LR _ _ _).conv (.base h1) h2 ((LR _ _ _).symm ((h0.2 a ha).2 hM hmem))
 
 variable (henv hU) in
 /-- What the induction proves of a derivation `M ≡ N : A` in `Γ` at shapes `m a`. -/

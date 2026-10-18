@@ -18,6 +18,16 @@ open LE_Interp
 
 variable {env : VEnv} {U : Nat} [ShapeEnv] [AxInterp] {henv : env.Ordered} {hU : StepUniq env}
 
+omit [ShapeEnv] in
+/-- A definition's delta step, typed at its type at any equivalent levels. -/
+theorem TRed.delta_at (henv : env.Ordered) {ci : VDefVal} (hdf : env.defeqs ci.toDefEq)
+    (hcon : env.constants ci.name = some ci.toVConstant) (hls : ∀ l ∈ ls, l.WF U)
+    (hls' : ∀ l ∈ ls', l.WF U) (heq : List.Forall₂ (· ≈ ·) ls ls') (hlen : ls.length = ci.uvars) :
+    TRed env U Γ (.const ci.name ls) (ci.value.instL ls) (ci.type.instL ls') := by
+  obtain ⟨u, h⟩ := henv.constWF hcon
+  exact (TRed.delta (df := ci.toDefEq) hdf rfl hls hlen).defeqDF
+    ((VEnv.IsDefEq.instL_r henv (Γ := []) trivial hls hls' heq h).weak0 henv)
+
 /-- An interpretation of a definition's constant interprets its value. -/
 theorem LE_Interp.const_delta (hM : ModelEnv env) {ci : VDefVal} (hnd : ¬AxInterp.dom ci.name)
     (hdf : env.defeqs ci.toDefEq)
@@ -43,7 +53,9 @@ theorem LE_Interp.const_delta (hM : ModelEnv env) {ci : VDefVal} (hnd : ¬AxInte
 that its value is. -/
 theorem AdeqStmt.delta (hM : ModelEnv env) {ci : VDefVal} (hnd : ¬AxInterp.dom ci.name)
     (hdf : env.defeqs ci.toDefEq)
+    (hls : ∀ l ∈ ls, l.WF U) (hls' : ∀ l ∈ ls', l.WF U)
     (hlen : ls.length = ci.uvars) (hlen' : ls'.length = ci.uvars)
+    (hty : env.IsDefEq U [] (ci.type.instL ls) (ci.type.instL ls') (.sort u))
     (hbody : AdeqStmt (U := U) henv hU Γ₀ Γ (ci.value.instL ls) (ci.value.instL ls')
       (ci.type.instL ls)) :
     AdeqStmt (U := U) henv hU Γ₀ Γ (.const ci.name ls) (.const ci.name ls') (ci.type.instL ls) := by
@@ -51,20 +63,22 @@ theorem AdeqStmt.delta (hM : ModelEnv env) {ci : VDefVal} (hnd : ¬AxInterp.dom 
   have ad := hbody (hm.const_delta hM hnd hdf) ha hmem
   have hv : (ci.value.instL ls).ClosedN := (hM.closed.defeq hdf).instL
   have hv' : (ci.value.instL ls').ClosedN := (hM.closed.defeq hdf).instL
-  have hs : StepS env U Γ₀ (.const ci.name ls) (ci.value.instL ls) :=
-    .single (.delta (df := ci.toDefEq) hdf rfl hlen)
-  have hs' : StepS env U Γ₀ (.const ci.name ls') (ci.value.instL ls') :=
-    .single (.delta (df := ci.toDefEq) hdf rfl hlen')
+  have ht : (ci.type.instL ls).ClosedN := hty.closedN henv (Γ := []) trivial
+  have hs : TRed env U Γ₀ (.const ci.name ls) (ci.value.instL ls) (ci.type.instL ls) :=
+    TRed.delta (df := ci.toDefEq) hdf rfl hls hlen
+  have hs' : TRed env U Γ₀ (.const ci.name ls') (ci.value.instL ls') (ci.type.instL ls) :=
+    (TRed.delta (df := ci.toDefEq) hdf rfl hls' hlen').defeqDF (hty.weak0 henv).symm
   have e1 {σ} : (ci.value.instL ls).subst σ = ci.value.instL ls := hv.subst_eq .zero
   have e2 {σ} : (ci.value.instL ls').subst σ = ci.value.instL ls' := hv'.subst_eq .zero
+  have et {σ} : (ci.type.instL ls).subst σ = ci.type.instL ls := ht.subst_eq .zero
   have c1 {σ} : (VExpr.const ci.name ls).subst σ = .const ci.name ls := rfl
   have c2 {σ} : (VExpr.const ci.name ls').subst σ = .const ci.name ls' := rfl
   refine ⟨fun σ σ' W => ?_, fun σ W => ?_⟩
   · have ⟨h1, h2⟩ := ad.1 W
-    rw [e1, e1] at h1; rw [e2, e2] at h2; rw [c1, c1, c2, c2]
+    rw [e1, e1, et] at h1; rw [e2, e2, et] at h2; rw [c1, c1, c2, c2, et]
     exact ⟨((LR _ _ _).whr hs hs).2 h1, ((LR _ _ _).whr hs' hs').2 h2⟩
   · have h := ad.2 W
-    rw [e1, e2] at h; rw [c1, c2]
+    rw [e1, e2, et] at h; rw [c1, c2, et]
     exact ((LR _ _ _).whr hs hs').2 h
 
 /-- A definition declared in `E₀` is related wherever it is interpreted, given adequacy for `E₀`'s
@@ -73,6 +87,7 @@ theorem AdeqStmt.delta_decl (hM : ModelEnv env) {E₀ : VEnv} (hE₀ : E₀.Orde
     (hnd : ¬AxInterp.dom ci.name) (hv : ci.WF E₀) (hdf : env.defeqs ci.toDefEq)
     (hls : ∀ l ∈ ls, l.WF U) (hls' : ∀ l ∈ ls', l.WF U) (heq : List.Forall₂ (· ≈ ·) ls ls')
     (hlen : ls.length = ci.uvars)
+    (hty : env.IsDefEq U [] (ci.type.instL ls) (ci.type.instL ls') (.sort u))
     (HA₀ : ∀ {Γ M N A}, E₀.IsDefEqStrong U Γ M N A → OnCtx Γ (env.IsType U) →
       AdeqStmt (U := U) henv hU Γ₀ Γ M N A)
     (hΓ : OnCtx Γ (env.IsType U)) :
@@ -81,30 +96,33 @@ theorem AdeqStmt.delta_decl (hM : ModelEnv env) {E₀ : VEnv} (hE₀ : E₀.Orde
   have h1 : E₀.IsDefEq U [] (ci.value.instL ls) (ci.value.instL ls') (ci.type.instL ls) :=
     VEnv.IsDefEq.instL_r hE₀ (U' := ci.uvars) (Γ := []) trivial hls hls' heq hv
   intro ρ n m a x y z
-  exact AdeqStmt.delta hM hnd hdf hlen hlen'
+  exact AdeqStmt.delta hM hnd hdf hls hls' hlen hlen' hty
     (fun {_ _ _ _} => HA₀ ((h1.strong hE₀ (Γ := []) trivial).weak0 hE₀) hΓ) x y z
 
 /-- A definition's rule is related wherever its constant is interpreted, given that its value is. -/
 theorem AdeqStmt.delta_r (hM : ModelEnv env) {ci : VDefVal} (hnd : ¬AxInterp.dom ci.name)
     (hdf : env.defeqs ci.toDefEq)
-    (hlen : ls.length = ci.uvars)
+    (hls : ∀ l ∈ ls, l.WF U) (hlen : ls.length = ci.uvars)
+    (hty : env.HasType U [] (ci.type.instL ls) (.sort u))
     (hbody : AdeqStmt (U := U) henv hU Γ₀ Γ (ci.value.instL ls) (ci.value.instL ls)
       (ci.type.instL ls)) :
     AdeqStmt (U := U) henv hU Γ₀ Γ (.const ci.name ls) (ci.value.instL ls) (ci.type.instL ls) := by
   intro ρ n m a hm ha hmem
   have ad := hbody (hm.const_delta hM hnd hdf) ha hmem
   have hv : (ci.value.instL ls).ClosedN := (hM.closed.defeq hdf).instL
-  have hs : StepS env U Γ₀ (.const ci.name ls) (ci.value.instL ls) :=
-    .single (.delta (df := ci.toDefEq) hdf rfl hlen)
+  have ht : (ci.type.instL ls).ClosedN := hty.closedN henv (Γ := []) trivial
+  have hs : TRed env U Γ₀ (.const ci.name ls) (ci.value.instL ls) (ci.type.instL ls) :=
+    TRed.delta (df := ci.toDefEq) hdf rfl hls hlen
   have e1 {σ} : (ci.value.instL ls).subst σ = ci.value.instL ls := hv.subst_eq .zero
+  have et {σ} : (ci.type.instL ls).subst σ = ci.type.instL ls := ht.subst_eq .zero
   have c1 {σ} : (VExpr.const ci.name ls).subst σ = .const ci.name ls := rfl
   refine ⟨fun σ σ' W => ?_, fun σ W => ?_⟩
   · have ⟨h1, h2⟩ := ad.1 W
-    rw [e1, e1] at h1; rw [c1, c1]
+    rw [e1, e1, et] at h1; rw [et] at h2; rw [c1, c1, et]
     exact ⟨((LR _ _ _).whr hs hs).2 h1, h2⟩
   · have h := ad.2 W
-    rw [e1] at h; rw [c1, e1]
-    exact ((LR _ _ _).whr hs .rfl).2 h
+    rw [e1, et] at h; rw [c1, e1, et]
+    exact ((LR _ _ _).whr hs (.refl hs.2.hasType.2)).2 h
 
 /-- Adding a definition keeps adequacy's environment cases: its constant is related by its value's
 adequacy in the environment before it, and its rule by its value's. -/
@@ -120,8 +138,8 @@ theorem AdequacyHyps.addDef (hM : ModelEnv env) {E E₁ : VEnv} (hEo : E.Ordered
   have HA₀ : ∀ {Γ M N A}, E.IsDefEqStrong U Γ M N A → OnCtx Γ (env.IsType U) →
       AdeqStmt (U := U) henv hU Γ₀ Γ M N A := fun D hΓ => LR.adequacy_of hM hE hS hΓ₀ H D hΓ
   have hinds : (E₁.addDefEq ci.toDefEq).inducts = E.inducts := (VEnv.addConst_inducts h1 :)
-  refine ⟨fun {Γ c ci' ls ls' u} hΓ hc hls hls' hlen heq hu _ _ hA => ?_,
-    fun {Γ df ls u} hΓ hd hls hlen hu _ _ _ _ _ hL hR => ?_,
+  refine ⟨fun {Γ c ci' ls ls' u} hΓ hc hls hls' hlen heq hu hT0 _ hA => ?_,
+    fun {Γ df ls u} hΓ hd hls hlen hu hT0 _ _ _ _ hL hR => ?_,
     fun hΓ h => H.projDF hΓ (hinds ▸ h), fun hΓ h => H.projIota hΓ (hinds ▸ h),
     fun hΓ h => H.projEta hΓ (hinds ▸ h)⟩
   · change E₁.constants c = some ci' at hc
@@ -129,7 +147,7 @@ theorem AdequacyHyps.addDef (hM : ModelEnv env) {E E₁ : VEnv} (hEo : E.Ordered
     simp only at hc; split at hc
     · next e =>
       subst e; cases hc
-      exact AdeqStmt.delta_decl hM hEo hnd hv hdf hls hls' heq hlen HA₀ hΓ
+      exact AdeqStmt.delta_decl hM hEo hnd hv hdf hls hls' heq hlen hT0.defeq HA₀ hΓ
     · exact H.const hΓ hc hls hls' hlen heq hu ‹_› ‹_› hA
   · rcases hd with rfl | hd
     · have hlen' : ls.length = ci.uvars := hlen
@@ -137,7 +155,7 @@ theorem AdequacyHyps.addDef (hM : ModelEnv env) {E E₁ : VEnv} (hEo : E.Ordered
         congrArg _ (VLevel.inst_map_id (n := ci.uvars) hlen')
       show AdeqStmt (U := U) henv hU Γ₀ Γ (ci.toDefEq.lhs.instL ls) (ci.value.instL ls)
         (ci.type.instL ls)
-      rw [e]; exact AdeqStmt.delta_r hM hnd hdf hlen' hR
+      rw [e]; exact AdeqStmt.delta_r hM hnd hdf hls hlen' hT0.defeq hR
     · rw [VEnv.addConst_defeqs h1] at hd
       exact H.extra hΓ hd hls hlen hu ‹_› ‹_› ‹_› ‹_› ‹_› hL hR
 

@@ -59,6 +59,20 @@ theorem whr (h : StepS env U Γ M M₁) : NeRed env U Γ M ↔ NeRed env U Γ M�
 
 end NeRed
 
+namespace TRed
+
+/-- A typed reduction converts along a chain of type equalities. -/
+theorem tyEq (H : TyEq env U Γ A B) (h : TRed env U Γ e e' A) : TRed env U Γ e e' B :=
+  ⟨h.1, H.defeqDF h.2⟩
+
+/-- A typed reduction to a normal form continues every other typed reduction from the same
+term. -/
+theorem determ_l (hU : StepUniq env) (H1 : TRed env U Γ e e₁ A) (H2 : TRed env U Γ e e₂ A)
+    (W : WHNF env U Γ e₂) : TRed env U Γ e₁ e₂ A :=
+  ⟨StepS.determ_l hU H1.1 H2.1 W, H1.2.symm.trans H2.2⟩
+
+end TRed
+
 namespace SortRel
 variable (hU : StepUniq env)
 
@@ -119,7 +133,7 @@ structure LogRel (env : VEnv) (U : Nat) (Γ : List VExpr) (n : Nat)
   trans' : DefEq A₁ A₂ (.sort u) a (.sort r') → DefEq A₂ A₃ (.sort v) a (.sort r) →
     DefEq A₁ A₃ (.sort u) a (.sort r')
   trans_ty : TyDefEq M₁ M₂ m → TyDefEq M₂ M₃ m → TyDefEq M₁ M₃ m
-  conv : TyDefEq A B a → DefEq M N A m a → DefEq M N B m a
+  conv : TyEq env U Γ A B → TyDefEq A B a → DefEq M N A m a → DefEq M N B m a
   mono_r_2 : a ≤ a' → m.HasType a → a'.HasType .type → DefEq M N A m a' → DefEq M N A m a
   mono_r_2_ty : a ≤ a' → a.HasType .type → a'.HasType .type → TyDefEq A B a' → TyDefEq A B a
   mono_r_1 : a ≤ a' → m.HasType a → m.HasType a' → TyDefEq A A a' →
@@ -129,7 +143,7 @@ structure LogRel (env : VEnv) (U : Nat) (Γ : List VExpr) (n : Nat)
     TyDefEq A B m₁ → TyDefEq A B m₂ → TyDefEq A B (m₁.join m₂)
   join : m₁.Compat m₂ → m₁.HasType a → m₂.HasType a →
     DefEq M N A m₁ a → DefEq M N A m₂ a → DefEq M N A (m₁.join m₂) a
-  whr : StepS env U Γ M M' → StepS env U Γ N N' → (DefEq M N A m a ↔ DefEq M' N' A m a)
+  whr : TRed env U Γ M M' A → TRed env U Γ N N' A → (DefEq M N A m a ↔ DefEq M' N' A m a)
   whr_ty : StepS env U Γ A A' → StepS env U Γ B B' → (TyDefEq A B m ↔ TyDefEq A' B' m)
 
 
@@ -188,7 +202,7 @@ def LR0 (hU : StepUniq env) : LogRel env U Γ 0 where
   trans_ty {M₁ M₂ m M₃} := by
     dsimp [LR0.TyDefEq]; split <;> [(intros; trivial); skip]
     exact SortRel.trans hU
-  conv _ := id
+  conv _ _ := id
   mono_r_2 {a a' _ _ _ _} le _ _ := by
     obtain ⟨⟨⟩, _⟩ := a <;> obtain ⟨⟨⟩, _⟩ := a' <;> simp [LR0.DefEq]; cases le
   mono_r_2_ty {a a' _ _} le _ _ := by
@@ -208,7 +222,7 @@ def LR0 (hU : StepUniq env) : LogRel env U Γ 0 where
   whr {M M' N N' A m a} hM hN := by
     dsimp [LR0.DefEq]; split <;> [exact .rfl; skip]
     dsimp [LR0.TyDefEq]; split <;> [exact .rfl; skip]
-    exact SortRel.whr hU hM hN
+    exact SortRel.whr hU hM.1 hN.1
   whr_ty {A A' B B' m} hA hB := by
     dsimp [LR0.TyDefEq]; split <;> [exact .rfl; skip]
     exact SortRel.whr hU hA hB

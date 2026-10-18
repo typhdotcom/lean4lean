@@ -378,10 +378,12 @@ theorem LE_Interp.transfer (X : AxInterp) (hMX : @ModelEnv _ X env)
       have htc : (ci.type.instL ls₃).ClosedN := (hclX.constType h1).instL
       rw [VExpr.ClosedN.subst_eq hv1c .zero, VExpr.ClosedN.subst_eq hv2c .zero,
         VExpr.ClosedN.subst_eq htc .zero] at ad
-      have hs1 : StepS env U Γ₀ (.const ci.name ls₁) (ci.value.instL ls₁) :=
-        .single (.delta (df := ci.toDefEq) hdf rfl ((Lean4Lean.List.Forall₂.length_eq e1).symm.trans a3))
-      have hs2 : StepS env U Γ₀ (.const ci.name ls₂) (ci.value.instL ls₂) :=
-        .single (.delta (df := ci.toDefEq) hdf rfl ((Lean4Lean.List.Forall₂.length_eq e2).symm.trans a3))
+      have hs1 : TRed env U Γ₀ (.const ci.name ls₁) (ci.value.instL ls₁) (ci.type.instL ls₃) :=
+        TRed.delta_at henv hdf hcon w1 w3 (levels_equiv_trans l1 e3)
+          ((Lean4Lean.List.Forall₂.length_eq e1).symm.trans a3)
+      have hs2 : TRed env U Γ₀ (.const ci.name ls₂) (ci.value.instL ls₂) (ci.type.instL ls₃) :=
+        TRed.delta_at henv hdf hcon w2 w3 (levels_equiv_trans (levels_equiv_symm e2) e3)
+          ((Lean4Lean.List.Forall₂.length_eq e2).symm.trans a3)
       exact ((LR _ _ _).whr hs1 hs2).2 ad
 
 variable (henv : env.Ordered) (hU : StepUniq env) in
@@ -446,10 +448,10 @@ theorem AdeqStmt.mutual_r (X : AxInterp) (H : MutualOK (U := U) henv hU X Γ₀ 
   have rfl' := List.forall₂_refl' (r := (· ≈ ·)) (l := ls) fun _ => (rfl : VLevel.Equiv _ _)
   have d := (H.body ci hci ls ls ls rfl' rfl' hls hls hls hlen hvG haG hmem).2 hid
   rw [VExpr.ClosedN.subst_eq hvc .zero, VExpr.ClosedN.subst_eq htc .zero] at d
-  have hs : StepS env U Γ₀ (.const ci.name ls) (ci.value.instL ls) :=
-    .single (.delta (df := ci.toDefEq) hdf rfl hlen)
+  have hs : TRed env U Γ₀ (.const ci.name ls) (ci.value.instL ls) (ci.type.instL ls) :=
+    TRed.delta (df := ci.toDefEq) hdf rfl hls hlen
   exact LR.Adequate.of_closed (M := .const ci.name ls) trivial hvc htc
-    (((LR _ _ _).whr hs hs).2 d) d (((LR _ _ _).whr hs .rfl).2 d)
+    (((LR _ _ _).whr hs hs).2 d) d (((LR _ _ _).whr hs (.refl hs.2.hasType.2)).2 d)
 
 omit [ShapeEnv] in
 theorem _root_.Lean4Lean.VEnv.addConsts_constants_cases : ∀ {env env' : VEnv} {cis : List VDefVal},

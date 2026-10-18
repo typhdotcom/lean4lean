@@ -1,4 +1,4 @@
-import Lean4Lean.Theory.Typing.LogRel.Rel
+import Lean4Lean.Theory.Typing.LogRel.SubstRel
 
 /-!
 # Constructor telescopes in the relation
@@ -32,6 +32,115 @@ def piCount : VExpr → Nat
 with the parameters instantiated, the first `piCount - k` arguments, for `k` fields. -/
 def ctorTeleAt (ci : VConstant) (k : Nat) (ls : List VLevel) (As : List VExpr) : VExpr :=
   piInst (ci.type.instL ls) (As.take (piCount ci.type - k))
+
+section
+variable {env : VEnv} {U : Nat} {Γ : List VExpr}
+
+theorem _root_.List.Forall₂.swap' {R : α → β → Prop} {S : β → α → Prop}
+    (H : ∀ a b, R a b → S b a) : ∀ {l₁ l₂}, List.Forall₂ R l₁ l₂ → List.Forall₂ S l₂ l₁
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons (H _ _ h) (swap' H hs)
+
+theorem _root_.List.Forall₂.left' {R : α → β → Prop} {S : α → α → Prop}
+    (H : ∀ a b, R a b → S a a) : ∀ {l₁ l₂}, List.Forall₂ R l₁ l₂ → List.Forall₂ S l₁ l₁
+  | _, _, .nil => .nil
+  | _, _, .cons h hs => .cons (H _ _ h) (left' H hs)
+
+/-- Two types that reduce to applications of the same type former at equivalent levels, with
+arguments related along the type former's telescope (`typeTele`). -/
+def IndRel (env : VEnv) (U : Nat) (Γ : List VExpr) (h : IndHead) (M N : VExpr) : Prop :=
+  Inert env h.name ∧ ∃ ls ls' As As',
+    StepS env U Γ M ((VExpr.const h.name ls).appN As) ∧
+    StepS env U Γ N ((VExpr.const h.name ls').appN As') ∧
+    List.Forall₂ (· ≈ ·) ls ls' ∧ As.length = (typeTele env h.name ls).length ∧
+    As'.length = (typeTele env h.name ls').length ∧
+    SubstRel env U Γ (Subst.dflt.consList As) (Subst.dflt.consList As')
+      (typeTele env h.name ls).reverse (typeTele env h.name ls').reverse
+
+namespace IndRel
+
+theorem left (H : IndRel env U Γ h M N) : IndRel env U Γ h M M := by
+  obtain ⟨hn, ls, _, As, _, h1, -, h3, h4, -, h6⟩ := H
+  exact ⟨hn, ls, ls, As, As, h1, h1, h3.left' fun _ _ _ => (rfl : VLevel.Equiv _ _), h4, h4,
+    h6.left⟩
+
+theorem symm (H : IndRel env U Γ h M N) : IndRel env U Γ h N M := by
+  obtain ⟨hn, ls, ls', As, As', h1, h2, h3, h4, h5, h6⟩ := H
+  exact ⟨hn, ls', ls, As', As, h2, h1, h3.swap' fun _ _ e => Eq.symm e, h5, h4, h6.symm⟩
+
+theorem trans (hU : StepUniq env) (H1 : IndRel env U Γ h M₁ M₂) (H2 : IndRel env U Γ h M₂ M₃) :
+    IndRel env U Γ h M₁ M₃ := by
+  obtain ⟨hn, ls, ls', As, As', h1, h2, h3, h4, -, h6⟩ := H1
+  obtain ⟨-, ls₂, ls'', As₂, As'', h2', h5, h6', -, h8, h9⟩ := H2
+  have := StepS.determ hU h2 hn.whnf h2' hn.whnf
+  obtain ⟨-, rfl, rfl⟩ := appN_const_inj this
+  exact ⟨hn, ls, ls'', As, As'', h1, h5, List.Forall₂.trans (R := (· ≈ ·)) (S := (· ≈ ·)) (T := (· ≈ ·))
+      (fun _ _ _ (a : VLevel.Equiv _ _) (b : VLevel.Equiv _ _) => (Eq.trans a b : VLevel.Equiv _ _)) h3 h6',
+    h4, h8, h6.trans h9⟩
+
+theorem whr (hU : StepUniq env) (hM : StepS env U Γ M M') (hN : StepS env U Γ N N') :
+    IndRel env U Γ h M N ↔ IndRel env U Γ h M' N' := by
+  constructor
+  · rintro ⟨hn, ls, ls', As, As', h1, h2, h3, h4⟩
+    exact ⟨hn, ls, ls', As, As', StepS.determ_l hU hM h1 hn.whnf,
+      StepS.determ_l hU hN h2 hn.whnf, h3, h4⟩
+  · rintro ⟨hn, ls, ls', As, As', h1, h2, h3, h4⟩
+    exact ⟨hn, ls, ls', As, As', hM.trans h1, hN.trans h2, h3, h4⟩
+
+/-- Applications of a recorded type former at equivalent levels, with arguments equal along its
+telescope, are related. -/
+theorem of_substEq (henv : env.WF) (hn : Inert env h.name) {d : VInductDecl} {t : Nat}
+    (hs : env.inducts h.name = some (d, t)) (hΓ : OnCtx Γ (env.IsType U))
+    {ls ls' : List VLevel} (hls : ∀ l ∈ ls, l.WF U) (hls' : ∀ l ∈ ls', l.WF U)
+    (heq : List.Forall₂ (· ≈ ·) ls ls') {As As' : List VExpr}
+    (hlen : As.length = (typeTele env h.name ls).length)
+    (hlen' : As'.length = (typeTele env h.name ls').length)
+    (W : VEnv.Ctx.SubstEq env U Γ (Subst.dflt.consList As) (Subst.dflt.consList As')
+      (typeTele env h.name ls).reverse) :
+    IndRel env U Γ h ((VExpr.const h.name ls).appN As) ((VExpr.const h.name ls').appN As') := by
+  obtain ⟨-, -, -, -, -, -, T, hT, -⟩ := henv.inducts_block hs
+  refine ⟨hn, ls, ls', As, As', .rfl, .rfl, heq, hlen, hlen', ?_⟩
+  rw [typeTele_block hs hT, typeTele_block hs hT, ← List.map_reverse, ← List.map_reverse] at *
+  exact SubstRel.of_substEq henv.ordered hΓ hls hls' heq (henv.blockTele_onCtx hs hT) W
+
+end IndRel
+
+/-- The arguments `As` of the type former `h.name` at levels `ls` are typed along its
+telescope. -/
+def TypeArgs (env : VEnv) (U : Nat) (Γ : List VExpr) (h : IndHead) (ls : List VLevel)
+    (As : List VExpr) : Prop :=
+  As.length = (typeTele env h.name ls).length ∧
+  SubstRel env U Γ (Subst.dflt.consList As) (Subst.dflt.consList As)
+    (typeTele env h.name ls).reverse (typeTele env h.name ls).reverse
+
+/-- An application of the constructor `c` at levels `ls` to parameters `qs` and fields `ms` has
+the type former's application at levels `lsA` to `AsA` as its type: the levels agree, and the
+parameters and the constructor's indices are related to `AsA` along the type former's
+telescope. -/
+def CtorParams (env : VEnv) (U : Nat) (Γ : List VExpr) (h : IndHead) (c : Name)
+    (ls : List VLevel) (qs ms : List VExpr) (lsA : List VLevel) (AsA : List VExpr) : Prop :=
+  List.Forall₂ (· ≈ ·) ls lsA ∧
+  (qs ++ ctorIdx env h.name c ls (qs ++ ms)).length = (typeTele env h.name ls).length ∧
+  AsA.length = (typeTele env h.name lsA).length ∧
+  SubstRel env U Γ (Subst.dflt.consList (qs ++ ctorIdx env h.name c ls (qs ++ ms)))
+    (Subst.dflt.consList AsA) (typeTele env h.name ls).reverse (typeTele env h.name lsA).reverse
+
+theorem CtorParams.conv (H : CtorParams env U Γ h c ls qs ms lsA AsA)
+    (hl : List.Forall₂ (· ≈ ·) lsA lsB) (hB : AsB.length = (typeTele env h.name lsB).length)
+    (hR : SubstRel env U Γ (Subst.dflt.consList AsA) (Subst.dflt.consList AsB)
+      (typeTele env h.name lsA).reverse (typeTele env h.name lsB).reverse) :
+    CtorParams env U Γ h c ls qs ms lsB AsB :=
+  ⟨List.Forall₂.trans (R := (· ≈ ·)) (S := (· ≈ ·)) (T := (· ≈ ·))
+    (fun _ _ _ (a : VLevel.Equiv _ _) (b : VLevel.Equiv _ _) => (Eq.trans a b : VLevel.Equiv _ _))
+    H.1 hl, H.2.1, hB, H.2.2.2.trans hR⟩
+
+theorem TypeArgs.of_rel
+    (hB : AsB.length = (typeTele env h.name lsB).length)
+    (hR : SubstRel env U Γ (Subst.dflt.consList AsA) (Subst.dflt.consList AsB)
+      (typeTele env h.name lsA).reverse (typeTele env h.name lsB).reverse) :
+    TypeArgs env U Γ h lsB AsB := ⟨hB, hR.symm.trans hR⟩
+
+end
 
 variable [ShapeEnv]
 
@@ -260,7 +369,7 @@ theorem symm : ∀ {k T T'} {tel : WShape n}, TeleRel IH k T T' tel → TeleRel 
   | _+1, _, _, _, .inl h => .inl h
   | _+1, _, _, _, .inr ⟨D, B, D', B', b, g, hv, r, r', hD, hDD, H⟩ =>
     .inr ⟨D', B', D, B, b, g, hv, r', r, hD.symm, IH.symm_ty hDD, fun a a' p hp ha hr =>
-      symm (H a' a p hp (hD.symm.defeqDF ha.symm) (IH.conv (IH.symm_ty hDD) (IH.symm hr)))⟩
+      symm (H a' a p hp (hD.symm.defeqDF ha.symm) (IH.conv hD.symm (IH.symm_ty hDD) (IH.symm hr)))⟩
 
 theorem trans (hU : StepUniq env) : ∀ {k T T' T''} {tel : WShape n},
     TeleRel IH k T T' tel → TeleRel IH k T' T'' tel → TeleRel IH k T T'' tel
@@ -275,7 +384,7 @@ theorem trans (hU : StepUniq env) : ∀ {k T T' T''} {tel : WShape n},
     refine .inr ⟨D, B, D'', B'', b, g, hv, r, r'', .trans hD hD2, IH.trans_ty hDD hDD2,
       fun a a'' p hp ha hr => trans hU (H a a'' p hp ha hr) (H2 a'' a'' p hp ?_ ?_)⟩
     · exact hD.defeqDF ha.hasType.2
-    · exact IH.conv hDD (IH.left (IH.symm hr))
+    · exact IH.conv hD hDD (IH.left (IH.symm hr))
 
 theorem left (hU : StepUniq env) (H : TeleRel IH k T T' tel) : TeleRel IH k T T tel :=
   H.trans hU H.symm
@@ -533,7 +642,7 @@ theorem conv (hU : StepUniq env) : ∀ {T T'} {tel : WShape n} {ms ns fs},
     obtain ⟨D₁, B₁, D', B', r₁, r', hD, hDD, H⟩ := HT.of_piView hv
     obtain ⟨rfl, rfl⟩ : D = D₁ ∧ B = B₁ := by
       have := StepS.determ hU r forallE_whnf' r₁ forallE_whnf'; simpa using this
-    exact ⟨D', B', b, g, hv, r', hx, hD.defeqDF hd, IH.conv hDD hr,
+    exact ⟨D', B', b, g, hv, r', hx, hD.defeqDF hd, IH.conv hD hDD hr,
       conv hU (H _ _ _ hx hd.hasType.1 (IH.left hr)) HF⟩
   | _, _, _, [], [], _ :: _, _, h | _, _, _, [], _ :: _, _, _, h | _, _, _, _ :: _, [], _, _, h
   | _, _, _, _ :: _, _ :: _, [], _, h => h.elim
@@ -594,9 +703,10 @@ def CtorVal (h : IndHead) (l : List (WShape n)) (A M N : VExpr) (c : Name)
   Inert env h.name ∧ Inert env c ∧ IndTele IH h l A A ∧
   ∃ i k ci lsA AsA ls qs ms ls' qs' ns, h.ctors.idxOf? c = some i ∧ h.arities[i]? = some k ∧
     env.constants c = some ci ∧ StepS env U Γ A ((VExpr.const h.name lsA).appN AsA) ∧
-    StepS env U Γ M ((VExpr.const c ls).appN (qs ++ ms)) ∧
-    StepS env U Γ N ((VExpr.const c ls').appN (qs' ++ ns)) ∧ fs.length = k ∧
-    FieldsRel IH (ctorTeleAt ci k lsA AsA) (ctorTel h l i) ms ns fs
+    TRed env U Γ M ((VExpr.const c ls).appN (qs ++ ms)) A ∧
+    TRed env U Γ N ((VExpr.const c ls').appN (qs' ++ ns)) A ∧ fs.length = k ∧
+    FieldsRel IH (ctorTeleAt ci k lsA AsA) (ctorTel h l i) ms ns fs ∧
+    CtorParams env U Γ h c ls qs ms lsA AsA ∧ CtorParams env U Γ h c ls' qs' ns lsA AsA
 
 /-- Two values of a structure at a constructor shape, related extensionally: their weak head
 normal forms' projections are related along the constructor's telescope at the type's
@@ -606,10 +716,10 @@ def StructVal (h : IndHead) (l : List (WShape n)) (A M N : VExpr) (c : Name)
   Inert env h.name ∧ IndTele IH h l A A ∧
   ∃ i k ci lsA AsA M' N', h.ctors.idxOf? c = some i ∧ h.arities[i]? = some k ∧
     env.constants c = some ci ∧ StepS env U Γ A ((VExpr.const h.name lsA).appN AsA) ∧
-    StepS env U Γ M M' ∧ WHNF env U Γ M' ∧ StepS env U Γ N N' ∧ WHNF env U Γ N' ∧
+    TRed env U Γ M M' A ∧ WHNF env U Γ M' ∧ TRed env U Γ N N' A ∧ WHNF env U Γ N' ∧
     fs.length = k ∧
     FieldsRel IH (ctorTeleAt ci k lsA AsA) (ctorTel h l i) (VExpr.projs h.name k M')
-      (VExpr.projs h.name k N') fs
+      (VExpr.projs h.name k N') fs ∧ TypeArgs env U Γ h lsA AsA
 
 end
 
@@ -662,14 +772,16 @@ private theorem forall₂_le_refl : ∀ (l : List (WShape n)), l.Forall₂ (· �
 namespace CtorVal
 
 theorem left (H : CtorVal IH h l A M N c fs) : CtorVal IH h l A M M c fs :=
-  let ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, _, _, _, h1, h2, h3, h4, h5, _, h7, hF⟩ := H
-  ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls, qs, ms, h1, h2, h3, h4, h5, h5, h7, hF.left⟩
+  let ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, _, _, _, h1, h2, h3, h4, h5, _, h7, hF, hp, _⟩ :=
+    H
+  ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls, qs, ms, h1, h2, h3, h4, h5, h5, h7, hF.left, hp,
+    hp⟩
 
 theorem symm (hU : StepUniq env) (H : CtorVal IH h l A M N c fs) : CtorVal IH h l A N M c fs := by
   obtain ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, rfl,
-    hF⟩ := H
+    hF, hp, hp'⟩ := H
   exact ⟨hn, hc, hT, i, fs.length, ci, lsA, AsA, ls', qs', ns, ls, qs, ms, h1, h2, h3, h4, h6, h5,
-    rfl, hF.symm hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3)⟩
+    rfl, hF.symm hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3), hp', hp⟩
 
 omit [ShapeEnv] in
 theorem appN_split (hU : StepUniq env) (hc : Inert env c)
@@ -684,36 +796,37 @@ theorem appN_split (hU : StepUniq env) (hc : Inert env c)
 theorem trans (hU : StepUniq env) (H1 : CtorVal IH h l A M N c fs)
     (H2 : CtorVal IH h l A N P c fs) : CtorVal IH h l A M P c fs := by
   obtain ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, rfl,
-    hF⟩ := H1
+    hF, hp, -⟩ := H1
   obtain ⟨-, -, -, i', k', ci', lsA', AsA', ls₂, qs₂, ns₂, ls'', qs'', ps, h1', h2', h3', h4', h5',
-    h6', hk, hF'⟩ := H2
+    h6', hk, hF', -, hp'⟩ := H2
   rw [h1] at h1'; cases h1'
   rw [h2] at h2'; cases h2'
   rw [h3] at h3'; cases h3'
   have := StepS.determ hU h4 hn.whnf h4' hn.whnf
   obtain ⟨-, rfl, rfl⟩ := appN_const_inj this
-  obtain ⟨rfl, rfl, rfl⟩ := appN_split hU hc h6 h5'
+  obtain ⟨rfl, rfl, rfl⟩ := appN_split hU hc h6.1 h5'.1
     (by rw [hF.length.2, hF'.length.1])
   exact ⟨hn, hc, hT, i, _, ci, lsA, AsA, ls, qs, ms, ls'', qs'', ps, h1, h2, h3, h4, h5, h6', rfl,
-    hF.trans hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3) hF'⟩
+    hF.trans hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3) hF', hp, hp'⟩
 
-theorem conv (hU : StepUniq env)
-    (hB : ∃ ls As, StepS env U Γ B ((VExpr.const h.name ls).appN As))
+theorem conv (hU : StepUniq env) (hE : TyEq env U Γ A B) (hR : IndRel env U Γ h A B)
     (hAB : IndTele IH h l A B) (hBB : IndTele IH h l B B)
     (H : CtorVal IH h l A M N c fs) : CtorVal IH h l B M N c fs := by
   obtain ⟨hn, hc, -, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, rfl,
-    hF⟩ := H
-  obtain ⟨lsB, AsB, rB⟩ := hB
-  exact ⟨hn, hc, hBB, i, _, ci, lsB, AsB, ls, qs, ms, ls', qs', ns, h1, h2, h3, rB, h5, h6, rfl,
-    hF.conv hU (hAB _ _ _ _ h4 rB _ _ _ _ h1 h2 h3)⟩
+    hF, hp, hp'⟩ := H
+  obtain ⟨-, lsA', lsB, AsA', AsB, rA, rB, hl, -, hBl, hS⟩ := hR
+  obtain ⟨-, rfl, rfl⟩ := appN_const_inj (StepS.determ hU rA hn.whnf h4 hn.whnf)
+  exact ⟨hn, hc, hBB, i, _, ci, lsB, AsB, ls, qs, ms, ls', qs', ns, h1, h2, h3, rB, h5.tyEq hE,
+    h6.tyEq hE, rfl, hF.conv hU (hAB _ _ _ _ h4 rB _ _ _ _ h1 h2 h3), hp.conv hl hBl hS,
+    hp'.conv hl hBl hS⟩
 
-theorem whr (hU : StepUniq env) (hc : Inert env c) (hM : StepS env U Γ M M')
-    (hN : StepS env U Γ N N') : CtorVal IH h l A M N c fs ↔ CtorVal IH h l A M' N' c fs := by
+theorem whr (hU : StepUniq env) (hc : Inert env c) (hM : TRed env U Γ M M' A)
+    (hN : TRed env U Γ N N' A) : CtorVal IH h l A M N c fs ↔ CtorVal IH h l A M' N' c fs := by
   constructor
   · rintro ⟨hn, hc', hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, h7,
       hF⟩
     exact ⟨hn, hc', hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4,
-      StepS.determ_l hU hM h5 hc.whnf, StepS.determ_l hU hN h6 hc.whnf, h7, hF⟩
+      TRed.determ_l hU hM h5 hc.whnf, TRed.determ_l hU hN h6 hc.whnf, h7, hF⟩
   · rintro ⟨hn, hc', hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, h7,
       hF⟩
     exact ⟨hn, hc', hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4,
@@ -723,12 +836,12 @@ theorem inert (H : CtorVal IH h l A M N c fs) : Inert env c := H.2.1
 
 theorem red_l (H : CtorVal IH h l A M N c fs) :
     ∃ ls as, StepS env U Γ M ((VExpr.const c ls).appN as) :=
-  let ⟨_, _, _, _, _, _, _, _, ls, qs, ms, _, _, _, _, _, _, _, h5, _⟩ := H; ⟨ls, qs ++ ms, h5⟩
+  let ⟨_, _, _, _, _, _, _, _, ls, qs, ms, _, _, _, _, _, _, _, h5, _⟩ := H; ⟨ls, qs ++ ms, h5.1⟩
 
 theorem red_r (H : CtorVal IH h l A M N c fs) :
     ∃ ls as, StepS env U Γ N ((VExpr.const c ls).appN as) :=
   let ⟨_, _, _, _, _, _, _, _, _, _, _, ls', qs', ns, _, _, _, _, _, h6, _⟩ := H
-  ⟨ls', qs' ++ ns, h6⟩
+  ⟨ls', qs' ++ ns, h6.1⟩
 
 theorem red_A (H : CtorVal IH h l A M N c fs) :
     ∃ ls As, StepS env U Γ A ((VExpr.const h.name ls).appN As) :=
@@ -740,9 +853,9 @@ theorem mono_r (hl : l.Forall₂ (· ≤ ·) l')
     (hfit : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l i) fs)
     (H : CtorVal IH h l' A M N c fs) : CtorVal IH h l A M N c fs := by
   obtain ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, h7,
-    hF⟩ := H
+    hF, hp, hp'⟩ := H
   refine ⟨hn, hc, fun _ _ _ _ r1 r2 _ i' _ _ hi hk hci => ?_, i, k, ci, lsA, AsA, ls, qs, ms, ls',
-    qs', ns, h1, h2, h3, h4, h5, h6, h7, ?_⟩
+    qs', ns, h1, h2, h3, h4, h5, h6, h7, ?_, hp, hp'⟩
   · exact (hT _ _ _ _ r1 r2 _ i' _ _ hi hk hci).mono (ctorTel_mono hl i') (htel i') (htel' i')
   · exact hF.mono (ctorTel_mono hl i) (htel i) (htel' i)
       (forall₂_le_refl fs) (hfit i h1)
@@ -752,10 +865,10 @@ theorem mono_up (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
     (hfit' : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l' i) fs)
     (hT' : IndTele IH h l' A A) (H : CtorVal IH h l A M N c fs) : CtorVal IH h l' A M N c fs := by
   obtain ⟨hn, hc, -, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, rfl,
-    hF⟩ := H
+    hF, hp, hp'⟩ := H
   exact ⟨hn, hc, hT', i, _, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, rfl,
     hF.mono_up hU (ctorTel_mono hl i) (htel i) (htel' i) (hfit' i h1)
-      (hT' _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3)⟩
+      (hT' _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3), hp, hp'⟩
 
 theorem join (hU : StepUniq env) {fs₁ fs₂ : List (WShape n)} (hC : fs₁.Forall₂ WShape.Compat fs₂)
     (htel : ∀ i, (ctorTel h l i).HasType .type)
@@ -764,20 +877,20 @@ theorem join (hU : StepUniq env) {fs₁ fs₂ : List (WShape n)} (hC : fs₁.For
     (H1 : CtorVal IH h l A M N c fs₁) (H2 : CtorVal IH h l A M N c fs₂) :
     CtorVal IH h l A M N c (fs₁.zipWith WShape.join fs₂) := by
   obtain ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, rfl,
-    hF⟩ := H1
+    hF, hp, hp'⟩ := H1
   obtain ⟨-, -, -, i', k', ci', lsA', AsA', ls₂, qs₂, ms₂, ls₂', qs₂', ns₂, h1', h2', h3', h4', h5',
-    h6', hk, hF'⟩ := H2
+    h6', hk, hF', -, -⟩ := H2
   rw [h1] at h1'; cases h1'
   rw [h2] at h2'; cases h2'
   rw [h3] at h3'; cases h3'
   have := StepS.determ hU h4 hn.whnf h4' hn.whnf
   obtain ⟨-, rfl, rfl⟩ := appN_const_inj this
   have hl : fs₂.length = fs₁.length := hk
-  obtain ⟨rfl, rfl, rfl⟩ := appN_split hU hc h5 h5' (by rw [hF.length.1, hF'.length.1, hl])
-  obtain ⟨rfl, rfl, rfl⟩ := appN_split hU hc h6 h6' (by rw [hF.length.2, hF'.length.2, hl])
+  obtain ⟨rfl, rfl, rfl⟩ := appN_split hU hc h5.1 h5'.1 (by rw [hF.length.1, hF'.length.1, hl])
+  obtain ⟨rfl, rfl, rfl⟩ := appN_split hU hc h6.1 h6'.1 (by rw [hF.length.2, hF'.length.2, hl])
   refine ⟨hn, hc, hT, i, _, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, ?_,
     FieldsRel.join hU hC (htel i) (hfit₁ i h1) (hfit₂ i h1) (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3)
-      hF hF'⟩
+      hF hF', hp, hp'⟩
   simp [List.length_zipWith, hl]
 
 theorem mono_l (hfs : fs.Forall₂ (· ≤ ·) fs')
@@ -785,54 +898,54 @@ theorem mono_l (hfs : fs.Forall₂ (· ≤ ·) fs')
     (hfit : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l i) fs)
     (H : CtorVal IH h l A M N c fs') : CtorVal IH h l A M N c fs := by
   obtain ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6, h7,
-    hF⟩ := H
+    hF, hp, hp'⟩ := H
   exact ⟨hn, hc, hT, i, k, ci, lsA, AsA, ls, qs, ms, ls', qs', ns, h1, h2, h3, h4, h5, h6,
     (forall₂_length hfs).trans h7,
-    hF.mono WShape.LE.rfl (htel i) (htel i) hfs (hfit i h1)⟩
+    hF.mono WShape.LE.rfl (htel i) (htel i) hfs (hfit i h1), hp, hp'⟩
 
 end CtorVal
 
 namespace StructVal
 
 theorem left (H : StructVal IH h l A M N c fs) : StructVal IH h l A M M c fs :=
-  let ⟨hn, hT, i, k, ci, lsA, AsA, M', _, h1, h2, h3, h4, h5, h6, _, _, h9, hF⟩ := H
-  ⟨hn, hT, i, k, ci, lsA, AsA, M', M', h1, h2, h3, h4, h5, h6, h5, h6, h9, hF.left⟩
+  let ⟨hn, hT, i, k, ci, lsA, AsA, M', _, h1, h2, h3, h4, h5, h6, _, _, h9, hF, ha⟩ := H
+  ⟨hn, hT, i, k, ci, lsA, AsA, M', M', h1, h2, h3, h4, h5, h6, h5, h6, h9, hF.left, ha⟩
 
 theorem symm (hU : StepUniq env) (H : StructVal IH h l A M N c fs) :
     StructVal IH h l A N M c fs := by
-  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF⟩ := H
+  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF, ha⟩ := H
   exact ⟨hn, hT, i, _, ci, lsA, AsA, N', M', h1, h2, h3, h4, h7, h8, h5, h6, rfl,
-    hF.symm hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3)⟩
+    hF.symm hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3), ha⟩
 
 theorem trans (hU : StepUniq env) (H1 : StructVal IH h l A M N c fs)
     (H2 : StructVal IH h l A N P c fs) : StructVal IH h l A M P c fs := by
-  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF⟩ := H1
-  obtain ⟨-, -, i', k', ci', lsA', AsA', N₂, P', h1', h2', h3', h4', h5', h6', h7', h8', hk, hF'⟩ :=
-    H2
+  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF, ha⟩ := H1
+  obtain ⟨-, -, i', k', ci', lsA', AsA', N₂, P', h1', h2', h3', h4', h5', h6', h7', h8', hk, hF',
+    -⟩ := H2
   rw [h1] at h1'; cases h1'
   rw [h2] at h2'; cases h2'
   rw [h3] at h3'; cases h3'
   have := StepS.determ hU h4 hn.whnf h4' hn.whnf
   obtain ⟨-, rfl, rfl⟩ := appN_const_inj this
-  cases StepS.determ hU h7 h8 h5' h6'
+  cases StepS.determ hU h7.1 h8 h5'.1 h6'
   exact ⟨hn, hT, i, _, ci, lsA, AsA, M', P', h1, h2, h3, h4, h5, h6, h7', h8', rfl,
-    hF.trans hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3) hF'⟩
+    hF.trans hU (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3) hF', ha⟩
 
-theorem conv (hU : StepUniq env)
-    (hB : ∃ ls As, StepS env U Γ B ((VExpr.const h.name ls).appN As))
+theorem conv (hU : StepUniq env) (hE : TyEq env U Γ A B) (hR : IndRel env U Γ h A B)
     (hAB : IndTele IH h l A B) (hBB : IndTele IH h l B B)
     (H : StructVal IH h l A M N c fs) : StructVal IH h l B M N c fs := by
-  obtain ⟨hn, -, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF⟩ := H
-  obtain ⟨lsB, AsB, rB⟩ := hB
-  exact ⟨hn, hBB, i, _, ci, lsB, AsB, M', N', h1, h2, h3, rB, h5, h6, h7, h8, rfl,
-    hF.conv hU (hAB _ _ _ _ h4 rB _ _ _ _ h1 h2 h3)⟩
+  obtain ⟨hn, -, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF, -⟩ := H
+  obtain ⟨-, lsA', lsB, AsA', AsB, rA, rB, -, -, hBl, hS⟩ := hR
+  obtain ⟨-, rfl, rfl⟩ := appN_const_inj (StepS.determ hU rA hn.whnf h4 hn.whnf)
+  exact ⟨hn, hBB, i, _, ci, lsB, AsB, M', N', h1, h2, h3, rB, h5.tyEq hE, h6, h7.tyEq hE, h8, rfl,
+    hF.conv hU (hAB _ _ _ _ h4 rB _ _ _ _ h1 h2 h3), TypeArgs.of_rel hBl hS⟩
 
-theorem whr (hU : StepUniq env) (hM : StepS env U Γ M M₁) (hN : StepS env U Γ N N₁) :
+theorem whr (hU : StepUniq env) (hM : TRed env U Γ M M₁ A) (hN : TRed env U Γ N N₁ A) :
     StructVal IH h l A M N c fs ↔ StructVal IH h l A M₁ N₁ c fs := by
   constructor
   · rintro ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, h9, hF⟩
-    exact ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, StepS.determ_l hU hM h5 h6, h6,
-      StepS.determ_l hU hN h7 h8, h8, h9, hF⟩
+    exact ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, TRed.determ_l hU hM h5 h6, h6,
+      TRed.determ_l hU hN h7 h8, h8, h9, hF⟩
   · rintro ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, h9, hF⟩
     exact ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, hM.trans h5, h6, hN.trans h7, h8,
       h9, hF⟩
@@ -845,9 +958,9 @@ theorem mono_r (hl : l.Forall₂ (· ≤ ·) l')
     (htel : ∀ i, (ctorTel h l i).HasType .type) (htel' : ∀ i, (ctorTel h l' i).HasType .type)
     (hfit : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l i) fs)
     (H : StructVal IH h l' A M N c fs) : StructVal IH h l A M N c fs := by
-  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, h9, hF⟩ := H
+  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, h9, hF, ha⟩ := H
   refine ⟨hn, fun _ _ _ _ r1 r2 _ i' _ _ hi hk hci => ?_, i, k, ci, lsA, AsA, M', N',
-    h1, h2, h3, h4, h5, h6, h7, h8, h9, ?_⟩
+    h1, h2, h3, h4, h5, h6, h7, h8, h9, ?_, ha⟩
   · exact (hT _ _ _ _ r1 r2 _ i' _ _ hi hk hci).mono (ctorTel_mono hl i') (htel i') (htel' i')
   · exact hF.mono (ctorTel_mono hl i) (htel i) (htel' i) (forall₂_le_refl fs) (hfit i h1)
 
@@ -856,18 +969,18 @@ theorem mono_up (hU : StepUniq env) (hl : l.Forall₂ (· ≤ ·) l')
     (hfit' : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l' i) fs)
     (hT' : IndTele IH h l' A A) (H : StructVal IH h l A M N c fs) :
     StructVal IH h l' A M N c fs := by
-  obtain ⟨hn, -, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF⟩ := H
+  obtain ⟨hn, -, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF, ha⟩ := H
   exact ⟨hn, hT', i, _, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl,
     hF.mono_up hU (ctorTel_mono hl i) (htel i) (htel' i) (hfit' i h1)
-      (hT' _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3)⟩
+      (hT' _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3), ha⟩
 
 theorem mono_l (hfs : fs.Forall₂ (· ≤ ·) fs')
     (htel : ∀ i, (ctorTel h l i).HasType .type)
     (hfit : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l i) fs)
     (H : StructVal IH h l A M N c fs') : StructVal IH h l A M N c fs := by
-  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, h9, hF⟩ := H
+  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, h9, hF, ha⟩ := H
   exact ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8,
-    (forall₂_length hfs).trans h9, hF.mono WShape.LE.rfl (htel i) (htel i) hfs (hfit i h1)⟩
+    (forall₂_length hfs).trans h9, hF.mono WShape.LE.rfl (htel i) (htel i) hfs (hfit i h1), ha⟩
 
 theorem join (hU : StepUniq env) {fs₁ fs₂ : List (WShape n)} (hC : fs₁.Forall₂ WShape.Compat fs₂)
     (htel : ∀ i, (ctorTel h l i).HasType .type)
@@ -875,20 +988,20 @@ theorem join (hU : StepUniq env) {fs₁ fs₂ : List (WShape n)} (hC : fs₁.For
     (hfit₂ : ∀ i, h.ctors.idxOf? c = some i → TelFits (ctorTel h l i) fs₂)
     (H1 : StructVal IH h l A M N c fs₁) (H2 : StructVal IH h l A M N c fs₂) :
     StructVal IH h l A M N c (fs₁.zipWith WShape.join fs₂) := by
-  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF⟩ := H1
-  obtain ⟨-, -, i', k', ci', lsA', AsA', M₂, N₂, h1', h2', h3', h4', h5', h6', h7', h8', hk, hF'⟩ :=
-    H2
+  obtain ⟨hn, hT, i, k, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, rfl, hF, ha⟩ := H1
+  obtain ⟨-, -, i', k', ci', lsA', AsA', M₂, N₂, h1', h2', h3', h4', h5', h6', h7', h8', hk, hF',
+    -⟩ := H2
   rw [h1] at h1'; cases h1'
   rw [h2] at h2'; cases h2'
   rw [h3] at h3'; cases h3'
   have := StepS.determ hU h4 hn.whnf h4' hn.whnf
   obtain ⟨-, rfl, rfl⟩ := appN_const_inj this
-  cases StepS.determ hU h5 h6 h5' h6'
-  cases StepS.determ hU h7 h8 h7' h8'
+  cases StepS.determ hU h5.1 h6 h5'.1 h6'
+  cases StepS.determ hU h7.1 h8 h7'.1 h8'
   have hl : fs₂.length = fs₁.length := hk
   refine ⟨hn, hT, i, _, ci, lsA, AsA, M', N', h1, h2, h3, h4, h5, h6, h7, h8, ?_,
     FieldsRel.join hU hC (htel i) (hfit₁ i h1) (hfit₂ i h1) (hT _ _ _ _ h4 h4 _ _ _ _ h1 h2 h3)
-      hF (hl ▸ hF')⟩
+      hF (hl ▸ hF'), ha⟩
   simp [List.length_zipWith, hl]
 
 end StructVal
@@ -1026,7 +1139,7 @@ theorem CtorVal.lift {h : IndHead} {l : List (WShape n)} {fs : List (WShape n)}
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>
     and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| and_congr .rfl <|
-    and_congr .rfl <| and_congr .rfl <| FieldsRel.lift hD
+    and_congr .rfl <| and_congr .rfl <| and_congr (FieldsRel.lift hD) .rfl
 
 theorem StructVal.lift {h : IndHead} {l : List (WShape n)} {fs : List (WShape n)}
     (htel : ∀ i, (ctorTel h l i).HasType .type) :
@@ -1038,7 +1151,7 @@ theorem StructVal.lift {h : IndHead} {l : List (WShape n)} {fs : List (WShape n)
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>
     exists_congr fun _ => exists_congr fun _ => exists_congr fun _ =>
     and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| and_congr .rfl <|
-    and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| FieldsRel.lift hD
+    and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| and_congr .rfl <| and_congr (FieldsRel.lift hD) .rfl
 
 end
 
