@@ -115,7 +115,7 @@ variable (decl : VInductDecl) (lparams : List Name)
 def TrInductVal (T : VInductiveType) (v : InductiveVal) : Prop :=
   v.name = T.name ∧ v.levelParams = lparams ∧ v.numParams = decl.params.length ∧
   v.numIndices = T.indices.length ∧ v.all = decl.names ∧ v.ctors = T.ctors.map (·.name) ∧
-  v.numNested = 0 ∧ v.isRec = decl.isRec ∧ v.isUnsafe = decl.isUnsafe
+  v.numNested = decl.aux.length ∧ v.isRec = decl.isRec ∧ v.isUnsafe = decl.isUnsafe
 
 /-- What `addInductive` records about constructor `c` of the `j`th type, besides its type, whose
 leading binders are syntactically its parameters and fields. -/
@@ -125,21 +125,23 @@ def TrCtorVal (j : Nat) (c : VConstructor) (v : ConstructorVal) : Prop :=
   v.numParams = decl.params.length ∧ v.numFields = c.fields.length ∧ v.isUnsafe = decl.isUnsafe ∧
   v.type.leadingForalls = decl.params.length + c.fields.length
 
-/-- What `addInductive` records about the `i`th type's recursor, besides its type: in particular
-each rule's right-hand side, which translates to that of `VEnv.addInduct`'s iota rule, in `env`,
-which has the recursors. The motive's level parameter, when there is one, comes first. -/
+/-- What `addInductive` records about the recursor of `T`, the `i`th of the block's types and
+auxiliary types, besides its type: in particular each rule's right-hand side, which translates to
+that of `VEnv.addInduct`'s iota rule, in `env`, which has the recursors. The motive's level
+parameter, when there is one, comes first. The major premise of an auxiliary type's recursor is of
+the earlier type it stands for, and its rules are for that type's constructors. -/
 def TrRecVal (env : VEnv) (i : Nat) (T : VInductiveType) (v : RecursorVal) : Prop :=
-  v.name = Lean.mkRecName T.name ∧ v.getMajorInduct = T.name ∧
+  v.name = decl.recName i ∧ v.getMajorInduct = (T.nested.map (·.ind)).getD T.name ∧
   (decl.LargeElim → ∃ u, u ∉ lparams ∧ v.levelParams = u :: lparams) ∧
   (¬decl.LargeElim → v.levelParams = lparams) ∧
   v.numParams = decl.params.length ∧ v.numIndices = T.indices.length ∧
-  v.numMotives = decl.types.length ∧ v.numMinors = decl.ctors.length ∧ v.all = decl.names ∧
+  v.numMotives = decl.allTypes.length ∧ v.numMinors = decl.allCtors.length ∧ v.all = decl.names ∧
   (v.k = true ↔ decl.IsKTarget) ∧ v.isUnsafe = decl.isUnsafe ∧
   List.Forall₂ (fun rule ((j, c), q) => j = i ∧ rule.ctor = c.name ∧
       rule.nfields = c.fields.length ∧
       TrExprS env v.levelParams [] rule.rhs
         (decl.iotaRule decl.recLevels decl.motiveLevel (VLevel.params decl.recUVars) q j c).rhs)
-    v.rules (decl.ctors.zipIdx.filter (·.1.1 = i))
+    v.rules (decl.allCtors.zipIdx.filter (·.1.1 = i))
 
 end
 
@@ -148,25 +150,32 @@ def inductConsts (types : List InductiveVal) (ctors : List ConstructorVal)
     (recs : List RecursorVal) : List ConstantInfo :=
   types.map .inductInfo ++ ctors.map .ctorInfo ++ recs.map .recInfo
 
-/-- The step `addInductive` takes for a block without nested occurrences, modelled by `decl`:
-each constant it inserts translates, at the safety level, to the one `VEnv.addInduct` adds under
-the same name, against the environment as it was before that group of constants. -/
+/-- The step `addInductive` takes for a block, modelled by `decl`: each constant it inserts
+translates, at the safety level, to the one `VEnv.addInduct` adds under the same name, against the
+environment as it was before that group of constants. A type declared as a pi over as many binders
+as there are parameters has those binders agree with the parameters, which `checkInductiveTypes`
+checks one by one. The constants go in in some order: a block
+without nested occurrences inserts its types, constructors and recursors in turn, a nested one each
+type with its constructors and recursor, then the auxiliary types' recursors. -/
 inductive AddInduct (safety : DefinitionSafety) (m₁ : ConstMap) (env₁ : VEnv)
     (decl : VInductDecl) (m₂ : ConstMap) (env₂ : VEnv) : Prop
   | mk {lparams : List Name} {envT envC envR : VEnv} {types : List InductiveVal}
       {ctors : List ConstructorVal} {recs : List RecursorVal} :
     lparams.length = decl.uvars →
     List.Forall₂ (fun v T => TrInductVal decl lparams T v ∧
-      TrConstant safety env₁ (.inductInfo v) ⟨decl.uvars, T.type⟩) types decl.types →
+      TrConstant safety env₁ (.inductInfo v) ⟨decl.uvars, T.type⟩ ∧
+      (decl.params.length ≤ v.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
+        ps.length = decl.params.length → env₁.TeleDefEq decl.uvars [] ps decl.params))
+      types decl.types →
     List.Forall₂ (fun v (j, c) => TrCtorVal decl lparams j c v ∧
       TrConstant safety envT (.ctorInfo v) ⟨decl.uvars, c.type⟩) ctors decl.ctors →
     List.Forall₂ (fun v (T, i) => TrRecVal decl lparams envR i T v ∧
       TrConstant safety envC (.recInfo v)
         ⟨decl.recUVars, decl.recType decl.recLevels decl.motiveLevel i T⟩)
-      recs decl.types.zipIdx →
+      recs decl.allTypes.zipIdx →
     ((inductConsts types ctors recs).map (·.name)).Nodup →
     (∀ ci ∈ inductConsts types ctors recs, m₁.find? ci.name = none) →
-    m₂ = insertConsts m₁ (inductConsts types ctors recs) →
+    (∃ cis, cis.Perm (inductConsts types ctors recs) ∧ m₂ = insertConsts m₁ cis) →
     env₁.addConstList decl.typeConsts = some envT →
     envT.addConstList decl.ctorConsts = some envC →
     envC.addConstList decl.recConsts = some envR →

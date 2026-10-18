@@ -93,11 +93,6 @@ theorem VEnv.EqUpToLevels.skips {U : Nat} {e e' : VExpr} (H : VEnv.EqUpToLevels 
     {n k : Nat} : e.Skips n k ↔ e'.Skips n k := by
   rw [skips_iff, skips_iff, H.skips']
 
-theorem VEnv.TeleDefEq.length_eq {env : VEnv} {U : Nat} :
-    ∀ {Γ As Bs : List VExpr}, env.TeleDefEq U Γ As Bs → As.length = Bs.length
-  | _, _, _, .nil => rfl
-  | _, _, _, .cons _ h => congrArg (· + 1) h.length_eq
-
 theorem VEnv.TeleDefEq.getElem {env : VEnv} {U : Nat} : ∀ {Γ As Bs : List VExpr},
     env.TeleDefEq U Γ As Bs → ∀ i (A B : VExpr), As[i]? = some A → Bs[i]? = some B →
       env.IsDefEqU U ((Bs.take i).reverse ++ Γ) A B
@@ -146,11 +141,12 @@ theorem VEnv.WF.ctorShape {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDe
         ∀ j, D.Skips 1 j → f.type.Skips 1 j := by
   obtain ⟨env₀, envT, h₀, hd, hT, hle, T', hT', -⟩ := henv.inducts hs
   cases ht.symm.trans hT'
-  have hcW := (hd.ctors envT hT T (List.mem_of_getElem? ht)).2 c hcm
+  have hcW := (hd.ctors envT hT T (List.mem_append_left _ (List.mem_of_getElem? ht))).2 c hcm
   obtain ⟨ps, Ds, hty, htele, hFW, hwithin⟩ := hcW.shape
+  rw [VInductiveType.typeApp_of_none (hd.types T (List.mem_of_getElem? ht)).2] at hty
   have hTwf : envT.WF := VEnv.WF.addConstList h₀ (fun p hp => by
     obtain ⟨T, hT, rfl⟩ := List.mem_map.1 hp
-    exact hd.types T hT) hT
+    exact (hd.types T hT).1) hT
   exact ⟨envT, ps, Ds, hTwf, hle, hd.params.mono (VEnv.addConstList_le hT), hty, htele, hFW,
     hwithin⟩
 

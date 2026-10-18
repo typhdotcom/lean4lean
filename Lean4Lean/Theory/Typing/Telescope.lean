@@ -462,3 +462,71 @@ theorem subst_foralls : ∀ (As : List VExpr) (B : VExpr) (σ : Subst),
 
 end VExpr
 end Lean4Lean
+
+namespace Lean4Lean
+open VExpr
+
+namespace VExpr
+
+theorem ClosedN.subst_congr {e : VExpr} {k : Nat} {σ σ' : Subst} (self : ClosedN e k)
+    (h : ∀ i < k, σ i = σ' i) : e.subst σ = e.subst σ' := by
+  induction e generalizing k σ σ' with (simp [ClosedN] at self; simp [VExpr.subst])
+  | bvar i => exact h _ self
+  | app _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h⟩
+  | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 =>
+    refine ⟨ih1 self.1 h, ih2 self.2 fun i hi => ?_⟩
+    cases i with
+    | zero => rfl
+    | succ i => simp [Subst.lift, h i (by omega)]
+  | proj _ _ _ ih => exact ih self h
+
+end VExpr
+
+namespace VEnv
+variable {env : VEnv} {U : Nat}
+
+/-- Defeq functions whose type is a pi telescope under `τ`, applied to the same arguments. -/
+theorem IsDefEq.appN_substT {Γ : List VExpr} : ∀ {Δ As B τ f f' as},
+    env.IsDefEq U Γ f f' ((VExpr.foralls As B).subst τ) → as.length = As.length →
+    Ctx.SubstEq env U Γ (τ.consList as) (τ.consList as) (As.reverse ++ Δ) →
+    env.IsDefEq U Γ (f.appN as) (f'.appN as) (B.subst (τ.consList as))
+  | _, [], _, _, _, _, [], hf, _, _ => hf
+  | Δ, A :: As, B, τ, f, f', a :: as, hf, hlen, W => by
+    rw [List.reverse_cons, List.append_assoc] at W
+    have W' := Ctx.SubstEq.dropList (as := as) (as' := as) (Bs := As) (Δ := A :: Δ)
+      (Nat.succ.inj hlen) (Nat.succ.inj hlen) W
+    have ha : env.HasType U Γ a (A.subst τ) := by
+      cases W' with | cons _ _ h => exact h
+    have hfa := IsDefEq.appDF hf ha
+    rw [inst_lift_cons] at hfa
+    exact IsDefEq.appN_substT (Δ := A :: Δ) (As := As) (τ := τ.cons a) hfa (Nat.succ.inj hlen) W
+
+variable! (henv : Ordered env) in
+/-- A lambda telescope under `τ` applied to arguments for its binders beta-reduces to its body
+under the extended substitution. -/
+theorem IsDefEq.lams_beta {Γ₀ : List VExpr} (hΓ₀ : OnCtx Γ₀ (env.IsType U)) :
+    ∀ {Δ As L T τ as}, Ctx.SubstEq env U Γ₀ τ τ Δ → env.IsTele U Δ As →
+    env.HasType U (As.reverse ++ Δ) L T → as.length = As.length →
+    Ctx.SubstEq env U Γ₀ (τ.consList as) (τ.consList as) (As.reverse ++ Δ) →
+    env.IsDefEq U Γ₀ (((VExpr.lams As L).subst τ).appN as) (L.subst (τ.consList as))
+      (T.subst (τ.consList as))
+  | _, [], _, _, _, [], hτ, _, hL, _, _ => hL.subst henv hτ hΓ₀
+  | Δ, A :: As, L, T, τ, a :: as, hτ, .cons ⟨_, hA⟩ hAs, hL, hlen, W => by
+    rw [List.reverse_cons, List.append_assoc] at W
+    have W' := Ctx.SubstEq.dropList (as := as) (as' := as) (Bs := As) (Δ := A :: Δ)
+      (Nat.succ.inj hlen) (Nat.succ.inj hlen) W
+    have ha : env.HasType U Γ₀ a (A.subst τ) := by
+      cases W' with | cons _ _ h => exact h
+    have hX : env.HasType U (A :: Δ) (.lams As L) (.foralls As T) :=
+      hAs.lams (by simpa using hL)
+    have hX' := hX.subst henv (hτ.lift henv hA) ⟨hΓ₀, _, hA.subst henv hτ hΓ₀⟩
+    have hb := IsDefEq.beta hX' ha
+    rw [inst_lift_cons, inst_lift_cons] at hb
+    have h1 := IsDefEq.appN_substT (Δ := A :: Δ) (As := As) (B := T) (τ := τ.cons a) (as := as)
+      hb (Nat.succ.inj hlen) W
+    have h2 := IsDefEq.lams_beta hΓ₀ (Δ := A :: Δ) (τ := τ.cons a) (as := as) W' hAs
+      (by simpa using hL) (Nat.succ.inj hlen) W
+    exact h1.trans h2
+
+end VEnv
+end Lean4Lean

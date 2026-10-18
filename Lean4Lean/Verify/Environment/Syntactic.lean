@@ -84,9 +84,6 @@ theorem whnf_const_axiom {n : Name} {us : List Level} {ax : AxiomVal}
 
 namespace AddInductive
 
-theorem WF.and {c : VContext} {x : M α} {Q R : α → Prop} (h1 : WF c x Q) (h2 : WF c x R) :
-    WF c x fun a => Q a ∧ R a := fun a h => ⟨h1 a h, h2 a h⟩
-
 /-- `whnf` of an axiom, run from `addInductive`, is the axiom. -/
 theorem whnf_const_axiom.WF {c : VContext} {n : Name} {us : List Level} {ax : AxiomVal}
     (h : c.env.find? n = some (.axiomInfo ax)) :

@@ -381,8 +381,11 @@ theorem declareRecursors.WF {c₂ c : VContext} {nparams : Nat} {types : List In
         simp [htT]
       refine ⟨hname, fun envC envR h1 h2 h3 h4 h5 => ⟨?_, ?_⟩⟩
       · unfold TrRecVal
-        refine ⟨hname, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hK, ?_, (hrules envC envR h1 h2 h3 h4 h5)⟩
-        · rw [getMajorInduct_eq, majorInductGo_inferImplicit]
+        refine ⟨hname.trans (VInductDecl.recName_of_types hTi).symm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+          hK, ?_, by
+            rw [VInductDecl.allCtors_of_aux hR.aux]; exact hrules envC envR h1 h2 h3 h4 h5⟩
+        · rw [getMajorInduct_eq, majorInductGo_inferImplicit,
+            hR.nested _ (List.getElem_mem hit)]
           simpa [RecursorVal.getMajorIdx, recTypeExpr] using hR.major i _ _ hTi hinfo
         · intro hl
           rcases hEu with rfl | ⟨u, rfl, hu⟩
@@ -398,8 +401,9 @@ theorem declareRecursors.WF {c₂ c : VContext} {nparams : Nat} {types : List In
           rw [getElem!_pos _ i (by
             have := (Array.getElem?_eq_some_iff.1 this).1; exact this)]
           exact Option.some.inj ((Array.getElem?_eq_getElem _).symm.trans this)
-        · show (recInfos.map (·.motive)).size = _; simp [hR.size, hdlen]
-        · exact hR.nminors
+        · show (recInfos.map (·.motive)).size = _
+          simp [hR.size, hdlen, VInductDecl.allTypes_of_aux hR.aux]
+        · exact hR.nminors.trans (by rw [VInductDecl.allCtors_of_aux hR.aux])
         · show (types.toArray.map (·.name)).toList = d.types.map (·.name)
           simp only [List.map_toArray, List.toList_toArray]
           exact List.Forall₂.map_eq

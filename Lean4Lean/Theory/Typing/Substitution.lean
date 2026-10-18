@@ -12,18 +12,6 @@ open VExpr
 
 namespace VExpr
 
-theorem ClosedN.subst_congr {e : VExpr} {k : Nat} {σ σ' : Subst} (self : ClosedN e k)
-    (h : ∀ i < k, σ i = σ' i) : e.subst σ = e.subst σ' := by
-  induction e generalizing k σ σ' with (simp [ClosedN] at self; simp [VExpr.subst])
-  | bvar i => exact h _ self
-  | app _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h⟩
-  | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 =>
-    refine ⟨ih1 self.1 h, ih2 self.2 fun i hi => ?_⟩
-    cases i with
-    | zero => rfl
-    | succ i => simp [Subst.lift, h i (by omega)]
-  | proj _ _ _ ih => exact ih self h
-
 theorem subst_lams : ∀ (As : List VExpr) (B : VExpr) (σ : Subst),
     (VExpr.lams As B).subst σ =
       .lams (As.zipIdx.map fun (A, i) => A.subst (σ.liftN i)) (B.subst (σ.liftN As.length))
@@ -58,49 +46,6 @@ theorem addDefEqList_defeqs_of_mem : ∀ {dfs : List VDefEq} {env : VEnv} {df : 
     rcases List.mem_cons.1 h with rfl | h
     · exact VEnv.addDefEqList_le.defeqs addDefEq_self
     · exact addDefEqList_defeqs_of_mem h
-
-/-- Defeq functions whose type is a pi telescope under `τ`, applied to the same arguments. -/
-theorem IsDefEq.appN_substT {Γ : List VExpr} : ∀ {Δ As B τ f f' as},
-    env.IsDefEq U Γ f f' ((VExpr.foralls As B).subst τ) → as.length = As.length →
-    Ctx.SubstEq env U Γ (τ.consList as) (τ.consList as) (As.reverse ++ Δ) →
-    env.IsDefEq U Γ (f.appN as) (f'.appN as) (B.subst (τ.consList as))
-  | _, [], _, _, _, _, [], hf, _, _ => hf
-  | Δ, A :: As, B, τ, f, f', a :: as, hf, hlen, W => by
-    rw [List.reverse_cons, List.append_assoc] at W
-    have W' := Ctx.SubstEq.dropList (as := as) (as' := as) (Bs := As) (Δ := A :: Δ)
-      (Nat.succ.inj hlen) (Nat.succ.inj hlen) W
-    have ha : env.HasType U Γ a (A.subst τ) := by
-      cases W' with | cons _ _ h => exact h
-    have hfa := IsDefEq.appDF hf ha
-    rw [inst_lift_cons] at hfa
-    exact IsDefEq.appN_substT (Δ := A :: Δ) (As := As) (τ := τ.cons a) hfa (Nat.succ.inj hlen) W
-
-variable! (henv : Ordered env) in
-/-- A lambda telescope under `τ` applied to arguments for its binders beta-reduces to its body
-under the extended substitution. -/
-theorem IsDefEq.lams_beta {Γ₀ : List VExpr} (hΓ₀ : OnCtx Γ₀ (env.IsType U)) :
-    ∀ {Δ As L T τ as}, Ctx.SubstEq env U Γ₀ τ τ Δ → env.IsTele U Δ As →
-    env.HasType U (As.reverse ++ Δ) L T → as.length = As.length →
-    Ctx.SubstEq env U Γ₀ (τ.consList as) (τ.consList as) (As.reverse ++ Δ) →
-    env.IsDefEq U Γ₀ (((VExpr.lams As L).subst τ).appN as) (L.subst (τ.consList as))
-      (T.subst (τ.consList as))
-  | _, [], _, _, _, [], hτ, _, hL, _, _ => hL.subst henv hτ hΓ₀
-  | Δ, A :: As, L, T, τ, a :: as, hτ, .cons ⟨_, hA⟩ hAs, hL, hlen, W => by
-    rw [List.reverse_cons, List.append_assoc] at W
-    have W' := Ctx.SubstEq.dropList (as := as) (as' := as) (Bs := As) (Δ := A :: Δ)
-      (Nat.succ.inj hlen) (Nat.succ.inj hlen) W
-    have ha : env.HasType U Γ₀ a (A.subst τ) := by
-      cases W' with | cons _ _ h => exact h
-    have hX : env.HasType U (A :: Δ) (.lams As L) (.foralls As T) :=
-      hAs.lams (by simpa using hL)
-    have hX' := hX.subst henv (hτ.lift henv hA) ⟨hΓ₀, _, hA.subst henv hτ hΓ₀⟩
-    have hb := IsDefEq.beta hX' ha
-    rw [inst_lift_cons, inst_lift_cons] at hb
-    have h1 := IsDefEq.appN_substT (Δ := A :: Δ) (As := As) (B := T) (τ := τ.cons a) (as := as)
-      hb (Nat.succ.inj hlen) W
-    have h2 := IsDefEq.lams_beta hΓ₀ (Δ := A :: Δ) (τ := τ.cons a) (as := as) W' hAs
-      (by simpa using hL) (Nat.succ.inj hlen) W
-    exact h1.trans h2
 
 end VEnv
 end Lean4Lean
@@ -160,23 +105,28 @@ theorem _root_.Lean4Lean.VExpr.instL_reseat (ls : List VLevel) (e : VExpr) (a k 
     (e.reseat a k m b l).instL ls = (e.instL ls).reseat a k m b l := by
   simp [reseat]
 
+theorem ctorAppAt_instL (j : Nat) (c : VConstructor) (ls ls' : List VLevel) (ps fs : List VExpr) :
+    (d.ctorAppAt j c ls ps fs).instL ls' =
+      d.ctorAppAt j c (ls.map (VLevel.inst ls')) (ps.map (·.instL ls')) (fs.map (·.instL ls')) := by
+  simp [ctorAppAt, VInductiveType.ctorApp_instL]
+
 theorem motiveType_instL (ls ls' : List VLevel) (v : VLevel) (j : Nat) (T : VInductiveType) :
     (d.motiveType ls v j T).instL ls' =
       d.motiveType (ls.map (VLevel.inst ls')) (v.inst ls') j T := by
-  simp [motiveType, instL_foralls, instL_appN, instL_liftTele, List.map_map, Function.comp_def,
-    instL_instL, instL, instL_bvars]
+  simp [motiveType, instL_foralls, instL_liftTele, List.map_map, Function.comp_def,
+    instL_instL, instL, instL_bvars, VInductiveType.typeApp_instL]
 
 theorem minorType_instL (ls ls' : List VLevel) (q j : Nat) (c : VConstructor) :
     (d.minorType ls q j c).instL ls' = d.minorType (ls.map (VLevel.inst ls')) q j c := by
   simp [minorType, instL_foralls, instL_appN, instL_liftTele, List.map_map, Function.comp_def,
-    instL_instL, instL, instL_bvars, instL_reseat]
+    instL_instL, instL, instL_bvars, ctorAppAt_instL, instL_reseat]
 
 theorem recType_instL (ls ls' : List VLevel) (v : VLevel) (i : Nat) (T : VInductiveType) :
     (d.recType ls v i T).instL ls' =
       d.recType (ls.map (VLevel.inst ls')) (v.inst ls') i T := by
   simp [recType, recBinders, motiveTypes, minorTypes, instL_foralls, instL_appN, instL_liftTele,
-    List.map_map, Function.comp_def, instL_instL, instL, instL_bvars, motiveType_instL,
-    minorType_instL]
+    List.map_map, Function.comp_def, instL_instL, instL, instL_bvars,
+    VInductiveType.typeApp_instL, motiveType_instL, minorType_instL]
 
 theorem recConst_instL (recLs ls' : List VLevel) (j : Nat) :
     (d.recConst recLs j).instL ls' = d.recConst (recLs.map (VLevel.inst ls')) j := by
@@ -189,7 +139,7 @@ theorem iotaRule_instL (ls ls' recLs : List VLevel) (v : VLevel) (q j : Nat) (c 
     (d.iotaRule ls v recLs q j c).type.instL ls' = r.type := by
   simp [iotaRule, recBinders, motiveTypes, minorTypes, instL_foralls, instL_lams, instL_appN,
     instL_liftTele, List.map_map, Function.comp_def, instL_instL, instL, instL_bvars,
-    motiveType_instL, minorType_instL, recConst_instL, instL_reseat]
+    ctorAppAt_instL, motiveType_instL, minorType_instL, recConst_instL, instL_reseat]
 
 end VInductDecl
 end Lean4Lean

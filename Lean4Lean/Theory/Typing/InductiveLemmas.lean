@@ -3,6 +3,48 @@ import Lean4Lean.Theory.Typing.Lemmas
 import Lean4Lean.Theory.Typing.Env
 
 namespace Lean4Lean
+theorem VInductDecl.mem_allCtors {decl : VInductDecl} {j c} (h : (j, c) ∈ decl.allCtors) :
+    ∃ T ∈ decl.allTypes, c ∈ T.ctors := by
+  simp only [VInductDecl.allCtors, List.mem_flatten, List.mem_map] at h
+  obtain ⟨_, ⟨⟨T, i⟩, hT, rfl⟩, hc⟩ := h
+  obtain ⟨c', hc', ⟨⟩⟩ := List.mem_map.1 hc
+  exact ⟨T, List.fst_mem_of_mem_zipIdx hT, hc'⟩
+
+theorem VInductDecl.mem_allCtors_iff {decl : VInductDecl} {j : Nat} {c} :
+    (j, c) ∈ decl.allCtors ↔ ∃ T, decl.allTypes[j]? = some T ∧ c ∈ T.ctors := by
+  simp only [VInductDecl.allCtors, List.mem_flatten, List.mem_map, List.mem_zipIdx_iff_getElem?]
+  constructor
+  · rintro ⟨_, ⟨⟨T, i⟩, hT, rfl⟩, hc⟩
+    obtain ⟨c', hc', ⟨⟩⟩ := List.mem_map.1 hc
+    exact ⟨T, by simpa using hT, hc'⟩
+  · rintro ⟨T, hT, hc⟩
+    exact ⟨_, ⟨⟨T, j⟩, by simpa using hT, rfl⟩, List.mem_map.2 ⟨c, hc, rfl⟩⟩
+
+theorem VInductDecl.allTypes_getElem?_of_types {decl : VInductDecl} {t : Nat} {T}
+    (h : decl.types[t]? = some T) : decl.allTypes[t]? = some T := by
+  rw [VInductDecl.allTypes, List.getElem?_append_left (List.getElem?_eq_some_iff.1 h).1, h]
+
+theorem VInductDecl.mem_allTypes_of_types {decl : VInductDecl} {T} (h : T ∈ decl.types) :
+    T ∈ decl.allTypes := List.mem_append_left _ h
+
+/-- The constructors of the block's own types come first among all its constructors. -/
+theorem VInductDecl.allCtors_eq_append (decl : VInductDecl) :
+    ∃ rest, decl.allCtors = decl.ctors ++ rest := by
+  simp only [VInductDecl.allCtors, VInductDecl.allTypes, VInductDecl.ctors, List.zipIdx_append,
+    List.map_append, List.flatten_append]
+  exact ⟨_, rfl⟩
+
+theorem VInductDecl.mem_allCtors_of_ctors {decl : VInductDecl} {j c} (h : (j, c) ∈ decl.ctors) :
+    (j, c) ∈ decl.allCtors := by
+  obtain ⟨rest, e⟩ := decl.allCtors_eq_append; rw [e]; exact List.mem_append_left _ h
+
+theorem VInductDecl.allTypes_of_aux {decl : VInductDecl} (h : decl.aux = []) :
+    decl.allTypes = decl.types := by simp [VInductDecl.allTypes, h]
+
+theorem VInductDecl.allCtors_of_aux {decl : VInductDecl} (h : decl.aux = []) :
+    decl.allCtors = decl.ctors := by
+  simp [VInductDecl.allCtors, VInductDecl.ctors, VInductDecl.allTypes_of_aux h]
+
 namespace VEnv
 
 theorem addConstList_ordered : ∀ {env env' : VEnv} {cs : List (Name × VConstant)}, Ordered env →
@@ -81,11 +123,11 @@ theorem addInduct_WF (henv : Ordered env) (hdecl : decl.WF env) (hgen : decl.Gen
   obtain ⟨envT, hT, envC, hC, envR, hR, hB⟩ := henv'
   have oT := addConstList_ordered henv (fun p hp => by
     obtain ⟨T, hT, rfl⟩ := List.mem_map.1 hp
-    exact hdecl.types T hT) hT
+    exact (hdecl.types T hT).1) hT
   have oC := addConstList_ordered oT (fun p hp => by
     obtain ⟨⟨j, c⟩, hc, rfl⟩ := List.mem_map.1 hp
     obtain ⟨T, hT', hc⟩ := VInductDecl.mem_ctors hc
-    exact ((hdecl.ctors envT hT T hT').2 c hc).type) hC
+    exact ((hdecl.ctors envT hT T (List.mem_append_left _ hT')).2 c hc).type) hC
   obtain ⟨hrec, hiota⟩ := hgen envT envC envR hT hC hR
   have oR := addConstList_ordered oC hrec hR
   exact .block (addDefEqList_ordered oR hiota) hB

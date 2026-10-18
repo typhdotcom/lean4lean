@@ -510,10 +510,10 @@ theorem iotaRule_rhs (d : VInductDecl) (ls : List VLevel) (v : VLevel) (recLs : 
     (q j : Nat) (c : VConstructor) :
     (d.iotaRule ls v recLs q j c).rhs =
       .lams (d.recBinders ls v ++
-          VExpr.liftTele (d.types.length + d.ctors.length) (c.fields.map (·.type.instL ls)))
-        (.appN (.bvar (c.fields.length + (d.ctors.length - 1 - q)))
+          VExpr.liftTele (d.allTypes.length + d.allCtors.length) (c.fields.map (·.type.instL ls)))
+        (.appN (.bvar (c.fields.length + (d.allCtors.length - 1 - q)))
           (VExpr.bvars c.fields.length 0 ++ c.recFields.map fun (k, ra) =>
-            ihRhs ls d.params.length d.types.length d.ctors.length c.fields.length k
+            ihRhs ls d.params.length d.allTypes.length d.allCtors.length c.fields.length k
               (d.recConst recLs ra.typeIdx) ra)) := rfl
 
 /-- The recursor's universe levels, as the kernel writes them, are its level parameters. -/

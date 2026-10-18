@@ -30,6 +30,14 @@ structure VConstructor where
   /-- The indices of the constructor's result, under the parameters and the fields. -/
   indices : List VExpr
 
+/-- The occurrence an auxiliary type of a nested block stands for: the inductive type `ind` of an
+earlier block, at universe levels `lvls` and at parameters `args`, which are stated over the
+block's parameters and mention its types. -/
+structure VNested where
+  ind : Name
+  lvls : List VLevel
+  args : List VExpr
+
 structure VInductiveType where
   name : Name
   /-- As declared. -/
@@ -37,6 +45,9 @@ structure VInductiveType where
   /-- The index telescope, under the parameters. -/
   indices : List VExpr
   ctors : List VConstructor
+  /-- For an auxiliary type of a nested block, the occurrence it stands for. -/
+  nested : Option VNested := none
+  deriving Inhabited
 
 structure VInductDecl where
   uvars : Nat
@@ -52,6 +63,10 @@ structure VInductDecl where
   `isLargeEliminator`, a syntactic test that `VInductDecl.LargeElimOK` justifies. -/
   largeElim : Bool
   isUnsafe : Bool
+  /-- The auxiliary types of a nested block: an earlier inductive type at parameters mentioning
+  the block's types, where a constructor uses one. They get motives, minor premises for their
+  constructors (the earlier type's), recursors and iota rules, but no constants of their own. -/
+  aux : List VInductiveType := []
 
 structure VConstant where
   uvars : Nat

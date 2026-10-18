@@ -31,6 +31,7 @@ inductive Aligned : ConstMap → VEnv → Prop where
     venv.addConst n ci' = some venv' → ci.name = n → Aligned (C.insert n ci) venv'
   | defeq : Aligned C venv → Aligned C (venv.addDefEq df)
   | block : Aligned C venv → venv.addBlock d = some venv' → Aligned C venv'
+  | perm : Aligned C venv → C'.WF → (∀ n, C'.find? n = C.find? n) → Aligned C' venv
 
 theorem Aligned.map_wf (H : Aligned safety C venv) : C.WF := by
   induction H with
@@ -38,6 +39,7 @@ theorem Aligned.map_wf (H : Aligned safety C venv) : C.WF := by
   | ignoreConst _ h1 _ _ ih
   | const _ h1 _ _ _ ih => exact ih.insert _ _ h1
   | defeq _ ih | block _ _ ih => exact ih
+  | perm _ h _ _ => exact h
 
 theorem Aligned.find?_iff (H : Aligned safety C venv) :
     (∃ ci, C.find? name = some ci ∧ safety ≤ ci.safety) ↔ ∃ ci, venv.constants name = some ci := by
@@ -52,6 +54,7 @@ theorem Aligned.find?_iff (H : Aligned safety C venv) :
     split <;> simp_all; exact h2.1
   | defeq _ ih => exact ih
   | block _ h ih => rw [VEnv.addBlock_constants h]; exact ih
+  | perm _ _ h ih => simp only [h]; exact ih
 
 theorem Aligned.addQuot1 {Q : Prop}
     (H1 : ∀ c env, Aligned safety c env → P c env → Q)
@@ -124,6 +127,49 @@ theorem Aligned.insertConsts {cis : List ConstantInfo} {vcs : List (Name × VCon
     rw [H.map_wf.find?_insert, if_neg]; · exact hfr c (.tail _ hc)
     simp only [beq_iff_eq]; intro hh; exact hnd.1 (by rw [hh]; exact List.mem_map_of_mem hc)
 
+theorem insertConsts_find?_of_some {cis : List ConstantInfo} {C : ConstMap} (hC : C.WF)
+    (hfr : ∀ c ∈ cis, C.find? c.name = none) (hnd : (cis.map (·.name)).Nodup) {x ci}
+    (h : C.find? x = some ci) : (insertConsts C cis).find? x = some ci := by
+  rw [insertConsts_find?_of_not_mem hC hfr hnd]; · exact h
+  intro hm; obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hm; cases hfr c hc ▸ h
+
+theorem insertConsts_find?_of_mem : ∀ {cis : List ConstantInfo} {C : ConstMap}, C.WF →
+    (∀ c ∈ cis, C.find? c.name = none) → (cis.map (·.name)).Nodup → ∀ {ci}, ci ∈ cis →
+    (insertConsts C cis).find? ci.name = some ci
+  | c :: cs, C, hC, hfr, hnd, ci, hm => by
+    rw [List.map_cons, List.nodup_cons] at hnd
+    have hC' := hC.insert c.name c (hfr _ (.head _))
+    have hfr' : ∀ e ∈ cs, (C.insert c.name c).find? e.name = none := by
+      intro e he
+      rw [hC.find?_insert, if_neg]; · exact hfr e (.tail _ he)
+      simp only [beq_iff_eq]; intro hh; exact hnd.1 (by rw [hh]; exact List.mem_map_of_mem he)
+    show (insertConsts (C.insert c.name c) cs).find? ci.name = some ci
+    rcases List.mem_cons.1 hm with rfl | hm
+    · refine insertConsts_find?_of_some hC' hfr' hnd.2 ?_
+      rw [hC.find?_insert]; simp
+    · exact insertConsts_find?_of_mem hC' hfr' hnd.2 hm
+
+/-- Inserting fresh constants under distinct names in another order finds the same constants. -/
+theorem insertConsts_perm_find? {cis cis' : List ConstantInfo} {C : ConstMap} (hC : C.WF)
+    (hfr : ∀ c ∈ cis, C.find? c.name = none) (hnd : (cis.map (·.name)).Nodup)
+    (hp : cis'.Perm cis) (n : Name) :
+    (insertConsts C cis').find? n = (insertConsts C cis).find? n := by
+  have hfr' : ∀ c ∈ cis', C.find? c.name = none := fun c hc => hfr c (hp.mem_iff.1 hc)
+  have hnd' : (cis'.map (·.name)).Nodup := (hp.map _).nodup_iff.2 hnd
+  have hmem : n ∈ cis'.map (·.name) ↔ n ∈ cis.map (·.name) := (hp.map _).mem_iff
+  by_cases hn : n ∈ cis.map (·.name)
+  · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hn
+    rw [insertConsts_find?_of_mem hC hfr hnd hc,
+      insertConsts_find?_of_mem hC hfr' hnd' (hp.mem_iff.2 hc)]
+  · rw [insertConsts_find?_of_not_mem hC hfr hnd hn,
+      insertConsts_find?_of_not_mem hC hfr' hnd' (mt hmem.1 hn)]
+
+theorem insertConsts_find?_perm {cis cis' : List ConstantInfo} {C : ConstMap} {n ci} (hC : C.WF)
+    (hfr : ∀ c ∈ cis, C.find? c.name = none) (hnd : (cis.map (·.name)).Nodup)
+    (hp : cis'.Perm cis) (h : (insertConsts C cis').find? n = some ci) :
+    C.find? n = some ci ∨ ci ∈ cis ∧ ci.name = n := by
+  rw [insertConsts_perm_find? hC hfr hnd hp] at h; exact insertConsts_find? hC hfr hnd h
+
 theorem Aligned.addDefEqList : ∀ {dfs : List VDefEq} {venv},
     Aligned safety C venv → Aligned safety C (venv.addDefEqList dfs)
   | [], _, H => H
@@ -138,8 +184,11 @@ theorem AddInduct.le (H : AddInduct safety C₁ venv₁ decl C₂ venv₂) : ven
 
 theorem Aligned.addInduct (H : AddInduct safety C₁ venv₁ decl C₂ venv₂)
     (wf : Aligned safety C₁ venv₁) : Aligned safety C₂ venv₂ := by
-  obtain @⟨_, _, _, _, types, ctors, recs, -, hty, hct, hrc, hnd, hfr, rfl, hT, hC, hR, hB⟩ := H
-  refine .block (Aligned.addDefEqList ?_) hB
+  obtain @⟨_, _, _, _, types, ctors, recs, -, hty, hct, hrc, hnd, hfr, ⟨cis, hp, rfl⟩, hT, hC, hR,
+    hB⟩ := H
+  refine .perm (.block (Aligned.addDefEqList ?_) hB)
+    (insertConsts_wf wf.map_wf (fun c hc => hfr c (hp.mem_iff.1 hc)) ((hp.map _).nodup_iff.2 hnd))
+    (insertConsts_perm_find? wf.map_wf hfr hnd hp)
   have hnd' := hnd
   simp only [inductConsts, List.map_append, List.nodup_append] at hnd'
   obtain ⟨⟨hnd1, hnd2, hd12⟩, hnd3, hd3⟩ := hnd'
@@ -152,7 +201,7 @@ theorem Aligned.addInduct (H : AddInduct safety C₁ venv₁ decl C₂ venv₂)
     simp only [List.map_append, List.nodup_append]; exact ⟨hnd1, hnd2, hd12⟩
   have w1 := wf.insertConsts hnd1 hfr1 (by
     simp only [VInductDecl.typeConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
-    exact Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1.1, h.2⟩) hty) hT
+    exact Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1.1, h.2.1⟩) hty) hT
   have w2 := w1.insertConsts hnd2 (fun ci hci => by
     rw [insertConsts_find?_of_not_mem hC₁ hfr1 hnd1 fun h => hd12 _ h _
       (List.mem_map_of_mem hci) rfl]
@@ -240,6 +289,7 @@ theorem Aligned.find? (H : Aligned safety C venv)
   | defeq h1 ih => let ⟨_, h1, h2⟩ := ih h; exact ⟨_, h1, h2.mono VEnv.addDefEq_le⟩
   | block _ h2 ih =>
     let ⟨_, a, b⟩ := ih h; exact ⟨_, (VEnv.addBlock_le h2).constants a, b.mono (VEnv.addBlock_le h2)⟩
+  | perm _ _ h' ih => exact ih (h' _ ▸ h)
 
 theorem Aligned.find?_uniq (H : Aligned safety C venv)
     (h : C.find? name = some ci) (hs : venv.constants name = some ci') :
@@ -261,6 +311,7 @@ theorem Aligned.find?_uniq (H : Aligned safety C venv)
   | block _ h2 ih =>
     let ⟨a, b⟩ := ih h (by rwa [VEnv.addBlock_constants h2] at hs)
     exact ⟨a, b.mono (VEnv.addBlock_le h2)⟩
+  | perm _ _ h' ih => exact ih (h' _ ▸ h) hs
 
 theorem TrEnv.find?_iff (H : TrEnv safety env venv) :
     (∃ ci, env.find? name = some ci ∧ safety ≤ ci.safety) ↔ ∃ ci, venv.constants name = some ci := by
@@ -376,8 +427,8 @@ theorem TrEnv'.of_value (H : TrEnv' safety C Q venv) (h : C.find? name = some ci
     · contradiction
   | induct _ h1 H ih =>
     have hle := h1.le
-    obtain ⟨-, -, -, -, hnd, hfr, rfl, -⟩ := h1
-    rcases insertConsts_find? H.map_wf hfr hnd h with h | h
+    obtain ⟨-, -, -, -, hnd, hfr, ⟨_, hp, rfl⟩, -⟩ := h1
+    rcases insertConsts_find?_perm H.map_wf hfr hnd hp h with h | h
     · exact (ih h).mono hle
     · simp only [inductConsts, List.mem_append, List.mem_map] at h
       obtain ⟨(⟨_, -, rfl⟩ | ⟨_, -, rfl⟩) | ⟨_, -, rfl⟩, -⟩ := h <;> cases hv

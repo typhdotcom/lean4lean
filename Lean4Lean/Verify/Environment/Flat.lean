@@ -213,14 +213,13 @@ theorem addInductive.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
       rw [Kernel.Environment.find?, hC', (insertConsts_wf hC₁ hfr hnd).find?'_eq_find?] at h
       rcases insertConsts_find? hC₁ hfr hnd h with h | h
       · exact wf.safePrimitives (by rwa [Kernel.Environment.find?, hC₁.find?'_eq_find?]) hn
-      · have := hnp n (hnames ▸ h.2 ▸ List.mem_map_of_mem h.1)
+      · have := hnp n (hnames.mem_iff.1 (h.2 ▸ List.mem_map_of_mem h.1))
         simp_all
     | true =>
       have ⟨hprim, hsafe⟩ := hp rfl
       exact addInductBlock.WF wf hdecl H hq hprim hsafe
-  · -- `AddInduct` models blocks without nested occurrences only, so for a nested block there is
-    -- nothing to show that its result is in `TrEnv`: as stated, this case is not provable until
-    -- `VEnv.addInduct` covers nested inductives.
+  · -- A nested block: its auxiliary types are checked as a flat block and the result translated
+    -- back to the block `VEnv.addInduct` models with `aux`. Not yet verified.
     sorry
 
 end Lean4Lean

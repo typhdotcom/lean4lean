@@ -32,10 +32,11 @@ theorem AddInduct.names {decl : VInductDecl} (H : AddInduct safety C₁ env₁ d
     ∃ cis, C₂ = insertConsts C₁ cis ∧ (cis.map (·.name)).Nodup ∧
       (∀ ci ∈ cis, C₁.find? ci.name = none) ∧
       (∀ ci ∈ cis, ci.safety = if decl.isUnsafe then .unsafe else .safe) ∧
-      cis.map (·.name) = (decl.typeConsts ++ decl.ctorConsts ++ decl.recConsts).map (·.1) := by
-  obtain @⟨_, _, _, _, types, ctors, recs, -, hty, hct, hrc, hnd, hfr, rfl, -⟩ := H
-  refine ⟨_, rfl, hnd, hfr, ?_, ?_⟩
+      (cis.map (·.name)).Perm ((decl.typeConsts ++ decl.ctorConsts ++ decl.recConsts).map (·.1)) := by
+  obtain @⟨_, _, _, _, types, ctors, recs, -, hty, hct, hrc, hnd, hfr, ⟨cis, hp, rfl⟩, -⟩ := H
+  refine ⟨cis, rfl, (hp.map _).nodup_iff.2 hnd, fun c hc => hfr c (hp.mem_iff.1 hc), ?_, ?_⟩
   · intro ci hci
+    replace hci := hp.mem_iff.1 hci
     simp only [inductConsts, List.mem_append, List.mem_map] at hci
     obtain (⟨v, hv, rfl⟩ | ⟨v, hv, rfl⟩) | ⟨v, hv, rfl⟩ := hci
     · obtain ⟨_, _, ⟨-, -, -, -, -, -, -, -, h⟩, -⟩ := hty.forall_exists_l v hv
@@ -47,7 +48,8 @@ theorem AddInduct.names {decl : VInductDecl} (H : AddInduct safety C₁ env₁ d
     · obtain ⟨_, _, ⟨-, -, -, -, -, -, -, -, -, -, h, -⟩, -⟩ := hrc.forall_exists_l v hv
       simp only [ConstantInfo.safety, ConstantInfo.isUnsafe, ConstantInfo.isPartial, h]
       cases decl.isUnsafe <;> rfl
-  · refine List.Forall₂.map_eq (f := fun x : ConstantInfo => x.name)
+  · refine (hp.map _).trans (List.Perm.of_eq ?_)
+    refine List.Forall₂.map_eq (f := fun x : ConstantInfo => x.name)
       (g := fun x : Name × VConstant => x.1) ?_
     refine .append (.append ?_ ?_) ?_
     · simp only [VInductDecl.typeConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
@@ -63,10 +65,11 @@ theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ d
     (hfi' : ∀ n, C₁.find? n = none → env₁'.inducts n = none) :
     ∃ env₂', AddInduct sf' C₁ env₁' decl C₂ env₂' ∧ env₂ ≤ env₂' := by
   obtain ⟨cis, -, hnd, hfr, -, hnames⟩ := H.names
-  rw [hnames, List.map_append, List.map_append] at hnd
+  replace hnd := hnames.nodup_iff.1 hnd
+  rw [List.map_append, List.map_append] at hnd
   have hfresh : ∀ n ∈ (decl.typeConsts ++ decl.ctorConsts ++ decl.recConsts).map (·.1),
       env₁'.constants n = none := by
-    rw [← hnames]; intro n hn
+    intro n hn; replace hn := hnames.mem_iff.2 hn
     obtain ⟨ci, hci, rfl⟩ := List.mem_map.1 hn
     exact hfr' _ (hfr ci hci)
   simp only [List.map_append, List.mem_append] at hfresh
@@ -74,7 +77,7 @@ theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ d
   have hfreshI : ∀ T ∈ decl.types, env₁'.inducts T.name = none := by
     intro T hT
     have : T.name ∈ cis.map (·.name) := by
-      rw [hnames]; simp only [List.map_append, List.mem_append, VInductDecl.typeConsts,
+      refine hnames.mem_iff.2 ?_; simp only [List.map_append, List.mem_append, VInductDecl.typeConsts,
         List.map_map, Function.comp_def]
       exact .inl (.inl (List.mem_map_of_mem hT))
     obtain ⟨ci, hci, hn⟩ := List.mem_map.1 this
@@ -100,7 +103,8 @@ theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ d
     exact hfreshI T hT
   refine ⟨_, .mk hl ?_ ?_ ?_ hnd₀ hfr₀ hm hT' hC' hR' hB',
     VEnv.addBlock_mono (VEnv.addDefEqList_mono leR) hB hB'⟩
-  · exact Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1, (h.2.sf_mono hsf).mono hle⟩) hty
+  · exact Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1, (h.2.1.sf_mono hsf).mono hle,
+      fun h1 ps B h2 h3 => (h.2.2 h1 ps B h2 h3).mono hle⟩) hty
   · exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => ⟨h.1, (h.2.sf_mono hsf).mono leT⟩) hct
   · exact Lean4Lean.List.Forall₂.imp
       (fun _ ⟨_, _⟩ h => ⟨h.1.mono leR, (h.2.sf_mono hsf).mono leC⟩) hrc

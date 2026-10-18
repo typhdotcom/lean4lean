@@ -1064,15 +1064,127 @@ theorem only_types_getElem? (d : VInductDecl) (j c) (t : Nat) :
   simp only [only, List.getElem?_map, List.getElem?_zipIdx]
   cases d.types[t]? <;> simp
 
+@[simp] theorem only_allTypes_length (d : VInductDecl) (j c) :
+    (d.only j c).allTypes.length = d.allTypes.length := by simp [allTypes, only]
+
+/-- `only` changes a type's constructors and nothing else. -/
+theorem only_allTypes_getElem? (d : VInductDecl) (j c) (t : Nat) :
+    (d.only j c).allTypes[t]?.map (fun T => (T.name, T.indices, T.nested)) =
+      d.allTypes[t]?.map (fun T => (T.name, T.indices, T.nested)) := by
+  by_cases ht : t < d.types.length
+  · rw [allTypes, allTypes, List.getElem?_append_left (by simpa using ht),
+      List.getElem?_append_left ht, only_types_getElem?]
+    cases d.types[t]? <;> simp
+  · rw [allTypes, allTypes, List.getElem?_append_right (by simpa using ht),
+      List.getElem?_append_right (by omega), only_types_length]
+    rfl
+
+theorem only_allTypes_getElem (d : VInductDecl) (j c) (t : Nat)
+    (h : t < (d.only j c).allTypes.length) :
+    ((d.only j c).allTypes[t].name, (d.only j c).allTypes[t].indices,
+      (d.only j c).allTypes[t].nested) =
+    ((d.allTypes[t]'(by simpa using h)).name, (d.allTypes[t]'(by simpa using h)).indices,
+      (d.allTypes[t]'(by simpa using h)).nested) := by
+  have := only_allTypes_getElem? d j c t
+  rw [List.getElem?_eq_getElem h, List.getElem?_eq_getElem (by simpa using h)] at this
+  simpa using this
+
+theorem motiveType_congr {d d' : VInductDecl} (hp : d.params.length = d'.params.length)
+    {ls v i} {T T' : VInductiveType} (e1 : T.name = T'.name) (e2 : T.indices = T'.indices)
+    (e3 : T.nested = T'.nested) : d.motiveType ls v i T = d'.motiveType ls v i T' := by
+  simp only [motiveType, VInductiveType.typeApp, e1, e2, e3, hp]
+
 theorem only_motiveTypes (d : VInductDecl) (j c ls v) :
     (d.only j c).motiveTypes ls v = d.motiveTypes ls v := by
   apply List.ext_getElem (by simp [motiveTypes]) fun i h1 h2 => ?_
   simp only [motiveTypes, List.getElem_map, List.getElem_zipIdx]
-  simp [motiveType, only]
+  have := only_allTypes_getElem d j c i (by simpa [motiveTypes] using h1)
+  simp only [Prod.mk.injEq] at this
+  obtain ⟨e1, e2, e3⟩ := this
+  exact motiveType_congr rfl e1 e2 e3
+
+theorem only_ctorAppAt (d : VInductDecl) (j c) :
+    (d.only j c).ctorAppAt = d.ctorAppAt := by
+  funext j' c' ls ps fs
+  have := only_allTypes_getElem? d j c j'
+  simp only [ctorAppAt]
+  cases h1 : (d.only j c).allTypes[j']? <;> cases h2 : d.allTypes[j']? <;>
+    rw [h1, h2] at this <;> simp at this <;>
+    first | rfl | (simp only [Option.getD_some]; unfold VInductiveType.ctorApp; rw [this.2.2])
+
+theorem ctorAppAt_of_none {d : VInductDecl} {j : Nat} {T : VInductiveType}
+    (h : d.allTypes[j]? = some T) (hno : T.nested = none) (c ls ps fs) :
+    d.ctorAppAt j c ls ps fs = .appN (.const c.name ls) (ps ++ fs) := by
+  simp [ctorAppAt, h, VInductiveType.ctorApp_of_none hno]
+
+theorem recName_of_types {d : VInductDecl} {t : Nat} {T : VInductiveType}
+    (h : d.types[t]? = some T) : d.recName t = Lean.mkRecName T.name := by
+  obtain ⟨hlt, rfl⟩ := List.getElem?_eq_some_iff.1 h; simp [recName, hlt]
+
+/-- In a block without nested occurrences, a constructor applied as `ctorAppAt` applies it is its
+constant applied to the parameters and fields. -/
+theorem ctorAppAt_flat {d : VInductDecl} (hno : ∀ T ∈ d.allTypes, T.nested = none) (j c ls ps fs) :
+    d.ctorAppAt j c ls ps fs = .appN (.const c.name ls) (ps ++ fs) := by
+  cases h : d.allTypes[j]? with
+  | none => simp [ctorAppAt, h, VInductiveType.ctorApp]; rfl
+  | some T => exact ctorAppAt_of_none h (hno T (List.mem_of_getElem? h)) c ls ps fs
+
+/-- The facts the recursor is built from, for a block without nested occurrences, from their
+statements for its own types and constructors as constants. -/
+theorem RecFacts.of_flat {d : VInductDecl} {env : VEnv} {U : Nat} {ls : List VLevel}
+    (haux : d.aux = []) (hnone : ∀ T ∈ d.types, T.nested = none)
+    (henv : env.WF) (hP : env.IsTele U [] (d.params.map (·.instL ls)))
+    (hI : ∀ {t : Nat} {T : VInductiveType}, d.types[t]? = some T →
+      env.IsTele U (d.params.map (·.instL ls)).reverse (T.indices.map (·.instL ls)))
+    (hT : ∀ {t : Nat} {T : VInductiveType}, d.types[t]? = some T →
+      env.HasType U [] (.const T.name ls)
+        (.foralls (d.params.map (·.instL ls) ++ T.indices.map (·.instL ls))
+          (.sort (d.level.inst ls))))
+    (hF : ∀ {j : Nat} {c : VConstructor}, (j, c) ∈ d.ctors →
+      env.IsTele U (d.params.map (·.instL ls)).reverse (c.fields.map (·.type.instL ls)))
+    (hC : ∀ {j : Nat} {c : VConstructor} {T : VInductiveType}, (j, c) ∈ d.ctors →
+      d.types[j]? = some T → c.indices.length = T.indices.length ∧
+      env.HasType U [] (.const c.name ls)
+        (.foralls (d.params.map (·.instL ls) ++ c.fields.map (·.type.instL ls))
+          (.appN (.const T.name ls)
+            (bvars d.params.length c.fields.length ++ c.indices.map (·.instL ls)))))
+    (hR : ∀ {j : Nat} {c : VConstructor} {k : Nat} {f : VField} {ra : VRecArg}, (j, c) ∈ d.ctors →
+      c.fields[k]? = some f → f.recArg = some ra →
+      ∃ T, d.types[ra.typeIdx]? = some T ∧ ra.indices.length = T.indices.length ∧
+      env.IsDefEqU U (((c.fields.take k).map (·.type.instL ls)).reverse ++
+          (d.params.map (·.instL ls)).reverse)
+        (f.type.instL ls)
+        (.foralls (ra.binders.map (·.instL ls)) (.appN (.const T.name ls)
+          (bvars d.params.length (k + ra.binders.length) ++ ra.indices.map (·.instL ls))))) :
+    d.RecFacts env U ls :=
+  have hall : d.allTypes = d.types := allTypes_of_aux haux
+  have hallC : d.allCtors = d.ctors := allCtors_of_aux haux
+  { wf := henv
+    params := hP
+    indices := fun h => hI (hall ▸ h)
+    type := hT
+    fields := fun h => hF (hallC ▸ h)
+    ctor := hC
+    recArg := fun {j c k f ra} h hk hra => by
+      rw [hallC] at h
+      obtain ⟨T', h1, h2, h3⟩ := hR h hk hra
+      refine ⟨T', hall ▸ h1, h2, ?_⟩
+      rw [VInductiveType.typeApp_of_none (hnone T' (List.mem_of_getElem? h1))]
+      exact h3
+    typeHead := fun {t T'} h => by
+      rw [hall] at h
+      rw [VInductiveType.typeHead_of_none (hnone T' (List.mem_of_getElem? h))]
+      simpa using VEnv.HasType.appN_params henv.ordered hP (hT h)
+    ctorHead := fun {j' c' T'} h hT' => by
+      rw [hallC] at h; rw [hall] at hT'
+      have hno := hnone T' (List.mem_of_getElem? hT')
+      refine ⟨(hC h hT').1, ?_⟩
+      rw [VInductiveType.ctorHead_of_none hno, VInductiveType.typeApp_of_none hno]
+      simpa using VEnv.HasType.appN_params henv.ordered hP (hC h hT').2 }
 
 theorem only_minorType (d : VInductDecl) (j c ls q j' c') :
     (d.only j c).minorType ls q j' c' = d.minorType ls q j' c' := by
-  simp only [minorType, only_params, only_types_length]
+  simp only [minorType, only_params, only_allTypes_length, only_ctorAppAt]
 
 theorem mem_only_ctors {d : VInductDecl} {j : Nat} {c : VConstructor} {j' c'}
     (h : (j', c') ∈ (d.only j c).ctors) : j' = j ∧ c' = c := by
@@ -1089,8 +1201,17 @@ theorem mem_only_ctors_self {d : VInductDecl} {j : Nat} {c : VConstructor} {T}
   rw [mem_ctors_iff]
   exact ⟨_, by rw [only_types_getElem?, hj]; rfl, by simp⟩
 
+@[simp] theorem only_aux (d : VInductDecl) (j c) : (d.only j c).aux = d.aux := rfl
+
+theorem only_nested {d : VInductDecl} (hn : ∀ T ∈ d.types, T.nested = none) (j c) :
+    ∀ T ∈ (d.only j c).types, T.nested = none := by
+  intro T hT
+  obtain ⟨⟨T', i⟩, hT', rfl⟩ := List.mem_map.1 hT
+  exact hn T' (List.fst_mem_of_mem_zipIdx hT')
+
 theorem only_recFacts {d : VInductDecl} {env : VEnv} {U : Nat} {ls : List VLevel}
     {j : Nat} {c : VConstructor} {T : VInductiveType} (hj : d.types[j]? = some T)
+    (haux : d.aux = []) (hnone : ∀ T ∈ d.types, T.nested = none)
     (henv : env.WF) (hP : env.IsTele U [] (d.params.map (·.instL ls)))
     (hI : ∀ {t : Nat} {T : VInductiveType}, d.types[t]? = some T →
       env.IsTele U (d.params.map (·.instL ls)).reverse (T.indices.map (·.instL ls)))
@@ -1111,26 +1232,54 @@ theorem only_recFacts {d : VInductDecl} {env : VEnv} {U : Nat} {ls : List VLevel
         (f.type.instL ls)
         (.foralls (ra.binders.map (·.instL ls)) (.appN (.const T.name ls)
           (bvars d.params.length (k + ra.binders.length) ++ ra.indices.map (·.instL ls))))) :
-    (d.only j c).RecFacts env U ls where
-  wf := henv
-  params := hP
-  indices {t T'} h := by
-    rw [only_types_getElem?] at h
-    obtain ⟨T'', h1, rfl⟩ := Option.map_eq_some_iff.1 h
-    exact hI (T := T'') h1
-  type {t T'} h := by
+    (d.only j c).RecFacts env U ls :=
+  have hall : (d.only j c).allTypes = (d.only j c).types := allTypes_of_aux haux
+  have hallC : (d.only j c).allCtors = (d.only j c).ctors := allCtors_of_aux haux
+  have hn' := only_nested hnone j c
+  have hctor {j' : Nat} {c' : VConstructor} {T' : VInductiveType} (h : (j', c') ∈ (d.only j c).ctors)
+      (hT' : (d.only j c).types[j']? = some T') :
+      c'.indices.length = T'.indices.length ∧
+      env.HasType U [] (.const c'.name ls)
+        (.foralls (d.params.map (·.instL ls) ++ c'.fields.map (·.type.instL ls))
+          (.appN (.const T'.name ls)
+            (bvars d.params.length c'.fields.length ++ c'.indices.map (·.instL ls)))) := by
+    obtain ⟨rfl, rfl⟩ := mem_only_ctors h
+    rw [only_types_getElem?, hj] at hT'; cases hT'; exact hC
+  have htype {t : Nat} {T' : VInductiveType} (h : (d.only j c).types[t]? = some T') :
+      env.HasType U [] (.const T'.name ls)
+        (.foralls (d.params.map (·.instL ls) ++ T'.indices.map (·.instL ls))
+          (.sort (d.level.inst ls))) := by
     rw [only_types_getElem?] at h
     obtain ⟨T'', h1, rfl⟩ := Option.map_eq_some_iff.1 h
     exact hT (T := T'') h1
-  fields {j' c'} h := by obtain ⟨rfl, rfl⟩ := mem_only_ctors h; exact hF
-  ctor {j' c' T'} h hT' := by
-    obtain ⟨rfl, rfl⟩ := mem_only_ctors h
-    rw [only_types_getElem?, hj] at hT'; cases hT'; exact hC
-  recArg {j' c' k f ra} h hk hra := by
-    obtain ⟨rfl, rfl⟩ := mem_only_ctors h
-    obtain ⟨T', h1, h2, h3⟩ := hR hk hra
-    exact ⟨{ T' with ctors := if ra.typeIdx = j' then [c'] else [] },
-      by rw [only_types_getElem?, h1]; rfl, h2, h3⟩
+  { wf := henv
+    params := hP
+    indices := fun {t T'} h => by
+      rw [hall, only_types_getElem?] at h
+      obtain ⟨T'', h1, rfl⟩ := Option.map_eq_some_iff.1 h
+      exact hI (T := T'') h1
+    type := htype
+    fields := fun {j' c'} h => by
+      rw [hallC] at h; obtain ⟨rfl, rfl⟩ := mem_only_ctors h; exact hF
+    ctor := hctor
+    recArg := fun {j' c' k f ra} h hk hra => by
+      rw [hallC] at h
+      obtain ⟨rfl, rfl⟩ := mem_only_ctors h
+      obtain ⟨T', h1, h2, h3⟩ := hR hk hra
+      refine ⟨{ T' with ctors := if ra.typeIdx = j' then [c'] else [] },
+        by rw [hall, only_types_getElem?, h1]; rfl, h2, ?_⟩
+      rw [VInductiveType.typeApp_of_none (by exact hnone T' (List.mem_of_getElem? h1))]
+      exact h3
+    typeHead := fun {t T'} h => by
+      rw [hall] at h
+      rw [VInductiveType.typeHead_of_none (hn' T' (List.mem_of_getElem? h))]
+      simpa using VEnv.HasType.appN_params henv.ordered hP (htype h)
+    ctorHead := fun {j' c' T'} h hT' => by
+      rw [hallC] at h; rw [hall] at hT'
+      have hno := hn' T' (List.mem_of_getElem? hT')
+      refine ⟨(hctor h hT').1, ?_⟩
+      rw [VInductiveType.ctorHead_of_none hno, VInductiveType.typeApp_of_none hno]
+      simpa using VEnv.HasType.appN_params henv.ordered hP (hctor h hT').2 }
 
 end VInductDecl
 
@@ -1152,6 +1301,8 @@ structure BlockFacts (d : VInductDecl) (env : VEnv) (U : Nat) (ls : List VLevel)
     env.HasType U [] (.const T.name ls)
       (.foralls (d.params.map (·.instL ls) ++ T.indices.map (·.instL ls))
         (.sort (d.level.inst ls)))
+  aux : d.aux = []
+  nested : ∀ T ∈ d.types, T.nested = none
 
 /-- What a constructor's minor premise is typed from: its fields, its type, and the views of its
 recursive fields. -/
@@ -1176,7 +1327,8 @@ theorem BlockFacts.only {d : VInductDecl} {env : VEnv} {U : Nat} {ls : List VLev
     {c : VConstructor} (hB : d.BlockFacts env U ls) (hC : d.CtorFacts env U ls j c) :
     (d.only j c).RecFacts env U ls := by
   obtain ⟨T, hj, hC1, hC2⟩ := hC.ctor
-  exact only_recFacts hj hB.wf hB.params hB.indices hB.type hC.fields ⟨hC1, hC2⟩ hC.recArg
+  exact only_recFacts hj hB.aux hB.nested hB.wf hB.params hB.indices hB.type hC.fields ⟨hC1, hC2⟩
+    hC.recArg
 
 end VInductDecl
 
@@ -1644,8 +1796,10 @@ theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
   have hcj := VInductDecl.mem_only_ctors_self (c := c.setRecArg k ra) hTj
   have hk'' : (c.setRecArg k ra).fields[k]? = some { f with recArg := some ra } := by
     rw [VConstructor.setRecArg_getElem?, if_pos rfl, hfk]; rfl
-  have hty := VInductDecl.minor_ih (v := ml) hF hcj hk'' rfl Qs' ihtys hq hih
-  simp only [VInductDecl.only_types_length, VInductDecl.only_motiveTypes, VInductDecl.only_params,
+  have hty := VInductDecl.minor_ih (v := ml) hF (VInductDecl.mem_allCtors_of_ctors hcj) hk'' rfl
+    Qs' ihtys hq hih
+  simp only [VInductDecl.only_allTypes_length, VInductDecl.allTypes_of_aux hB.aux,
+    VInductDecl.only_types_length, VInductDecl.only_motiveTypes, VInductDecl.only_params,
     VConstructor.map_type_instL_setRecArg, VConstructor.setRecArg_length, hd₀T, hd₀p] at hty
   have hEctx : E.vlctx.toCtx = ihtys.reverse ++
       (VExpr.liftTele (types.length + q)
@@ -2616,11 +2770,16 @@ theorem ctorMinor.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       ftys.map (·.instL (VLevel.shift pre.length cT.lparams.length)) := by
     rw [← hU.types]; simp [Function.comp_def]
   have hconc := VInductDecl.minor_concl (v := ml) (hBF2.only hU.ctor)
-    (VInductDecl.mem_only_ctors_self hT')
-    (by rw [VInductDecl.only_types_getElem?, hT']; rfl) Qs'
+    (VInductDecl.mem_allCtors_of_ctors (VInductDecl.mem_only_ctors_self hT'))
+    (VInductDecl.allTypes_getElem?_of_types (by rw [VInductDecl.only_types_getElem?, hT']; rfl)) Qs'
     (ihsOf (VLevel.shift pre.length cT.lparams.length) types.length q fvs.length c) hq
     (by simp [ihsOf])
-  simp only [VInductDecl.only_types_length, VInductDecl.only_motiveTypes,
+  obtain ⟨T'', hT''⟩ : ∃ T'', (d₀.only itIdx c).types[itIdx]? = some T'' :=
+    ⟨_, by rw [VInductDecl.only_types_getElem?, hT']; rfl⟩
+  rw [VInductDecl.ctorAppAt_of_none (VInductDecl.allTypes_getElem?_of_types hT'')
+    (VInductDecl.only_nested hBF2.nested _ _ _ (List.mem_of_getElem? hT''))] at hconc
+  simp only [VInductDecl.only_allTypes_length, VInductDecl.allTypes_of_aux hBF2.aux,
+    VInductDecl.only_types_length, VInductDecl.only_motiveTypes,
     VInductDecl.only_params, hS.d₀len, hS.d₀params, hcl, hrl, hcfm] at hconc
   have hEctx : E.vlctx.toCtx =
       (ihsOf (VLevel.shift pre.length cT.lparams.length) types.length q fvs.length c).reverse ++
@@ -2633,7 +2792,7 @@ theorem ctorMinor.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
   -- the motive, the indices and the constructor, in the view
   have hEfl := hET.length_eq
   simp only [List.length_append, List.length_map, VInductDecl.length_motiveTypes,
-    VExpr.length_liftTele, hS.d₀len, hq] at hEfl
+    VInductDecl.allTypes_of_aux hBF2.aux, VExpr.length_liftTele, hS.d₀len, hq] at hEfl
   have hndE : (pfvs ++ motfvs ++ minfvs ++ fvs ++ vfvs).Nodup := by
     have := hEwf.fvars_nodup; rw [hET.fvars] at this; exact List.nodup_reverse.1 this
   have hm := hET.find?_fvar hndE (j := pfvs.length + itIdx) (by simp; omega)
@@ -2718,7 +2877,10 @@ theorem ctorMinor.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
         (.appN (.const c.name (VLevel.shift pre.length cT.lparams.length))
           (VExpr.bvars pfvs.length ((motfvs ++ minfvs).length + fvs.length + vfvs.length) ++
             VExpr.bvars fvs.length vfvs.length))) := by
-    simp only [VInductDecl.minorType, ihsOf, ihSpec, hS.d₀params, hS.d₀len, hcl, hrl, hcfm]
+    simp only [VInductDecl.minorType, VInductDecl.allTypes_of_aux hBF2.aux,
+      VInductDecl.ctorAppAt_of_none (VInductDecl.allTypes_getElem?_of_types hT')
+        (hBF2.nested _ (List.mem_of_getElem? hT')),
+      ihsOf, ihSpec, hS.d₀params, hS.d₀len, hcl, hrl, hcfm]
     rw [← hbv2, ← hbv]
   rw [← hmt] at htrM hTM
   have hparams : stats.params = (pfvs.map Expr.fvar).toArray := by rw [← hS.par]

@@ -89,8 +89,8 @@ theorem TrEnv'.inductLike {safety} {P : VEnv → ConstantInfo → Prop}
   | induct hd h1 H ih =>
     have hle := h1.le
     have h1' := h1
-    obtain ⟨-, -, -, -, hnd, hfr, rfl, -⟩ := h1
-    rcases insertConsts_find? H.map_wf hfr hnd h with h' | ⟨hm, rfl⟩
+    obtain ⟨-, -, -, -, hnd, hfr, ⟨_, hp, rfl⟩, -⟩ := h1
+    rcases insertConsts_find?_perm H.map_wf hfr hnd hp h with h' | ⟨hm, rfl⟩
     · exact mono hle (ih h')
     · exact step H hd h1' (hfr _ hm) h
 
@@ -113,12 +113,12 @@ theorem AddInduct.find? {safety C venv decl C' venv'}
     ∃ (lparams : List Name), lparams.length = decl.uvars ∧
       ((∃ v T, ci = .inductInfo v ∧ T ∈ decl.types ∧ TrInductVal decl lparams T v) ∨
        (∃ v j c, ci = .ctorInfo v ∧ (j, c) ∈ decl.ctors ∧ TrCtorVal decl lparams j c v) ∨
-       (∃ v T i envR, ci = .recInfo v ∧ (T, i) ∈ decl.types.zipIdx ∧ envR ≤ venv' ∧
+       (∃ v T i envR, ci = .recInfo v ∧ (T, i) ∈ decl.allTypes.zipIdx ∧ envR ≤ venv' ∧
           TrRecVal decl lparams envR i T v)) := by
   have hle := H.le
-  obtain @⟨lparams, _, _, envR, types, ctors, recs, hlp, hty, hct, hrc, hnd, hfr, rfl, hT, hC', hR,
-    hB⟩ := H
-  rcases insertConsts_find? hC hfr hnd h with h | ⟨hm, -⟩
+  obtain @⟨lparams, _, _, envR, types, ctors, recs, hlp, hty, hct, hrc, hnd, hfr, ⟨_, hp, rfl⟩, hT,
+    hC', hR, hB⟩ := H
+  rcases insertConsts_find?_perm hC hfr hnd hp h with h | ⟨hm, -⟩
   · cases hn ▸ h
   refine ⟨lparams, hlp, ?_⟩
   simp only [inductConsts, List.mem_append, List.mem_map] at hm
@@ -167,57 +167,42 @@ theorem TrEnv'.inductInfo {safety C Q venv} (H : TrEnv' safety C Q venv) {n v}
   subst hlp'
   exact ⟨_, t, T, hi.1 ▸ HA.inducts ht, ht, hi, hlp⟩
 
-/-- A recursor a model can see is recorded with its type's block. -/
+/-- A recursor a model can see is recorded with its block, under the block's first type. -/
 theorem TrEnv'.recInfo {safety C Q venv} (H : TrEnv' safety C Q venv) {n v}
     (h : C.find? n = some (.recInfo v)) (hs : safety ≤ (ConstantInfo.recInfo v).safety) :
-    ∃ d t T envR, venv.inducts T.name = some (d, t) ∧ d.types[t]? = some T ∧ envR ≤ venv ∧
+    ∃ d T₀ t T envR, venv.inducts T₀.name = some (d, 0) ∧ d.types[0]? = some T₀ ∧
+      d.allTypes[t]? = some T ∧ envR ≤ venv ∧
       TrRecVal d (v.levelParams.drop (v.levelParams.length - d.uvars)) envR t T v ∧
       (v.levelParams.drop (v.levelParams.length - d.uvars)).length = d.uvars := by
-  refine H.inductLike (P := fun venv ci => ∀ v, ci = .recInfo v → ∃ d t T envR,
-      venv.inducts T.name = some (d, t) ∧ d.types[t]? = some T ∧ envR ≤ venv ∧
+  refine H.inductLike (P := fun venv ci => ∀ v, ci = .recInfo v → ∃ d T₀ t T envR,
+      venv.inducts T₀.name = some (d, 0) ∧ d.types[0]? = some T₀ ∧
+      d.allTypes[t]? = some T ∧ envR ≤ venv ∧
       TrRecVal d (v.levelParams.drop (v.levelParams.length - d.uvars)) envR t T v ∧
       (v.levelParams.drop (v.levelParams.length - d.uvars)).length = d.uvars)
-    (fun hle H v hv => let ⟨d, t, T, e, a, b, c, f⟩ := H v hv;
-      ⟨d, t, T, e, hle.inducts a, b, c.trans hle, f⟩)
-    (fun {_ _ _ decl _ _ _ _} H₀ _ HA hn h v hv => ?_) h hs trivial v rfl
+    (fun hle H v hv => by
+      obtain ⟨d, T₀, t, T, e, a, a', b, c, f, g⟩ := H v hv
+      exact ⟨d, T₀, t, T, e, hle.inducts a, a', b, c.trans hle, f, g⟩)
+    (fun {_ _ _ decl _ _ _ _} H₀ hd HA hn h v hv => ?_) h hs trivial v rfl
   subst hv
   obtain ⟨lp, hlp, (⟨_, _, ⟨⟩, -⟩ | ⟨_, _, _, ⟨⟩, -⟩ | ⟨v, T, t, envR, ⟨⟩, hT, hle, hr⟩)⟩ :=
     HA.find? H₀.map_wf hn h
   have ht := List.mem_zipIdx' hT
   have ht' : _ = some T := List.getElem?_eq_some_iff.2 ⟨ht.1, ht.2.symm⟩
+  obtain ⟨T₀, h₀⟩ : ∃ T₀, decl.types[0]? = some T₀ := by
+    cases e : decl.types with
+    | nil => exact (hd.nonempty e).elim
+    | cons T₀ _ => exact ⟨T₀, rfl⟩
   have hdrop : v.levelParams.drop (v.levelParams.length - decl.uvars) = lp := by
     by_cases hL : decl.LargeElim
     · obtain ⟨u, -, hu⟩ := hr.2.2.1 hL
       rw [hu, ← hlp]; simp
     · rw [hr.2.2.2.1 hL, ← hlp]; simp
-  exact ⟨_, t, T, envR, HA.inducts ht', ht', hle, hdrop ▸ hr, hdrop ▸ hlp⟩
+  exact ⟨_, T₀, t, T, envR, HA.inducts h₀, h₀, ht', hle, hdrop ▸ hr, hdrop ▸ hlp⟩
 
 theorem _root_.Lean.SMap.WF.find?_insert_of_some {C : ConstMap} (hC : C.WF) {n x ci ci'}
     (hn : C.find? n = none) (h : C.find? x = some ci) : (C.insert n ci').find? x = some ci := by
   rw [hC.find?_insert, if_neg]; · exact h
   simp only [beq_iff_eq]; rintro rfl; cases hn ▸ h
-
-theorem insertConsts_find?_of_some {cis : List ConstantInfo} {C : ConstMap} (hC : C.WF)
-    (hfr : ∀ c ∈ cis, C.find? c.name = none) (hnd : (cis.map (·.name)).Nodup) {x ci}
-    (h : C.find? x = some ci) : (insertConsts C cis).find? x = some ci := by
-  rw [insertConsts_find?_of_not_mem hC hfr hnd]; · exact h
-  intro hm; obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hm; cases hfr c hc ▸ h
-
-theorem insertConsts_find?_of_mem : ∀ {cis : List ConstantInfo} {C : ConstMap}, C.WF →
-    (∀ c ∈ cis, C.find? c.name = none) → (cis.map (·.name)).Nodup → ∀ {ci}, ci ∈ cis →
-    (insertConsts C cis).find? ci.name = some ci
-  | c :: cs, C, hC, hfr, hnd, ci, hm => by
-    rw [List.map_cons, List.nodup_cons] at hnd
-    have hC' := hC.insert c.name c (hfr _ (.head _))
-    have hfr' : ∀ e ∈ cs, (C.insert c.name c).find? e.name = none := by
-      intro e he
-      rw [hC.find?_insert, if_neg]; · exact hfr e (.tail _ he)
-      simp only [beq_iff_eq]; intro hh; exact hnd.1 (by rw [hh]; exact List.mem_map_of_mem he)
-    show (insertConsts (C.insert c.name c) cs).find? ci.name = some ci
-    rcases List.mem_cons.1 hm with rfl | hm
-    · refine insertConsts_find?_of_some hC' hfr' hnd.2 ?_
-      rw [hC.find?_insert]; simp
-    · exact insertConsts_find?_of_mem hC' hfr' hnd.2 hm
 
 theorem insertDefs_eq (C : ConstMap) (cis : List DefinitionVal) :
     insertDefs C cis = insertConsts C (cis.map .defnInfo) := by
@@ -267,10 +252,11 @@ theorem TrEnv'.blockConsts {safety C Q venv} (H : TrEnv' safety C Q venv) {n d t
       ((w.insert _ _ f1).insert _ _ f2).find?_insert_of_some f3 <|
       (w.insert _ _ f1).find?_insert_of_some f2 <| w.find?_insert_of_some f1 hx
   | induct _ h1 H ih =>
-    obtain @⟨lp, envT, envC, envR, types, ctors, recs, hlp, hty, hct, hrc, hnd, hfr, rfl, hT, hC,
-      hR, hB⟩ := h1
+    obtain @⟨lp, envT, envC, envR, types, ctors, recs, hlp, hty, hct, hrc, hnd, hfr, ⟨_, hp, rfl⟩,
+      hT, hC, hR, hB⟩ := h1
     have w := H.map_wf
-    have hsome {x ci} := @insertConsts_find?_of_some _ _ w hfr hnd x ci
+    have hsome {x ci} := @insertConsts_find?_of_some _ _ w (fun c hc => hfr c (hp.mem_iff.1 hc))
+      ((hp.map _).nodup_iff.2 hnd) x ci
     rcases VEnv.addBlock_inducts hB h with h | ⟨rfl, -⟩
     · rw [VEnv.addDefEqList_inducts, VEnv.addConstList_inducts hR, VEnv.addConstList_inducts hC,
         VEnv.addConstList_inducts hT] at h
@@ -279,12 +265,12 @@ theorem TrEnv'.blockConsts {safety C Q venv} (H : TrEnv' safety C Q venv) {n d t
       · obtain ⟨v, hv, hvT⟩ := Lean4Lean.List.Forall₂.forall_exists_r hty T
           (List.mem_of_getElem? hj)
         refine ⟨v, ?_, hvT.1⟩
-        rw [← hvT.1.1]
+        rw [← hvT.1.1, insertConsts_perm_find? w hfr hnd hp]
         exact insertConsts_find?_of_mem w hfr hnd (ci := .inductInfo v) (by simp [inductConsts, hv])
       · obtain ⟨w', hw, hwc⟩ := Lean4Lean.List.Forall₂.forall_exists_r hct (j, c) hc
         refine ⟨w', ?_, hwc.1⟩
         obtain ⟨_, _, _, hname, -⟩ := hwc.1
-        rw [← hname]
+        rw [← hname, insertConsts_perm_find? w hfr hnd hp]
         exact insertConsts_find?_of_mem w hfr hnd (ci := .ctorInfo w') (by simp [inductConsts, hw])
 
 /-- A model of an environment with quotients has the quotient constants and the computation rule

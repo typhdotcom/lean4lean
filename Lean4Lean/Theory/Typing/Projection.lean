@@ -339,7 +339,8 @@ theorem WF.projFacts {env : VEnv} (henv : env.WF) (hs : env.inducts s = some (d,
     (ht : d.types[t]? = some T) (hc : T.ctors = [c]) : ProjFacts env d c := by
   obtain ⟨env₀, envT, h₀, hd, hT, hle, T', hT', -⟩ := henv.inducts hs
   cases ht.symm.trans hT'
-  have hcW := ((hd.ctors envT hT T (List.mem_of_getElem? ht)).2 c (by simp [hc])).projFields
+  have hcW := ((hd.ctors envT hT T (List.mem_append_left _ (List.mem_of_getElem? ht))).2 c
+    (by simp [hc])).projFields
   exact ⟨(hd.params.mono (addConstList_le hT)).mono hle,
     fun k f hf => (hcW k f hf).imp (·.mono hle) (·.mono hle)⟩
 

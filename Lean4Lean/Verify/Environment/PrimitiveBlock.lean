@@ -100,6 +100,7 @@ the type. -/
 theorem primCtor_checked {venv : VEnv} {I : Name}
     (hI : venv.constants I = some ⟨0, .sort (.succ .zero)⟩) {d : VInductDecl} (hdu : d.uvars = 0)
     (hdp : d.params = []) {T : VInductiveType} (hdT : d.types[0]? = some T) (hTn : T.name = I)
+    (hTno : T.nested = none)
     (hTi : T.indices = []) (hlev : d.level ≈ .succ .zero) {t : InductiveType} (htn : t.name = I)
     {ct : Constructor} (hct : PrimCtorType I ct.type) : CtorChecked venv [] d t 0 ct := by
   intro C' htr
@@ -116,8 +117,10 @@ theorem primCtor_checked {venv : VEnv} {I : Name}
     refine .cons ⟨.succ .zero, by rw [hdu]; exact primConst_isType hI,
       .inr fun ls => by rw [show d.level.eval ls = (VLevel.succ .zero).eval ls from
         congrFun hlev ls]; exact Nat.le_refl _⟩ (fun _ => ?_) .nil
-    refine .app (j := 0) (is := []) hdT (by simp [hTi]) ?_ (by simp)
-    simpa [hTn, hdp, hdu, VExpr.bvars, VLevel.params, VExpr.appN] using hII
+    refine .app (j := 0) (is := []) (VInductDecl.allTypes_getElem?_of_types hdT) (by simp [hTi]) ?_
+      (by simp)
+    simpa [VInductiveType.typeApp_of_none hTno, hTn, hdp, hdu, VExpr.bvars, VLevel.params,
+      VExpr.appN] using hII
 
 /-- Axioms added one after another, each of a type of the environment before them, model the
 constants added to the environment's model. -/
@@ -328,6 +331,7 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
     (htn : type.name = I) (hct : ∀ ct ∈ type.ctors, PrimCtorType I ct.type)
     {level : VLevel} {d : VInductDecl} (hEl : Elaborates venvAx [] 0 level [type] d)
     (hdu : d.uvars = 0) (hdp : d.params = []) (hdi : ∀ T ∈ d.types, T.indices = [])
+    (hda : d.aux = []) (hdn : ∀ T ∈ d.types, T.nested = none)
     (hfirst : List.Forall₂ (fun (t : InductiveType) (T : VInductiveType) =>
       List.Forall₂ (fun (ct : Constructor) (cv : VConstructor) => ∀ nm D b bi,
         ct.type = .forallE nm D b bi → D.consumeTypeAnnotations' = D → ∀ f, cv.fields[0]? = some f →
@@ -419,10 +423,13 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
             · rename_i ra hra
               obtain ⟨T', hT', hil, -⟩ := hraA
               have hb := hrab I [] hax.choose ra rfl hax.choose_spec hra
-              obtain rfl : T' = T := by rw [hT] at hT'; simpa using (List.getElem?_eq_some_iff.1 hT').2.symm
+              obtain rfl : T' = T := by
+                rw [VInductDecl.allTypes_of_aux hda, hT] at hT'
+                simpa using (List.getElem?_eq_some_iff.1 hT').2.symm
               have hri : ra.indices = [] := List.eq_nil_of_length_eq_zero (by rw [hil, hTi]; rfl)
               refine ⟨T', hT', hil, ?_⟩
-              rw [hfty, hb, hri, hdu, hTn, htn, hdp]
+              rw [VInductiveType.typeApp_of_none (hdn T' (by rw [hT]; exact .head _)), hfty, hb, hri,
+                hdu, hTn, htn, hdp]
               exact ⟨_, primConst_isType hIT⟩
             · trivial
         · rw [hcv] at hsh; simp [primCtorTr, VExpr.foralls] at hsh
@@ -557,7 +564,8 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     obtain ⟨T, hT, hTn, hTi⟩ := hdT d hd
     rw [hcl]
     exact AddInductive.primCtor_checked hIv (by rw [hd.uvars, hcl]; rfl) hd.params
-      (by rw [hT]; rfl) hTn hTi (by rw [hd.level]; exact hlev) rfl (hct ct hct')
+      (by rw [hT]; rfl) hTn (hd.nested T (by rw [hT]; exact .head _)) hTi
+      (by rw [hd.level]; exact hlev) rfl (hct ct hct')
   refine AddInductive.WF.bind (AddInductive.getElimLevel.WF hT
     (c' := c.withEnv envAx venvAx wfAx hleAx) rfl hle₀ wfAx.tr.wf (hchk venvAx hIAx))
     fun elimLevel hE => ?_
@@ -726,7 +734,8 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
   have hfirst := hR.first hdp
   rw [hcAxv, hcAxl, hcl, hcAxenv] at hfirst
   have hEl : AddInductive.Elaborates venvT [] 0 level [type] d :=
-    AddInductive.elaborates_prim hleTA wfAx.tr.wf hIT hax rfl hct hEl₂ hdu hdp hdi hfirst
+    AddInductive.elaborates_prim hleTA wfAx.tr.wf hIT hax rfl hct hEl₂ hdu hdp hdi hR.aux hR.nested
+      hfirst
   have hlevwf : level.WF 0 := .of_ofLevel hT.resultLevel
   have hInd : ∀ T ∈ d.types, T.WF venvT d := by
     intro T hT'
@@ -795,7 +804,8 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     obtain ⟨⟨hn, htr, -⟩, hct', -⟩ := h
     simp [hn, (AddInductive.primCtor_tr hIAx (hct ct hct')).2.2 _ htr]
   have hrecs' : ∀ p ∈ d.recConsts, Environment.primitives.contains p.1 = false := by
-    simp [VInductDecl.recConsts, hTd, hTn, hrecnp]
+    simp [VInductDecl.recConsts, VInductDecl.allTypes_of_aux hR.aux, VInductDecl.recName, hTd, hTn,
+      hrecnp]
   have mapWF' : env'.constants.WF := by rw [hRc]; exact insertConsts_wf mapWFC hRfr hRnd
   have hsafe : ∀ {n ci}, env'.find? n = some ci → Environment.primitives.contains n →
       ci.safety = .safe ∧ ci.levelParams = [] := by

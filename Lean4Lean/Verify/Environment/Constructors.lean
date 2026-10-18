@@ -639,7 +639,8 @@ theorem checkPositivity.loop.WF {venv₀ : VEnv} {types : List InductiveType} {U
         (ParamsAt.tele hMp (W.wf henv hΔb).fvwf htop) hval hjt (hU ▸ hS₁) hd
         (hdp.trans hMp.length_eq.symm) fun a a' ha hno => by
           rw [hd.names]; exact hB.not_mentions hind (hU ▸ hΔs) hvl ha hno
-      refine .app hTj hlen ?_ hall
+      refine .app (VInductDecl.allTypes_getElem?_of_types hTj) hlen ?_ hall
+      rw [VInductiveType.typeApp_of_none (hd.nested Tj (List.mem_of_getElem? hTj))]
       rw [hdp, ← hMp.length_eq] at hE ⊢
       rw [← hE, hd.uvars, ← hU]; exact hT₁.symm
 
@@ -1217,7 +1218,7 @@ theorem isKTarget.WF {c₀ c : VContext} {nparams : Nat} {types : List Inductive
         intro hct hb'
         subst hb'
         simp only [Bool.false_eq_true, false_iff]
-        rintro ⟨-, T', c', h1, h2, -⟩
+        rintro ⟨-, T', c', h1, -, h2, -⟩
         cases List.cons.inj (h1.symm.trans hT1) |>.1
         rw [h2] at hcs
         have := Lean4Lean.List.Forall₂.length_eq hcs
@@ -1235,14 +1236,14 @@ theorem isKTarget.WF {c₀ c : VContext} {nparams : Nat} {types : List Inductive
         have hpar : d.params.length = nparams := hd.params ▸ hT.nparams
         have hps : c'.venv.IsTele d.uvars [] d.params := by
           rw [hd.uvars, hd.params, hU₀]; exact hT.params_tele.mono hle
-        obtain ⟨-, har⟩ := ctor_WF henv hd.uvars hpar hps hTn rfl
+        obtain ⟨-, har⟩ := ctor_WF henv hd.uvars hpar hps hTn (hd.nested T (by simp [hT1])) rfl
           (hC d hd 0 t rfl ct (by simp [hct]) _ (hd.indices 0 T (by simp [hT1]))) hrel
         have hsize : stats.params.size = nparams := params_size hT
         rw [isKTarget.loop_iff stats _ 0 (Nat.zero_le _), har, hsize]
         constructor
         · intro h
-          exact ⟨hlz.1 hz, T, c, hT1, hc1, List.eq_nil_of_length_eq_zero (by omega)⟩
-        · rintro ⟨-, T', c', h1, h2, h3⟩
+          exact ⟨hlz.1 hz, T, c, hT1, hd.aux, hc1, List.eq_nil_of_length_eq_zero (by omega)⟩
+        · rintro ⟨-, T', c', h1, -, h2, h3⟩
           cases List.cons.inj (h1.symm.trans hT1) |>.1
           cases List.cons.inj (h2.symm.trans hc1) |>.1
           simp [h3]
@@ -1471,7 +1472,7 @@ theorem isLargeEliminator.WF {c₀ c : VContext} {nparams : Nat} {types : List I
     rcases hct : t.ctors with _ | ⟨ct, _ | ⟨ct', cts⟩⟩ <;> rw [hct] at hb hcs
     · have : T.ctors = [] := by
         have := Lean4Lean.List.Forall₂.length_eq hcs; exact List.eq_nil_of_length_eq_zero this.symm
-      exact .inr ⟨T, hT1, .inl this⟩
+      exact .inr ⟨T, hT1, hd.aux, .inl this⟩
     · obtain ⟨c, hc1⟩ : ∃ c, T.ctors = [c] := by
         have := Lean4Lean.List.Forall₂.length_eq hcs
         match T.ctors, this with | [c], _ => exact ⟨c, rfl⟩
@@ -1480,10 +1481,10 @@ theorem isLargeEliminator.WF {c₀ c : VContext} {nparams : Nat} {types : List I
       have hpar : d.params.length = nparams := hd.params ▸ hT.nparams
       have hps : c'.venv.IsTele d.uvars [] d.params := by
         rw [hd.uvars, hd.params, hU₀]; exact hT.params_tele.mono hle
-      obtain ⟨-, har⟩ := ctor_WF henv hd.uvars hpar hps hTn rfl
+      obtain ⟨-, har⟩ := ctor_WF henv hd.uvars hpar hps hTn (hd.nested T (by simp [hT1])) rfl
         (hC d hd 0 t rfl ct (by simp [hct]) _ (hd.indices 0 T (by simp [hT1]))) hrel
       obtain ⟨-, htr, ps, Ds, hpsl, hDs, hty, -, hlvl⟩ := hrel
-      refine .inr ⟨T, hT1, .inr ⟨c, hc1, ?_⟩⟩
+      refine .inr ⟨T, hT1, hd.aux, .inr ⟨c, hc1, ?_⟩⟩
       have hsize : stats.params.size = nparams := params_size hT
       have key : AddInductive.WF c' (do
           let x ← readThe Context

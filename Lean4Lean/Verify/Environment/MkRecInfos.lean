@@ -44,9 +44,11 @@ theorem compat_exists (U : List Name) (params : List VExpr) (level : VLevel) (is
     (types : List InductiveType) (nindices : Array Nat) (hn : nindices.size = types.length) :
     ∃ d, Compat U params level isUnsafe types nindices d := by
   let ty (tj : InductiveType × Nat) : VInductiveType :=
-    ⟨tj.1.name, default, List.replicate nindices[tj.2]! default, []⟩
-  refine ⟨⟨U.length, params, level, types.zipIdx.map ty, false, false, isUnsafe⟩, ?_⟩
-  refine ⟨rfl, rfl, rfl, rfl, ?_, fun j T hT => ?_⟩
+    ⟨tj.1.name, default, List.replicate nindices[tj.2]! default, [], none⟩
+  refine ⟨⟨U.length, params, level, types.zipIdx.map ty, false, false, isUnsafe, []⟩, ?_⟩
+  refine ⟨rfl, rfl, rfl, rfl, ?_, fun j T hT => ?_, rfl, fun T hT => ?_⟩
+  rotate_right
+  · obtain ⟨_, -, rfl⟩ := List.mem_map.1 hT; rfl
   · apply List.ext_getElem (by simp [VInductDecl.names]) fun i h1 h2 => ?_
     simp [VInductDecl.names, ty]
   · rw [List.getElem?_map, List.getElem?_zipIdx] at hT
@@ -104,7 +106,7 @@ theorem _root_.List.Forall₂.mem_zipWith {R : α → β → Prop} {f : α → �
 /-- The block's types, without constructors, as `loopInd1` opened them. -/
 def headTypes (types : List InductiveType) (typeTr : List VExpr) (tds : List TyData) :
     List VInductiveType :=
-  (types.zip (typeTr.zip tds)).map fun (t, T', td) => ⟨t.name, T', td.idx, []⟩
+  (types.zip (typeTr.zip tds)).map fun (t, T', td) => ⟨t.name, T', td.idx, [], none⟩
 
 theorem headTypes_length {types : List InductiveType} {typeTr : List VExpr} {tds : List TyData}
     (h1 : typeTr.length = types.length) (h2 : tds.length = types.length) :
@@ -114,7 +116,7 @@ theorem headTypes_length {types : List InductiveType} {typeTr : List VExpr} {tds
 theorem headTypes_getElem? {types : List InductiveType} {typeTr : List VExpr} {tds : List TyData}
     {j : Nat} {T : VInductiveType} (h : (headTypes types typeTr tds)[j]? = some T) :
     ∃ t T' td, types[j]? = some t ∧ typeTr[j]? = some T' ∧ tds[j]? = some td ∧
-      T = ⟨t.name, T', td.idx, []⟩ := by
+      T = ⟨t.name, T', td.idx, [], none⟩ := by
   simp only [headTypes, List.getElem?_map, Option.map_eq_some_iff, List.getElem?_zip_eq_some]
     at h
   obtain ⟨⟨t, T', td⟩, ⟨h1, h2⟩, rfl⟩ := h
@@ -124,7 +126,7 @@ theorem headTypes_getElem? {types : List InductiveType} {typeTr : List VExpr} {t
 theorem headTypes_getElem?_of {types : List InductiveType} {typeTr : List VExpr}
     {tds : List TyData} {j : Nat} {t : InductiveType} {T' : VExpr} {td : TyData}
     (h1 : types[j]? = some t) (h2 : typeTr[j]? = some T') (h3 : tds[j]? = some td) :
-    (headTypes types typeTr tds)[j]? = some ⟨t.name, T', td.idx, []⟩ := by
+    (headTypes types typeTr tds)[j]? = some ⟨t.name, T', td.idx, [], none⟩ := by
   simp only [headTypes, List.getElem?_map]
   have h23 : (typeTr.zip tds)[j]? = some (T', td) := List.getElem?_zip_eq_some.2 ⟨h2, h3⟩
   have : (types.zip (typeTr.zip tds))[j]? = some (t, T', td) := List.getElem?_zip_eq_some.2 ⟨h1, h23⟩
@@ -141,6 +143,10 @@ theorem headTypes_names {types : List InductiveType} {typeTr : List VExpr} {tds 
   rw [List.getElem?_eq_getElem (by simpa using hj₁)] at this
   rw [Option.some.inj this]
 
+theorem headTypes_nested {types : List InductiveType} {typeTr : List VExpr} {tds : List TyData} :
+    ∀ T ∈ headTypes types typeTr tds, T.nested = none := by
+  intro T hT; obtain ⟨⟨t, T', td⟩, -, rfl⟩ := List.mem_map.1 hT; rfl
+
 theorem bvars_liftN_lo (n k : Nat) : (VExpr.bvars k 0).map (·.liftN n k) = VExpr.bvars k 0 := by
   simp only [VExpr.bvars, List.map_map, Function.comp_def, VExpr.liftN, liftVar]
   apply List.map_congr_left; intro i hi; simp at hi; simp; omega
@@ -148,10 +154,10 @@ theorem bvars_liftN_lo (n k : Nat) : (VExpr.bvars k 0).map (·.liftN n k) = VExp
 /-- A motive's type over the parameters, below the motives before it. -/
 theorem motiveTy_liftN {name : Name} {U n : Nat} {sh : List VLevel} (hsh : sh.length = U)
     {idx : List VExpr} {ml : VLevel} {d : VInductDecl} (hd : d.params.length = n) (j : Nat)
-    {T : VInductiveType} (hT : T.name = name) (hidx : T.indices = idx) :
+    {T : VInductiveType} (hT : T.name = name) (hidx : T.indices = idx) (hno : T.nested = none) :
     (motiveTy name U n sh idx ml).liftN j = d.motiveType sh ml j T := by
   subst hT hidx hd
-  simp only [motiveTy, majorTy, VInductDecl.motiveType, VExpr.instL_foralls,
+  simp only [motiveTy, majorTy, VInductDecl.motiveType, VInductiveType.typeApp_of_none hno, VExpr.instL_foralls,
     VExpr.liftN_foralls, VExpr.instL_appN, VExpr.liftN_appN, VExpr.instL, VLevel.params_inst hsh,
     List.map_append, VExpr.instL_bvars, List.length_map, Nat.zero_add, VExpr.liftN]
   simp only [Nat.add_zero, VExpr.bvars_liftN_hi _ _ _ _ (Nat.le_refl _), bvars_liftN_lo,
@@ -240,7 +246,8 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
     (hPT : c.venv.IsTele c.lparams.length [] params)
     (hdu : d.uvars = c.lparams.length) (hdp : d.params = params)
     (htys : ∀ (i : Nat) (T : VInductiveType), d₀.types[i]? = some T →
-      ∃ T' : VInductiveType, d.types[i]? = some T' ∧ T'.name = T.name ∧ T'.indices = T.indices) :
+      ∃ T' : VInductiveType, d.types[i]? = some T' ∧ T'.name = T.name ∧ T'.indices = T.indices ∧
+        T'.nested = none) :
     cv.name = ct.name ∧ TrExprS c.venv c.lparams [] ct.type cv.type ∧ ∃ ps Ds,
       ps.length = params.length ∧ Ds.length = cv.fields.length ∧
       cv.type = .foralls (ps ++ Ds) (.appN (.const types[j].name
@@ -261,9 +268,9 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
     split
     · rename_i ra hra
       obtain ⟨T, hT, hl, hdef⟩ := hout.recArg k f ra hf hra
-      obtain ⟨T', hT', hn, hi⟩ := htys _ T hT
-      refine ⟨T', hT', hi ▸ hl, ?_⟩
-      rw [hdu, hdp, hn, Nat.zero_add]
+      obtain ⟨T', hT', hn, hi, hno⟩ := htys _ T hT
+      refine ⟨T', VInductDecl.allTypes_getElem?_of_types hT', hi ▸ hl, ?_⟩
+      rw [VInductiveType.typeApp_of_none hno, hdu, hdp, hn, Nat.zero_add]
       simpa [List.map_take] using hdef
     · trivial
   · intro k D f hD hf u hu
@@ -395,9 +402,10 @@ theorem blockDecl_ctors {d₀ : VInductDecl} {css : List (List VConstructor)} {i
   rw [Option.some.inj this]
 
 theorem blockDecl_motiveTypes {d₀ : VInductDecl} {css : List (List VConstructor)} {ir le : Bool}
-    (h : css.length = d₀.types.length) (ls : List VLevel) (v : VLevel) :
+    (haux : d₀.aux = []) (h : css.length = d₀.types.length) (ls : List VLevel) (v : VLevel) :
     (blockDecl d₀ css ir le).motiveTypes ls v = d₀.motiveTypes ls v := by
-  simp only [VInductDecl.motiveTypes]
+  simp only [VInductDecl.motiveTypes, VInductDecl.allTypes_of_aux haux,
+    VInductDecl.allTypes_of_aux (decl := blockDecl d₀ css ir le) haux]
   refine List.ext_getElem (by simp [blockDecl, withCtors_length h]) fun j h1 h2 => ?_
   simp only [List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
   have hj : j < css.length := by simp at h2; omega
@@ -408,9 +416,19 @@ theorem blockDecl_motiveTypes {d₀ : VInductDecl} {css : List (List VConstructo
   rw [Option.some.inj this]; rfl
 
 theorem blockDecl_minorType {d₀ : VInductDecl} {css : List (List VConstructor)} {ir le : Bool}
+    (haux : d₀.aux = []) (hno : ∀ T ∈ d₀.types, T.nested = none)
     (h : css.length = d₀.types.length) (ls : List VLevel) (q j : Nat) (c : VConstructor) :
     (blockDecl d₀ css ir le).minorType ls q j c = d₀.minorType ls q j c := by
-  simp only [VInductDecl.minorType, blockDecl, withCtors_length h]
+  have hno' : ∀ T ∈ (blockDecl d₀ css ir le).allTypes, T.nested = none := by
+    intro T hT
+    rw [VInductDecl.allTypes_of_aux (decl := blockDecl d₀ css ir le) haux] at hT
+    obtain ⟨⟨T₀, cs⟩, hm, rfl⟩ := List.mem_map.1 hT
+    exact hno T₀ (List.of_mem_zip hm).1
+  have e1 : (blockDecl d₀ css ir le).allTypes.length = d₀.allTypes.length := by
+    simp [VInductDecl.allTypes, blockDecl, withCtors_length h]
+  simp only [VInductDecl.minorType, VInductDecl.ctorAppAt_flat hno',
+    VInductDecl.ctorAppAt_flat (d := d₀) (by rwa [VInductDecl.allTypes_of_aux haux]), e1]
+  rfl
 
 theorem _root_.Lean4Lean.VEnv.addConstList_le_of {env e env' : VEnv} :
     ∀ {cs : List (Name × VConstant)}, env.addConstList cs = some e → env ≤ env' →
@@ -441,8 +459,13 @@ theorem recFacts_blockDecl {d₀ : VInductDecl} {css : List (List VConstructor)}
     obtain ⟨T, hT, hc⟩ := VInductDecl.mem_ctors_iff.1 hm
     obtain ⟨T₀, cs, -, hcs, rfl⟩ := withCtors_getElem? hT
     exact hC j cs c hcs hc
-  refine ⟨hB.wf, hB.params, fun {t T} h => ?_, fun {t T} h => ?_, fun hm => (hfacts hm).fields,
-    fun {j c T} hm hT => ?_, fun {j c k f ra} hm hk hra => ?_⟩
+  have hno : ∀ T ∈ (blockDecl d₀ css ir le).types, T.nested = none := by
+    intro T hT
+    obtain ⟨⟨T₀, cs⟩, hm, rfl⟩ := List.mem_map.1 hT
+    exact hB.nested T₀ (List.of_mem_zip hm).1
+  refine VInductDecl.RecFacts.of_flat hB.aux hno hB.wf hB.params (fun {t T} h => ?_)
+    (fun {t T} h => ?_) (fun hm => (hfacts hm).fields) (fun {j c T} hm hT => ?_)
+    (fun {j c k f ra} hm hk hra => ?_)
   · obtain ⟨T₀, cs, h0, -, rfl⟩ := withCtors_getElem? h
     exact hB.indices (T := T₀) h0
   · obtain ⟨T₀, cs, h0, -, rfl⟩ := withCtors_getElem? h
@@ -869,7 +892,7 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
   have hVCwf : venvC.WF := hVC.tr.wf
   have htdlen : tds.length = types.length := htds
   let d₀ : VInductDecl :=
-    ⟨c.lparams.length, params, level, headTypes types typeTr tds, false, false, isUnsafe⟩
+    ⟨c.lparams.length, params, level, headTypes types typeTr tds, false, false, isUnsafe, []⟩
   have hty : ∀ (j : Nat) (T : VInductiveType), d₀.types[j]? = some T → ∃ (t : InductiveType) (T' : VExpr) (td : TyData)
       (nidx : Nat), types[j]? = some t ∧
       typeTr[j]? = some T' ∧ tds[j]? = some td ∧ stats.nindices[j]? = some nidx ∧
@@ -889,6 +912,8 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
   have hBF : d₀.BlockFacts venvC (pre ++ c.lparams).length
       (VLevel.shift pre.length c.lparams.length) := {
     wf := hVCwf
+    aux := rfl
+    nested := headTypes_nested
     params := by
       have := hT.params_tele.instL hshwf
       simp only [List.map_nil] at this
@@ -923,15 +948,16 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
       tds.zipIdx.map fun (td, j) => td.mtr.liftN j := by
     have hl : (headTypes types typeTr tds).length = tds.length := by
       rw [headTypes_length hT.typeTr_length htdlen, htdlen]
-    refine List.ext_getElem (by simp [VInductDecl.motiveTypes, d₀, hl]) fun j h1 h2 => ?_
-    simp only [VInductDecl.motiveTypes, List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
+    have hall₀ : d₀.allTypes = d₀.types := VInductDecl.allTypes_of_aux rfl
+    refine List.ext_getElem (by simp [VInductDecl.motiveTypes, hall₀, d₀, hl]) fun j h1 h2 => ?_
+    simp only [VInductDecl.motiveTypes, hall₀, List.getElem_map, List.getElem_zipIdx, Nat.zero_add]
     have hj : j < tds.length := by simpa using h2
     obtain ⟨t, T', td, nidx, -, -, h3, -, hT', -, hmtr⟩ :=
       hty j _ (List.getElem?_eq_getElem (by simpa [d₀, hl] using hj))
     obtain rfl := Option.some.inj ((List.getElem?_eq_getElem hj).symm.trans h3)
     rw [hmtr]
     exact (motiveTy_liftN (d := d₀) hshl rfl j (congrArg VInductiveType.name hT')
-      (congrArg VInductiveType.indices hT')).symm
+      (congrArg VInductiveType.indices hT') (by rw [hT'])).symm
   let motfvs := tds.map (·.motive)
   let heads := tds.map fun td => ((td.fvs.map Expr.fvar).toArray, Expr.fvar td.major)
   have hsetup : MinorsSetup c pre Mp pfvs params stats types d₀ motfvs heads
@@ -1051,11 +1077,13 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
     obtain ⟨t, T', td, nidx, h1, h2, h3, h4, rfl, htv, -⟩ := hty j T₀ h0
     exact ⟨t, T', td, nidx, cs, h1, h2, h3, h4, hcs, rfl, htv⟩
   have htys : ∀ (i : Nat) (T : VInductiveType), d₀.types[i]? = some T →
-      ∃ T' : VInductiveType, d.types[i]? = some T' ∧ T'.name = T.name ∧ T'.indices = T.indices := by
+      ∃ T' : VInductiveType, d.types[i]? = some T' ∧ T'.name = T.name ∧ T'.indices = T.indices ∧
+        T'.nested = none := by
     intro i T hT
     have hi : i < css.length := by
       have := (List.getElem?_eq_some_iff.1 hT).1; rw [hd₀len] at this; omega
-    exact ⟨_, withCtors_getElem?_of hT (List.getElem?_eq_getElem hi), rfl, rfl⟩
+    exact ⟨_, withCtors_getElem?_of hT (List.getElem?_eq_getElem hi), rfl, rfl,
+      headTypes_nested T (List.mem_of_getElem? hT)⟩
   have hPT : c.venv.IsTele c.lparams.length [] params := by
     rw [hlp₀]; exact hT.params_tele.mono hle
   have hrecL : d.recLevels = VLevel.shift pre.length c.lparams.length ∧ d.motiveLevel = ml := by
@@ -1105,13 +1133,16 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
     exact this
   have hcsl' : css.length = d₀.types.length := by rw [hcsl, hd₀len]
   have hdctors : d.ctors = flatCtors css := blockDecl_ctors hcsl'
+  have hdAllT : d.allTypes = d.types := VInductDecl.allTypes_of_aux rfl
+  have hdAllC : d.allCtors = d.ctors := VInductDecl.allCtors_of_aux rfl
   have hbind : params.map (·.instL (VLevel.shift pre.length c.lparams.length)) ++
       d₀.motiveTypes (VLevel.shift pre.length c.lparams.length) ml ++
       (flatCtors css).zipIdx.map (fun ((j, cv), q) =>
         d₀.minorType (VLevel.shift pre.length c.lparams.length) q j cv) =
       d.recBinders (VLevel.shift pre.length c.lparams.length) ml := by
-    simp only [VInductDecl.recBinders, VInductDecl.minorTypes, hdctors]
-    simp only [d, blockDecl_motiveTypes hcsl', blockDecl_minorType hcsl']
+    simp only [VInductDecl.recBinders, VInductDecl.minorTypes,
+      VInductDecl.allCtors_of_aux (decl := d) rfl, hdctors]
+    simp only [d, blockDecl_motiveTypes rfl hcsl', blockDecl_minorType rfl headTypes_nested hcsl']
     rfl
   have hmlwf : ml.WF (pre ++ c.lparams).length := .of_ofLevel hml
   have hmotl : motfvs.length = types.length := by simp [motfvs, htdlen]
@@ -1230,8 +1261,8 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
       rw [← hbind, ← hmaj, ← zipIdx_lift'_eq_liftTele, hdlen, hdctors]
       simpa [List.zipIdx_append, List.append_assoc] using teleE
     -- the recursor's conclusion is a type there
-    have hIT := VInductDecl.recType_isType hRF hmlwf hT
-    simp only [VInductDecl.recType] at hIT
+    have hIT := VInductDecl.recType_isType hRF hmlwf (hdAllT ▸ hT)
+    simp only [VInductDecl.recType, hdAllT, hdAllC, VInductiveType.typeApp] at hIT
     obtain ⟨-, hIT₁⟩ := VEnv.IsType.foralls_inv hVCwf.ordered hIT
     obtain ⟨-, u, hbodyS⟩ := VEnv.IsType.forallE_inv hVCwf.ordered hIT₁
     have hbodyE : venvC.HasType (pre ++ c.lparams).length E.vlctx.toCtx
@@ -1290,8 +1321,8 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
       (Bfvs := []) (Btys := []) wfE
       (by simpa [VInductDecl.recBinders, List.append_assoc, show d.params = params from rfl]
         using teleE')
-      (.cons (by simp [hlenp]) <| .cons (by simp [VInductDecl.motiveTypes, hmotl, hdlen]) <|
-        .cons (by simp [VInductDecl.minorTypes, hminl, hdctors]) <|
+      (.cons (by simp [hlenp]) <| .cons (by simp [VInductDecl.motiveTypes, hdAllT, hmotl, hdlen]) <|
+        .cons (by simp [VInductDecl.minorTypes, hdAllC, hminl, hdctors]) <|
         .cons (by simp [hidxl]) <| .cons rfl .nil)
       hagr hbodyTr ⟨_, hbodyE⟩
     have hT0 : E.IsTele [pfvs, motfvs, minfvs, td.fvs, [td.major]].flatten
@@ -1328,7 +1359,8 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
           (.app (.appN (.bvar (1 + td.idx.length + d.ctors.length + (d.types.length - 1 - i)))
             (VExpr.bvars td.idx.length 1)) (.bvar 0)) := by
       simp only [VInductDecl.recType, VInductDecl.recBinders, List.flatten_cons, List.flatten_nil,
-        List.append_nil, VExpr.foralls_append, List.append_assoc]
+        List.append_nil, VExpr.foralls_append, List.append_assoc, hdAllT, hdAllC,
+        VInductiveType.typeApp]
       rfl
     refine ⟨by rw [e1, e2]; exact trAll, ?_⟩
     -- the major premise's type
@@ -1407,7 +1439,7 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
       have ⟨_, hty⟩ := VInductDecl.recType_isType hRF' hmlwf ht
       have := VEnv.HasType.const (Γ := []) (ls := VLevel.params d.recUVars) hc VLevel.params_wf
         (by simp)
-      simp only [VInductDecl.recConst, ht, Option.map_some, Option.getD_some]
+      simp only [VInductDecl.recConst]
       rw [hrecL.1, hrecL.2, hUV] at this
       rw [(hty.levelWF trivial).1.instL_id] at this
       rw [hUV]; exact this
@@ -1456,8 +1488,10 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
     have hnd : (pfvs ++ motfvs ++ minfvs ++ kd.fvs).Nodup := by
       have := wfV.tr.wf.fvars_nodup; rw [teleV'.fvars] at this; exact List.nodup_reverse.1 this
     -- the rule's body is typed there
-    obtain ⟨-, R, Ty, -, hr, -, -, -, hRty⟩ := VInductDecl.iotaRule_bodies hRF' hmlwf hrecT hq
+    obtain ⟨-, R, Ty, -, hr, -, -, -, hRty⟩ := VInductDecl.iotaRule_bodies hRF' hmlwf hrecT
+      (hdAllC ▸ hq)
     rw [iotaRule_rhs] at hr
+    simp only [hdAllT, hdAllC] at hr hRty
     obtain rfl := VExpr.lams_body_inj hr.symm
     rw [← teleV'.toCtx] at hRty
     have hn : d.params.length = pfvs.length := by rw [hlenp]; rfl
@@ -1493,8 +1527,8 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
       obtain ⟨⟨hp, hk', hP, -⟩, hmem⟩ := h
       -- the recursor of the type the field ends in
       obtain ⟨f, hf, hra⟩ := VInductDecl.mem_recFields hmem
-      obtain ⟨T, hT, -⟩ := hRF'.recArg (List.mem_of_getElem? hq) hf hra
-      obtain ⟨t, T', td, nidx, cs, ht, -, -, -, -, rfl, -⟩ := hdty _ _ hT
+      obtain ⟨T, hT, -⟩ := hRF'.recArg (hdAllC ▸ List.mem_of_getElem? hq) hf hra
+      obtain ⟨t, T', td, nidx, cs, ht, -, -, -, -, rfl, -⟩ := hdty _ _ (hdAllT ▸ hT)
       have hconst : ∀ Δ, TrExprS envR (pre ++ c.lparams) Δ
           (.const (mkRecName types.toArray[ih.itIdx]!.name) (getRecLevels elimLevel stats.levels))
           (d.recConst (VLevel.params d.recUVars) ra.typeIdx) := by
@@ -1506,8 +1540,9 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
           rw [getElem!_pos types.toArray ra.typeIdx (by
             simpa using (List.getElem?_eq_some_iff.1 ht).1)]
           simpa using (List.getElem?_eq_some_iff.1 ht).2]
-        simp only [VInductDecl.recConst, hT, Option.map_some, Option.getD_some]
-        rw [hUV]
+        simp only [VInductDecl.recConst]
+        rw [hUV, show mkRecName t.name = d.recName ra.typeIdx from
+          (VInductDecl.recName_of_types (hdAllT ▸ hT)).symm]
         refine .const hc hlv ?_
         rw [Lean4Lean.List.Forall₂.length_eq (List.mapM_eq_some.1 hlv), VLevel.params_length, hUV]
       have hwf : (ihRhs (VLevel.shift pre.length c.lparams.length) pfvs.length motfvs.length
@@ -1556,13 +1591,13 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
         VExpr.liftTele (d.types.length + d.ctors.length)
           (cv.fields.map (·.type.instL (VLevel.shift pre.length c.lparams.length)))]
       (Bfvs := []) (Btys := []) wfVR (by simpa using hT0)
-      (.cons (by simp [hlenp]) <| .cons (by simp [VInductDecl.motiveTypes, hmotl, hdlen]) <|
-        .cons (by simp [VInductDecl.minorTypes, hminl, hdctors]) <| .cons (by simp [hfl]) .nil)
+      (.cons (by simp [hlenp]) <| .cons (by simp [VInductDecl.motiveTypes, hdAllT, hmotl, hdlen]) <|
+        .cons (by simp [VInductDecl.minorTypes, hdAllC, hminl, hdctors]) <| .cons (by simp [hfl]) .nil)
       hag hbodyTr hRty
     obtain ⟨hk0, h0⟩ := hT0.dropN_all
     rw [TypeChecker.MLCtx.dropN_congr hT0.length_eq hkall hk0, h0] at trAll
     -- which is what the kernel built
-    rw [iotaRule_rhs, hn, hTl, hCl, ← hfl]
+    rw [iotaRule_rhs, hdAllT, hdAllC, hn, hTl, hCl, ← hfl]
     rw [hTl, hCl] at trAll
     simp only [List.flatten_cons, List.flatten_nil, List.append_nil, ← List.append_assoc] at trAll
     rw [show d.recBinders (VLevel.shift pre.length c.lparams.length) ml =
@@ -1612,6 +1647,10 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
     level := rfl
     isUnsafe := rfl
     isRec := rfl
+    aux := rfl
+    nested := fun T hT => by
+      obtain ⟨⟨T₀, cs⟩, hm, rfl⟩ := List.mem_map.1 hT
+      exact headTypes_nested T₀ (List.of_mem_zip hm).1
     isRecArgs := fun hfalse T₁ hT₁ cv hcv f hf => by
       have hall : ∀ t ∈ types, ∀ ct ∈ t.ctors, isRec.loop stats.indConsts ct.type = false := by
         intro t ht ct hct

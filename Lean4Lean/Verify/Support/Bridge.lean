@@ -124,8 +124,8 @@ theorem TrEnv'.recRules {safety : DefinitionSafety} {C Q venv} (H : TrEnv' safet
     · cases h
   | induct _ h1 H ih =>
     have hle := h1.le
-    obtain ⟨-, -, -, hrecs, hnd, hfr, rfl, -, -, hR, hB⟩ := h1
-    rcases insertConsts_find? H.map_wf hfr hnd h with h' | ⟨hm, -⟩
+    obtain ⟨-, -, -, hrecs, hnd, hfr, ⟨_, hp, rfl⟩, -, -, hR, hB⟩ := h1
+    rcases insertConsts_find?_perm H.map_wf hfr hnd hp h with h' | ⟨hm, -⟩
     · exact fun r hr => let ⟨e, he⟩ := ih h' r hr; ⟨e, he.mono hle⟩
     · simp only [inductConsts, List.mem_append, List.mem_map] at hm
       rcases hm with (⟨_, -, he⟩ | ⟨_, -, he⟩) | ⟨w, hw, he⟩
@@ -214,9 +214,13 @@ theorem TrEnv'.namesDeclared {C Q venv} (H : TrEnv' .unsafe C Q venv) :
     rintro n k ci' Q' hQ C env wf hP ⟨_, _, _, h1, h2, h3, h4⟩
     exact hQ _ _ (wf.const h2 (h1.sf_mono DefinitionSafety.unsafe_le) h3 rfl)
       (plain wf.map_wf h2 hP nofun nofun nofun) h4
-  | @induct C _ decl _ _ _ _ h1 H ih =>
-    obtain @⟨_, _, _, _, types, ctors, recs, -, htys, hcts, hrecs, hnd, hfr, rfl, -, -, -, -⟩ := h1
+  | @induct C _ decl _ _ _ hd h1 H ih =>
+    obtain @⟨_, envT, _, _, types, ctors, recs, -, htys, hcts, hrecs, hnd, hfr, ⟨cis, hp, rfl⟩, hTenv,
+      -, -, -⟩ := h1
     have hC := H.map_wf
+    have hfind := insertConsts_perm_find? hC hfr hnd hp
+    refine (show P (insertConsts C (inductConsts types ctors recs)) → P (insertConsts C cis) from
+      fun h => by simp only [P, hfind]; exact h) ?_
     have hins {m} (h : m ∈ (inductConsts types ctors recs).map (·.name)) :=
       insertConsts_isSome (name := m) hC hfr hnd (.inr h)
     have hold {m} (h : (C.find? m).isSome) := insertConsts_isSome (name := m) hC hfr hnd (.inl h)
@@ -246,7 +250,17 @@ theorem TrEnv'.namesDeclared {C Q venv} (H : TrEnv' .unsafe C Q venv) :
     · simp only [inductConsts, List.mem_append, List.mem_map] at hm
       rcases hm with (⟨_, -, he⟩ | ⟨_, -, he⟩) | ⟨w, hw, he⟩ <;> cases he
       obtain ⟨⟨T, i⟩, hTi, ⟨-, hmaj, -⟩, -⟩ := List.Forall₂.forall_exists_l hrecs _ hw
-      rw [hmaj]; exact htype (List.fst_mem_of_mem_zipIdx hTi)
+      rw [hmaj]
+      rcases List.mem_append.1 (List.fst_mem_of_mem_zipIdx hTi) with hT | hT
+      · rw [(hd.types T hT).2]; exact htype hT
+      · -- an auxiliary type's recursor eliminates the earlier type it stands for
+        obtain ⟨o, hno, hAux⟩ := hd.aux T hT
+        obtain ⟨⟨dI, tI, TI, hind, -⟩⟩ := hAux _ hTenv
+        rw [VEnv.addConstList_inducts hTenv] at hind
+        obtain ⟨-, -, -, -, -, -, TI', hTI', hname⟩ := H.wf.inducts hind
+        obtain ⟨lp, -, hTs, -⟩ := H.blockConsts hind
+        obtain ⟨v, hv, -⟩ := hTs tI TI' hTI'
+        rw [hno, Option.map_some, Option.getD_some, ← hname]; exact hold (by simp [hv])
 
 /-- Every name the declarations of `C` mention is declared in `C`. -/
 def ConstMap.Closed (C : ConstMap) : Prop :=

@@ -204,10 +204,6 @@ theorem appArgs_appN : ∀ (e : VExpr) (as : List VExpr), (e.appN as).appArgs = 
   | _, [] => by simp
   | e, a :: as => by simp [appN, appArgs_appN (.app e a) as, appArgs]
 
-theorem appN_const_inj {n n' : Name} {ls ls' : List VLevel} {as bs : List VExpr}
-    (h : (VExpr.const n ls).appN as = (VExpr.const n' ls').appN bs) : as = bs := by
-  simpa [appArgs_appN, appArgs] using congrArg appArgs h
-
 /-- Not a pi. -/
 def NotPi : VExpr → Prop
   | .forallE .. => False
@@ -217,14 +213,14 @@ theorem appN_notPi : ∀ {e : VExpr} (as : List VExpr), e.NotPi → (e.appN as).
   | _, [], h => h
   | e, a :: as, _ => appN_notPi (e := .app e a) as trivial
 
-theorem foralls_inj : ∀ {xs ys : List VExpr} {X Y : VExpr}, X.NotPi → Y.NotPi →
+theorem foralls_inj_notPi : ∀ {xs ys : List VExpr} {X Y : VExpr}, X.NotPi → Y.NotPi →
     foralls xs X = foralls ys Y → xs = ys ∧ X = Y
   | [], [], _, _, _, _, h => ⟨rfl, h⟩
   | [], _ :: _, _, _, hX, _, h => by simp at h; subst h; exact hX.elim
   | _ :: _, [], _, _, _, hY, h => by simp at h; subst h; exact hY.elim
   | _ :: _, _ :: _, _, _, hX, hY, h => by
     simp only [foralls_cons, forallE.injEq] at h
-    have := foralls_inj hX hY h.2
+    have := foralls_inj_notPi hX hY h.2
     exact ⟨by rw [h.1, this.1], this.2⟩
 
 end VExpr
@@ -315,10 +311,28 @@ theorem SameBase.push {c₀ c : VContext} (h : SameBase c₀ c) {name ty ty' bi 
     SameBase c₀ (c.push name ty ty' bi h1 h2) :=
   ⟨h.env, h.venv, h.lparams, h.safety, h.allowPrimitive, h.fuel, h.pfx⟩
 
+/-- While a type's parameters are opened, for a type declared as a pi telescope at least as long as
+the parameters: the binders opened so far agree with the parameters, and the rest of the type is still
+the rest of that telescope. -/
+def ParamsSoFar (venv : VEnv) (U : List Name) (nparams : Nat) (T₀ : Expr) (T' : VExpr) (i : Nat)
+    (params : List VExpr) (Δ : VLCtx) (type : Expr) : Prop :=
+  nparams ≤ T₀.leadingForalls → ∀ ps B, T' = .foralls ps B → ps.length = nparams →
+    venv.TeleDefEq U.length [] (ps.take i) params ∧
+    (i < nparams → nparams - i ≤ type.leadingForalls ∧
+      TrExprS venv U Δ type (.foralls (ps.drop i) B))
+
+/-- A type declared as a pi telescope at least as long as the parameters: that telescope is the
+parameters'. -/
+def ParamsAgree (venv : VEnv) (U : List Name) (nparams : Nat) (T₀ : Expr) (T' : VExpr)
+    (params : List VExpr) : Prop :=
+  nparams ≤ T₀.leadingForalls → ∀ ps B, T' = .foralls ps B → ps.length = nparams →
+    venv.TeleDefEq U.length [] ps params
+
 /-- What `checkInductiveTypes` has established after its first `n` types, with `stats` in `c`:
 the parameters are local variables of the types `params`, at the bottom of the local context;
 each type so far is, up to defeq, a pi over the parameters and its indices into a sort that agrees
-with `level`. -/
+with `level`, and where it is declared as a pi over as many binders as there are parameters, those
+binders agree with the parameters. -/
 structure TypesSoFar (c₀ : VContext) (nparams : Nat) (types : List InductiveType) (n : Nat)
     (stats : InductiveStats) (c : VContext) (params : List VExpr) (level : VLevel)
     (typeTr : List VExpr) : Prop where
@@ -338,35 +352,70 @@ structure TypesSoFar (c₀ : VContext) (nparams : Nat) (types : List InductiveTy
     TrExprS c₀.venv c₀.lparams [] T.type T' ∧ c₀.venv.IsType c₀.lparams.length [] T' ∧
     c₀.venv.IsDefEqU c₀.lparams.length [] T' (.foralls (params ++ idx) (.sort u)) ∧
     u ≈ level ∧ stats.nindices[j]? = some idx.length ∧
-    c₀.venv.IsTele c₀.lparams.length params.reverse idx
+    c₀.venv.IsTele c₀.lparams.length params.reverse idx ∧
+    ParamsAgree c₀.venv c₀.lparams params.length T.type T' params
 
 /-- What `checkInductiveTypes` establishes, for the continuation it calls. -/
 abbrev TypesData (c₀ : VContext) (nparams : Nat) (types : List InductiveType) :=
   TypesSoFar c₀ nparams types types.length
 
+theorem ParamsSoFar.done {venv U nparams T₀ T' params Δ type}
+    (H : ParamsSoFar venv U nparams T₀ T' nparams params Δ type) :
+    ParamsAgree venv U nparams T₀ T' params := fun hl ps B he hp => by
+  have := (H hl ps B he hp).1; rwa [List.take_of_length_le (by omega)] at this
+
+theorem _root_.Lean4Lean.TypeChecker.whnf.forallE_eq {c : TypeChecker.VContext}
+    {s : TypeChecker.VState} (h : e.consumeMData = .forallE n ty body bi) :
+    TypeChecker.M.WF c s (TypeChecker.whnf e) fun e₁ _ => e₁ = .forallE n ty body bi :=
+  (TypeChecker.Inner.whnf.forallE_eq h).run
+
+/-- `whnf` leaves a pi alone. -/
+theorem WF.and {c : VContext} {x : M α} {Q R : α → Prop} (h1 : WF c x Q) (h2 : WF c x R) :
+    WF c x fun a => Q a ∧ R a := fun a h => ⟨h1 a h, h2 a h⟩
+
+theorem whnf_forallE_self {c : VContext} (e : Expr) :
+    WF c (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ => 0 < e.leadingForalls → e₁ = e := by
+  cases e with
+  | forallE n t b bi => exact (WF.liftTC (TypeChecker.whnf.forallE_eq rfl)).mono fun _ h _ => h
+  | _ => intro a _ h; simp [Expr.leadingForalls] at h
+
+theorem leadingForalls_instantiate1 (e a : Expr) :
+    e.leadingForalls ≤ (e.instantiate1 a).leadingForalls := by
+  rw [Expr.instantiate1_eq]; exact Expr.leadingForalls_instantiate1' _ _ _
+
+/-- The first binder of the rest of a pi telescope, as a translation. -/
+theorem foralls_drop_eq {ps : List VExpr} {B A body : VExpr} {i : Nat} (hi : i < ps.length)
+    (h : VExpr.forallE A body = .foralls (ps.drop i) B) :
+    A = ps[i] ∧ body = .foralls (ps.drop (i + 1)) B := by
+  rw [List.drop_eq_getElem_cons hi] at h
+  simp only [VExpr.foralls_cons, VExpr.forallE.injEq] at h
+  exact h
+
 /-- The first type's loop: each parameter and index becomes a local variable, of the type the
 binder normalizes to with annotations stripped, and the type of the block is, up to defeq, a pi over
 them into the remaining type. -/
 theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
-    {nparams : Nat} {stats₀ : InductiveStats} (h₀ : stats₀.indConsts = #[]) {T' : VExpr}
-    {k : Expr → InductiveStats → Nat → M α} {Q}
+    {nparams : Nat} {stats₀ : InductiveStats} (h₀ : stats₀.indConsts = #[]) {T₀ : Expr}
+    {T' : VExpr} {k : Expr → InductiveStats → Nat → M α} {Q}
     (H : ∀ type V (c : VContext) fvs params idx, SameBase c₀ c →
       c.mlctx.IsTele fvs (params ++ idx) → params.length = nparams →
       TrExpr c.venv c.lparams c.mlctx.vlctx type V →
       c₀.venv.IsDefEqU c₀.lparams.length [] T' (.foralls (params ++ idx) V) →
+      ParamsAgree c₀.venv c₀.lparams nparams T₀ T' params →
       WF c (k type { stats₀ with params := ((fvs.take nparams).map .fvar).toArray } idx.length) Q) :
     ∀ fuel type i nidx (c : VContext) fvs params idx V,
       SameBase c₀ c → c.mlctx.IsTele fvs (params ++ idx) →
       params.length = i → idx.length = nidx → (nidx ≠ 0 → i = nparams) → i ≤ nparams →
       TrExpr c.venv c.lparams c.mlctx.vlctx type V →
       c₀.venv.IsDefEqU c₀.lparams.length [] T' (.foralls (params ++ idx) V) →
+      ParamsSoFar c₀.venv c₀.lparams nparams T₀ T' i params c.mlctx.vlctx type →
       WF c (checkInductiveTypes.loopInd.loop nparams
         { stats₀ with params := ((fvs.take i).map .fvar).toArray } type i nidx fuel k) Q := by
   intro fuel
   induction fuel with
   | zero => intros; rw [checkInductiveTypes.loopInd.loop.eq_1]; exact .throw
   | succ fuel ih =>
-  intro type i nidx c fvs params idx V hc htele hi hn hni hle htr hT
+  intro type i nidx c fvs params idx V hc htele hi hn hni hle htr hT hsyn
   cases type with
   | forallE name dom body bi =>
     rw [checkInductiveTypes.loopInd.loop.eq_2]
@@ -374,6 +423,8 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
     have hΔ := c.tc.Δwf
     have hΓ := hΔ.toCtx
     obtain ⟨V₀, hS, hdef⟩ := htr
+    have hS' := hS
+    rw [hc.venv, hc.lparams] at hS'
     cases hS with | forallE hdomT hbodyT hdom hbody => ?_
     rename_i dom' body'
     by_cases hok : c.venv.StripOK dom
@@ -398,7 +449,14 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
         (hstats : stats' = { stats₀ with
           params := (((fvs ++ [(⟨c.ngen.curr⟩ : FVarId)]).take i').map Expr.fvar).toArray })
         (hpi : params' ++ idx' = params ++ idx ++ [ty']) (hi' : params'.length = i')
-        (hn' : idx'.length = nidx') (hni' : nidx' ≠ 0 → i' = nparams) (hle' : i' ≤ nparams) :
+        (hn' : idx'.length = nidx') (hni' : nidx' ≠ 0 → i' = nparams) (hle' : i' ≤ nparams)
+        (hsyn' : ∀ e, (0 < (body.instantiate1 (.fvar ⟨c.ngen.curr⟩)).leadingForalls →
+            e = body.instantiate1 (.fvar ⟨c.ngen.curr⟩)) →
+          TrExprS c.venv c.lparams
+            (c.push name dom.consumeTypeAnnotations' ty' bi hty htyT).mlctx.vlctx
+            (body.instantiate1 (.fvar ⟨c.ngen.curr⟩)) body'' →
+          ParamsSoFar c₀.venv c₀.lparams nparams T₀ T' i' params'
+            (c.push name dom.consumeTypeAnnotations' ty' bi hty htyT).mlctx.vlctx e) :
         AddInductive.WF (c.push name dom.consumeTypeAnnotations' ty' bi hty htyT)
           (do
             let e ← liftM (TypeChecker.whnf (body.instantiate1 (.fvar ⟨c.ngen.curr⟩)))
@@ -407,11 +465,12 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
       have hinst : c'.tc.TrExprS (body.instantiate1 (.fvar ⟨c.ngen.curr⟩)) body'' := by
         rw [Lean.Expr.instantiate1_eq]
         exact hbody''.inst_fvar henv'.ordered c'.tc.Δwf
-      refine AddInductive.WF.bind (AddInductive.WF.liftTC (TypeChecker.whnf.WF hinst))
-        fun e ⟨_, he⟩ => ?_
+      refine AddInductive.WF.bind (AddInductive.WF.and
+        (AddInductive.WF.liftTC (TypeChecker.whnf.WF hinst)) (whnf_forallE_self _))
+        fun e ⟨⟨_, he⟩, hself⟩ => ?_
       subst hstats
       refine ih e i' nidx' c' (fvs ++ [⟨c.ngen.curr⟩]) params' idx' body'' hc.push ?_ hi' hn' hni'
-        hle' he ?_
+        hle' he ?_ (hsyn' e hself hinst)
       · rw [hpi]; exact htele.vlam
       · obtain ⟨v, hbodyS⟩ := hbodyT
         have h1 : c.venv.IsDefEq c.lparams.length c.mlctx.vlctx.toCtx
@@ -438,16 +497,39 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
       refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, _⟩ => ?_; subst hx
       refine AddInductive.WF.withLocalDecl hty htyT ?_
       refine step (params' := params ++ [ty']) (idx' := []) ?_ (by simp) (by simp [hi]) rfl
-        nofun hlt
-      simp only [Nat.add_zero] at hlen
-      simp [← hlen, List.take_of_length_le]
+        nofun hlt ?_
+      · simp only [Nat.add_zero] at hlen
+        simp [← hlen, List.take_of_length_le]
+      -- the binder just opened is the declared telescope's next one
+      intro e hself hinst hlf ps B hT' hpl
+      obtain ⟨htd, hrest⟩ := hsyn hlf ps B hT' hpl
+      obtain ⟨hlfi, htri⟩ := hrest (by omega)
+      have hips : i < ps.length := by omega
+      obtain ⟨rfl, rfl⟩ := foralls_drop_eq hips (TrExprS.unique (TrExprS.IsUnique.all _) hS' htri)
+      have hctx : c.mlctx.vlctx.toCtx = params.reverse := by simpa using htele.toCtx
+      refine ⟨?_, fun hlt' => ?_⟩
+      · rw [List.take_add_one, List.getElem?_eq_getElem hips, Option.toList_some]
+        refine htd.append (.cons ?_ .nil)
+        change c.venv.IsDefEqU c.lparams.length c.mlctx.vlctx.toCtx _ _ at hdefty
+        rw [hctx, hc.venv, hc.lparams] at hdefty
+        simpa using hdefty
+      · have hb : nparams - (i + 1) ≤ body.leadingForalls := by
+          simp only [Expr.leadingForalls] at hlfi; omega
+        have hb' := Nat.le_trans hb (leadingForalls_instantiate1 body (.fvar ⟨c.ngen.curr⟩))
+        rw [hself (by omega)]
+        refine ⟨hb', ?_⟩
+        rw [← hc.venv, ← hc.lparams]
+        obtain rfl := hbody.unique' (.cons .base .vlam) (TrExprS.IsUnique.all _) hbody''
+        exact hinst
     · rename_i hlt
       have hi' : i = nparams := Nat.le_antisymm hle (Nat.not_lt.1 hlt)
       refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, _⟩ => ?_; subst hx
       refine AddInductive.WF.withLocalDecl hty htyT ?_
       refine step (params' := params) (idx' := idx ++ [ty']) ?_ (by simp) hi (by simp [hn])
-        (fun _ => hi') hle
-      rw [List.take_append_of_le_length (by omega)]
+        (fun _ => hi') hle ?_
+      · rw [List.take_append_of_le_length (by omega)]
+      intro e _ _ hlf ps B hT' hpl
+      exact ⟨(hsyn hlf ps B hT' hpl).1, fun h => absurd h (by omega)⟩
   | _ =>
     rw [checkInductiveTypes.loopInd.loop.eq_3 _ _ _ _ _ _ _ fun _ _ _ _ h => by cases h]
     split
@@ -455,7 +537,7 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
     · rename_i hi'
       simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hi'
       have hnp : params.length = nparams := hi.trans hi'
-      have := H _ V c fvs params idx hc htele hnp htr hT
+      have := H _ V c fvs params idx hc htele hnp htr hT (by subst hi; rw [hnp] at hsyn; exact hsyn.done)
       rw [← hn]; subst hi; rwa [hnp]
 
 theorem WF.read {c : VContext} : WF c (read : M Context) (· = c.toContext) := by
@@ -480,15 +562,19 @@ theorem loopInd0.WF {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.ve
   refine WF.bind (WF.liftTC (TypeChecker.checkType.WF hcl')) fun _ hty => ?_
   obtain ⟨T', _, -, hT', -, -⟩ := hty
   refine WF.bind WF.read fun _ hr => ?_; subst hr
-  refine WF.bind (WF.liftTC (TypeChecker.whnf.WF hT')) fun e₁ ⟨_, he₁⟩ => ?_
+  refine WF.bind (WF.and (WF.liftTC (TypeChecker.whnf.WF hT')) (whnf_forallE_self _))
+    fun e₁ ⟨⟨_, he₁⟩, hself⟩ => ?_
   have hT'0 : TrExprS c₀.venv c₀.lparams [] T.type T' := by
     change TrExprS c₀.venv c₀.lparams c₀.mlctx.vlctx _ _ at hT'
     rw [h₀] at hT'; exact hT'
   have hnil : VLCtx.WF c₀.venv c₀.lparams.length ([] : VLCtx) := trivial
-  refine loopFirst.WF henv (stats₀ := initStats c₀) rfl (T' := T') ?_ _ e₁ 0 0 c₀ [] [] []
-    T' .refl (by rw [h₀]; exact .nil) rfl rfl nofun (Nat.zero_le _) he₁
+  refine loopFirst.WF henv (stats₀ := initStats c₀) rfl (T₀ := T.type) (T' := T') ?_ _ e₁ 0 0 c₀
+    [] [] [] T' .refl (by rw [h₀]; exact .nil) rfl rfl nofun (Nat.zero_le _) he₁
     (by have := TrExprS.wf henv.ordered hnil hT'0; exact this)
-  intro type V c fvs params idx hc htele hnp htr hT
+    (fun hlf ps B hT'eq hpl => ⟨by simp; exact .nil, fun h0 => by
+      rw [hself (Nat.lt_of_lt_of_le h0 hlf), h₀]
+      exact ⟨by simpa using hlf, by simpa [← hT'eq] using hT'0⟩⟩)
+  intro type V c fvs params idx hc htele hnp htr hT hagree
   have henv' : c.venv.WF := hc.venv ▸ henv
   have hΓ : OnCtx c.mlctx.vlctx.toCtx (c.venv.IsType c.lparams.length) := c.tc.Δwf.toCtx
   obtain ⟨V₁, hS, hV⟩ := htr
@@ -524,7 +610,7 @@ theorem loopInd0.WF {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.ve
     rw [hc.venv, hc.lparams] at h3
     have hdef : c₀.venv.IsDefEqU c₀.lparams.length [] T' (.foralls (params ++ idx) (.sort u')) :=
       hT.trans henv trivial ⟨_, h3⟩
-    refine ⟨idx, u', hT'0, ?_, hdef, VLevel.equiv_def.2 fun _ => rfl, ?_, ?_⟩
+    refine ⟨idx, u', hT'0, ?_, hdef, VLevel.equiv_def.2 fun _ => rfl, ?_, ?_, hnp ▸ hagree⟩
     · have htel : c₀.venv.IsTele c₀.lparams.length [] (params ++ idx) := by
         have := htele.isTele c.mlctx_wf; rwa [hc.venv, hc.lparams] at this
       have hu' : u'.WF c₀.lparams.length := .of_ofLevel (hc.lparams ▸ hu)
@@ -545,7 +631,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
     {Mp : MLCtx} {pfvs : List FVarId} {params : List VExpr} (hMp : Mp.IsTele pfvs params)
     (hpar : stats.params.toList = pfvs.map .fvar) (hnp : params.length = nparams)
     (hptele : c₀.venv.IsTele c₀.lparams.length [] params)
-    {T' : VExpr} {k : Expr → InductiveStats → Nat → M α} {Q} {M₁ : MLCtx}
+    {T₀ : Expr} {T' : VExpr} {k : Expr → InductiveStats → Nat → M α} {Q} {M₁ : MLCtx}
     (hM₁ : ∃ n hn, M₁.dropN n hn = Mp)
     (H : ∀ type V (c : VContext) (Δs : VLCtx) idx, SameBase c₀ c →
       (∃ hk, c.mlctx.dropN idx.length hk = M₁) →
@@ -554,6 +640,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
       c₀.venv.IsTele c₀.lparams.length [] (params ++ idx) →
       TrExpr c.venv c.lparams Δs type V →
       c₀.venv.IsDefEqU c₀.lparams.length [] T' (.foralls (params ++ idx) V) →
+      ParamsAgree c₀.venv c₀.lparams nparams T₀ T' params →
       WF c (k type stats idx.length) Q) :
     ∀ fuel type i nidx (c : VContext) (Δs : VLCtx) idx V,
       SameBase c₀ c → (∃ hk, c.mlctx.dropN nidx hk = M₁) →
@@ -564,13 +651,14 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
       c₀.venv.IsTele c₀.lparams.length [] (params.take i ++ idx) →
       TrExpr c.venv c.lparams Δs type V →
       c₀.venv.IsDefEqU c₀.lparams.length [] T' (.foralls (params.take i ++ idx) V) →
+      ParamsSoFar c₀.venv c₀.lparams nparams T₀ T' i (params.take i) Δs type →
       WF c (checkInductiveTypes.loopInd.loop nparams stats type i nidx fuel k) Q := by
   subst hnp
   intro fuel
   induction fuel with
   | zero => intros; rw [checkInductiveTypes.loopInd.loop.eq_1]; exact .throw
   | succ fuel ih =>
-  intro type i nidx c Δs idx V hc hM hW hΔ hparam hle hn hni htele htr hT
+  intro type i nidx c Δs idx V hc hM hW hΔ hparam hle hn hni htele htr hT hsyn
   have henv' : c.venv.WF := hc.venv ▸ henv
   have hΔb := c.mlctx_wf.tr.wf
   obtain ⟨ρ, W⟩ := hW
@@ -580,6 +668,8 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
   | forallE name dom body bi =>
     rw [checkInductiveTypes.loopInd.loop.eq_2]
     obtain ⟨V₀, hS, hdef⟩ := htr
+    have hS' := hS
+    rw [hc.venv, hc.lparams] at hS'
     cases hS with | forallE hdomT hbodyT hdom hbody => ?_
     rename_i dom' body'
     split
@@ -610,7 +700,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
         rw [← MLCtx.dropN_congr (show params.length - (i + 1) + 1 = params.length - i by omega)
           (by omega) hk, ← MLCtx.dropN_dropN Mp _ 1 hk' (by simp [hm'])]
         simp [hm']
-      rw [hm'eq] at W hΔs hdomT hbodyT hdom hbody hdef hΔ
+      rw [hm'eq] at W hΔs hdomT hbodyT hdom hbody hdef hΔ hS' hsyn
       simp only [MLCtx.dropN] at hMp'
       have hn₁' : n₁ + (params.length - (i + 1)) ≤ c.mlctx.length := by
         have := MLCtx.length_dropN c.mlctx n₁ hn₁; rw [hMp'] at this; omega
@@ -653,14 +743,36 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
           (body.instantiate1 (.fvar pfvs[i])) body'' := by
         rw [Lean.Expr.instantiate1_eq]; exact hbody''.inst_fvar henv'.ordered hΔs'
       have h3 := hinst.weakFV' henv' W' hΔb; simp only [Lift.consN] at h3
-      refine WF.bind (WF.liftTC (TypeChecker.whnf.WF h3)) fun e₁ ⟨hbelow, htr₁⟩ => ?_
+      refine WF.bind (WF.and (WF.liftTC (TypeChecker.whnf.WF h3)) (whnf_forallE_self _))
+        fun e₁ ⟨⟨hbelow, htr₁⟩, hself⟩ => ?_
       have hfv₁ := hbelow _ (W'.isFVarUpSet rfl hΔb.fvwf) hinst.fvarsIn
       have htr' := TrExpr.strengthen henv' W' hΔb (MLCtx.noBV _) htr₁ hfv₁
       have hptake : c₀.venv.IsTele c₀.lparams.length [] (params.take (i + 1)) := by
         have := hptele; rw [← List.take_append_drop (i + 1) params] at this
         exact this.append_inv.1
       refine ih e₁ (i + 1) 0 c _ [] body'' hc ⟨Nat.zero_le _, rfl⟩ ⟨ρ', W'⟩ ?_
-        (fun _ => ⟨hk', by rw [hm']⟩) (by omega) rfl nofun (by simpa using hptake) htr' ?_
+        (fun _ => ⟨hk', by rw [hm']⟩) (by omega) rfl nofun (by simpa using hptake) htr' ?_ ?_
+      rotate_left 2
+      · -- the binder just opened is the declared telescope's next one
+        intro hlf ps B hT'eq hpl
+        obtain ⟨htd, hrest⟩ := hsyn hlf ps B hT'eq hpl
+        obtain ⟨hlfi, htri⟩ := hrest hlt
+        have hips : i < ps.length := by omega
+        obtain ⟨rfl, rfl⟩ := foralls_drop_eq hips
+          (TrExprS.unique (TrExprS.IsUnique.all _) hS' htri)
+        refine ⟨?_, fun hlt' => ?_⟩
+        · rw [List.take_add_one, List.getElem?_eq_getElem hips, Option.toList_some, hpi']
+          refine htd.append (.cons ?_ .nil)
+          rw [hΔ, hc.venv, hc.lparams] at hdd
+          simpa using hdd
+        · have hb : params.length - (i + 1) ≤ body.leadingForalls := by
+            simp only [Expr.leadingForalls] at hlfi; omega
+          have hb' := Nat.le_trans hb (leadingForalls_instantiate1 body (.fvar pfvs[i]))
+          rw [hself (by omega)]
+          refine ⟨hb', ?_⟩
+          obtain rfl := hbody.unique' (.cons .base .vlam) (TrExprS.IsUnique.all _) hbody''
+          rw [← hc.venv, ← hc.lparams]
+          exact hinst
       · simp only [MLCtx.vlctx, VLCtx.toCtx, hpi']
         rw [List.reverse_append]
         simpa using hΔ
@@ -683,7 +795,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
     · rename_i hlt
       have hi' : i = params.length := Nat.le_antisymm hle (Nat.not_lt.1 hlt)
       subst hi'
-      rw [List.take_of_length_le (Nat.le_refl _)] at hΔ htele hT
+      rw [List.take_of_length_le (Nat.le_refl _)] at hΔ htele hT hsyn
       refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
       have hΓ := hΔs.toCtx
       obtain ⟨tys, hty, hdefty, -⟩ := TrExprS.consumeTypeAnnotations' henv' hΔs hok hdom
@@ -719,7 +831,11 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
       obtain ⟨hk, hM⟩ := hM
       refine ih e₁ params.length (nidx + 1) _ _ (idx ++ [tys]) body'' hc.push
         ⟨by simp [VContext.push, MLCtx.length]; exact hk, hM⟩ ⟨_, W'⟩ ?_ nofun (Nat.le_refl _) (by simp [hn]) (fun _ => rfl)
-        ?_ htr' ?_
+        ?_ htr' ?_ ?_
+      rotate_left 3
+      · intro hlf ps B hT'eq hpl
+        rw [List.take_of_length_le (Nat.le_refl _)]
+        exact ⟨(hsyn hlf ps B hT'eq hpl).1, fun h => absurd h (Nat.lt_irrefl _)⟩
       · simp only [VLCtx.toCtx, List.reverse_append]
         rw [List.take_of_length_le (Nat.le_refl _)]
         simpa using hΔ
@@ -750,9 +866,9 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
     · rename_i hi'
       simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hi'
       subst hi'
-      rw [List.take_of_length_le (by omega)] at hΔ htele hT
+      rw [List.take_of_length_le (by omega)] at hΔ htele hT hsyn
       rw [← hn]
-      exact H _ V c Δs idx hc (hn ▸ hM) ⟨ρ, W⟩ hΔ htele htr hT
+      exact H _ V c Δs idx hc (hn ▸ hM) ⟨ρ, W⟩ hΔ htele htr hT hsyn.done
 
 /-- Each later type of a mutual block: its parameters agree with the first type's, and it lives
 in the same universe. Its loop runs in a local context holding the earlier types' indices too, which
@@ -788,18 +904,23 @@ theorem loopIndLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
   obtain ⟨T', hT'0, -⟩ := TrExprS.strengthen henv' W₀ hΔb (MLCtx.noBV _) hTb (hcl.mono nofun)
   have hTl := hT'0.weakFV' henv'.ordered W₀ hΔb; simp only [Lift.consN] at hTl
   refine WF.bind WF.read fun _ hr => ?_; subst hr
-  refine WF.bind (WF.liftTC (TypeChecker.whnf.WF hTl)) fun e₁ ⟨hbelow, he₁⟩ => ?_
+  refine WF.bind (WF.and (WF.liftTC (TypeChecker.whnf.WF hTl)) (whnf_forallE_self _))
+    fun e₁ ⟨⟨hbelow, he₁⟩, hself⟩ => ?_
   have hfv₁ := hbelow _ (W₀.isFVarUpSet rfl hΔb.fvwf) hT'0.fvarsIn
   have htr₁ := TrExpr.strengthen henv' W₀ hΔb (MLCtx.noBV _) he₁ hfv₁
   have hnil : VLCtx.WF c.venv c.lparams.length ([] : VLCtx) := trivial
   have hT'wf := TrExprS.wf henv'.ordered hnil hT'0
   obtain ⟨hkall, hall⟩ := hMp.dropN_all
-  refine loopLater.WF henv hne hMp hpar hT.nparams hT.params_tele (T' := T') (M₁ := c.mlctx)
+  refine loopLater.WF henv hne hMp hpar hT.nparams hT.params_tele (T₀ := types.toArray[dIdx].type)
+    (T' := T') (M₁ := c.mlctx)
     ⟨k₁, hk₁, rfl⟩ ?_ _ e₁ 0 0 c [] [] T' hc ⟨Nat.zero_le _, rfl⟩ ⟨_, W₀⟩ rfl
     (fun _ => ⟨by simpa [hT.nparams] using hkall, by simp [← hT.nparams, hall]⟩)
     (Nat.zero_le _) rfl nofun (by simpa using VEnv.IsTele.nil) htr₁
     (by rw [← hc.venv, ← hc.lparams]; exact hT'wf)
-  intro type V c' Δs idx hc' hM hW hΔ htele htr hT₁
+    (fun hlf ps B hT'eq hpl => ⟨by simp; exact .nil, fun h0 => by
+      rw [hself (Nat.lt_of_lt_of_le h0 hlf), ← hc.venv, ← hc.lparams]
+      exact ⟨by simpa using hlf, by simpa [← hT'eq] using hT'0⟩⟩)
+  intro type V c' Δs idx hc' hM hW hΔ htele htr hT₁ hagree
   dsimp only
   have henv'' : c'.venv.WF := hc'.venv ▸ henv
   have hΔb' := c'.mlctx_wf.tr.wf
@@ -840,8 +961,8 @@ theorem loopIndLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
       have := (List.getElem?_eq_some_iff.1 hT'').1; simp [hT.typeTr_length] at this; omega
     rcases Nat.lt_or_eq_of_le hj with hj | rfl
     · rw [List.getElem?_append_left (by rw [hT.typeTr_length]; exact hj)] at hT''
-      obtain ⟨i', u'', a, b, c, d, e, f⟩ := hT.types j t T'' ht hT''
-      refine ⟨i', u'', a, b, c, d, ?_, f⟩
+      obtain ⟨i', u'', a, b, c, d, e, f, g⟩ := hT.types j t T'' ht hT''
+      refine ⟨i', u'', a, b, c, d, ?_, f, g⟩
       rw [Array.getElem?_push_lt (by rw [hsize]; exact hj), ← Array.getElem?_eq_getElem]
       exact e
     · rw [List.getElem?_append_right (Nat.le_of_eq hT.typeTr_length)] at hT''
@@ -864,7 +985,7 @@ theorem loopIndLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
       · have hu' : u'.WF c₀.lparams.length := .of_ofLevel hu₀
         exact (htele.foralls ⟨_, .sort hu'⟩).defeqU_l henv trivial hdef.symm
       · simp only [Array.getElem?_push, hsize, ite_true]
-      · simpa using htele.append_inv.2
+      · exact ⟨by simpa using htele.append_inv.2, by simpa [hT.nparams] using hagree⟩
 
 
 /-- Once every type is through, the continuation gets the statistics. -/
@@ -1130,6 +1251,8 @@ structure Compat (U : List Name) (params : List VExpr) (level : VLevel) (isUnsaf
   names : d.names = types.map (·.name)
   indices : ∀ (j : Nat) (T : VInductiveType), d.types[j]? = some T →
     nindices[j]? = some T.indices.length
+  aux : d.aux = []
+  nested : ∀ T ∈ d.types, T.nested = none
 
 /-- The record `declareConstructors` adds for the `cidx`th constructor `ct` of type `t`. -/
 def ctorVal (lparams : List Name) (nparams : Nat) (isUnsafe : Bool) (t : InductiveType)
@@ -1264,7 +1387,7 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
     (hU : d.uvars = U.length) (hnp : d.params.length = nparams)
     (hparams : venv.IsTele d.uvars [] d.params)
     {t : InductiveType} {T : VInductiveType} {nidx : Nat} (hname : T.name = t.name)
-    (hnidx : nidx = T.indices.length) {ct : Constructor} {c : VConstructor}
+    (hno : T.nested = none) (hnidx : nidx = T.indices.length) {ct : Constructor} {c : VConstructor}
     {X : List VExpr → List VExpr → Prop}
     (hC : CtorChecked venv U d t nidx ct)
     (hE : c.name = ct.name ∧ TrExprS venv U [] ct.type c.type ∧ ∃ ps Ds, ps.length = nparams ∧
@@ -1276,7 +1399,7 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   obtain ⟨-, htr, ps, Ds, hps, hDs, hty, hfe, -⟩ := hE
   obtain ⟨hT, ps', Ds', idx, hty', har, htele, hidx, hmen, hfc⟩ := hC _ htr
   rw [hty] at hty'
-  have ⟨h1, h2⟩ := VExpr.foralls_inj (VExpr.appN_notPi (e := .const ..) _ trivial)
+  have ⟨h1, h2⟩ := VExpr.foralls_inj_notPi (VExpr.appN_notPi (e := .const ..) _ trivial)
     (VExpr.appN_notPi (e := .const ..) _ trivial) hty'
   have hlen : ps.length = ps'.length := by rw [hps, ← hnp, htele.length_eq]
   obtain ⟨rfl, rfl⟩ := List.append_inj h1 hlen
@@ -1290,7 +1413,7 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
     (hfc.defeqDFC henv.ordered hctx) hfe
   refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within⟩, ⟨hidx.trans hnidx, hmen⟩,
     VInductDecl.FieldsWF.projFields henv hparams hFW⟩, by rw [har, hps, hDs]⟩
-  rw [hty, hname, hU, hnp, hDs]
+  rw [hty, VInductiveType.typeApp_of_none hno, hname, hU, hnp, hDs]
 
 /-- The type `run` gives the `i`th recursor, from the local variables `mkRecInfos` opened. -/
 def recTypeExpr (lctx : LocalContext) (stats : InductiveStats) (recInfos : Array RecInfo)
@@ -1337,6 +1460,9 @@ structure RecInfosData (c₂ : VContext) (nparams : Nat) (types : List Inductive
   level : d.level = level
   isUnsafe : d.isUnsafe = isUnsafe
   isRec : d.isRec = isRec types.toArray stats.indConsts
+  /-- `run` checks a block without nested occurrences: it has no auxiliary types. -/
+  aux : d.aux = []
+  nested : ∀ T ∈ d.types, T.nested = none
   /-- A field `isRecArg` sees as recursive has an occurrence of the block in its declared domain,
   which is what `isRec` looks for: reduction does not introduce the block's names. -/
   isRecArgs : d.isRec = false → ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ f ∈ c.fields, f.recArg = none
@@ -1416,14 +1542,16 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     ⟨hU, hR.params, hR.level, hR.isUnsafe,
       (List.Forall₂.map_eq (f := fun t : InductiveType => t.name) (g := fun T : VInductiveType => T.name)
         (Lean4Lean.List.Forall₂.imp (fun _ _ h => h.1.symm) hEl.types)).symm,
-      hR.nindices⟩
+      hR.nindices, hR.aux, hR.nested⟩
   have htypes (T) (hTm : T ∈ d.types) : ∃ (j : Nat) (t : InductiveType), d.types[j]? = some T ∧ types[j]? = some t ∧
       typeTr[j]? = some T.type := by
     obtain ⟨j, hj⟩ := List.mem_iff_getElem?.1 hTm
     obtain ⟨t, ht, -⟩ := List.Forall₂.getElem?_r hEl.types hj
     obtain ⟨T', hT', e⟩ := List.Forall₂.getElem?_l hR.typeTr hj
     exact ⟨j, t, hj, ht, e ▸ hT'⟩
-  refine ⟨fun h => hne ?_, ?_, ?_, fun T hTm => ?_, fun env' h T hTm => ?_, hR.isRecArgs,
+  have hall : d.allTypes = d.types := VInductDecl.allTypes_of_aux hR.aux
+  refine ⟨fun h => hne ?_, ?_, ?_, fun T hTm => ⟨?_, hR.nested T hTm⟩, fun T hT => ?_,
+    fun env' h T hTm => ?_, fun h T hT => hR.isRecArgs h T (hall ▸ hT),
     fun h => hLE (hR.largeElim.1 h)⟩
   · exact List.eq_nil_of_length_eq_zero ((Lean4Lean.List.Forall₂.length_eq hEl.types).trans (by rw [h]; rfl))
   · rw [hR.level, hU, hU₀]; exact .of_ofLevel hT.resultLevel
@@ -1431,7 +1559,9 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
   · obtain ⟨j, t, -, ht, hT'⟩ := htypes T hTm
     obtain ⟨_, _, -, h, -⟩ := hT.types j t _ ht hT'
     rw [hU, hU₀, hV₀]; exact h
-  · have hd : d.typeConsts = typeConstsOf c.lparams.length types typeTr := by
+  · rw [hR.aux] at hT; cases hT
+  · rw [hall] at hTm
+    have hd : d.typeConsts = typeConstsOf c.lparams.length types typeTr := by
       rw [VInductDecl.typeConsts, hU]
       exact typeConsts_eq (X := fun _ _ => _) hEl.types hR.typeTr
     obtain rfl : env' = venvAx := Option.some.inj (h.symm.trans (hd ▸ hAx))
@@ -1442,7 +1572,7 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     obtain ⟨ct, hct, hrel⟩ := Lean4Lean.List.Forall₂.forall_exists_r hcs c hc
     have hps : env'.IsTele d.uvars [] d.params := by
       rw [hR.params, hU, hU₀]; exact (hV₀ ▸ hT.params_tele).mono hle
-    exact (ctor_WF henvAx hU hlen hps hname rfl
+    exact (ctor_WF henvAx hU hlen hps hname (hR.nested T hTm) rfl
       (hC hcompat j t ht ct hct _ (hR.nindices j T hj)) hrel).1
 
 theorem inductVals_length {lparams : List Name} {stats : InductiveStats} {np nn : Nat}
@@ -1475,7 +1605,8 @@ theorem RecInfosData.compat {c₂ : VContext} {nparams : Nat} {types : List Indu
     {stats params level typeTr isUnsafe elimLevel recInfos c d}
     (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c d) :
     Compat c₂.lparams params level isUnsafe types stats.nindices d :=
-  ⟨hR.uvars, hR.params, hR.level, hR.isUnsafe, (names_eq hR.elaborates).symm, hR.nindices⟩
+  ⟨hR.uvars, hR.params, hR.level, hR.isUnsafe, (names_eq hR.elaborates).symm, hR.nindices, hR.aux,
+    hR.nested⟩
 
 theorem inductVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
@@ -1483,7 +1614,9 @@ theorem inductVals_tr {c₀ c : VContext} {nparams : Nat} {types : List Inductiv
     {c₂ c₃ : VContext} {elimLevel recInfos d} (hc₂U : c₂.lparams = c.lparams)
     (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c₃ d) :
     List.Forall₂ (fun v T => TrInductVal d c.lparams T v ∧
-      TrConstant c₀.safety c₀.venv (.inductInfo v) ⟨d.uvars, T.type⟩)
+      TrConstant c₀.safety c₀.venv (.inductInfo v) ⟨d.uvars, T.type⟩ ∧
+      (d.params.length ≤ v.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
+        ps.length = d.params.length → c₀.venv.TeleDefEq d.uvars [] ps d.params))
       (inductVals c.lparams stats nparams types.toArray 0 isUnsafe) d.types := by
   have hEl := hR.elaborates
   refine List.forall₂_of_getElem? ((inductVals_length hT.nindices).trans
@@ -1494,10 +1627,11 @@ theorem inductVals_tr {c₀ c : VContext} {nparams : Nat} {types : List Inductiv
       ht (hR.nindices j T hTj)
   obtain rfl : v = v' := Option.some.inj (hv.symm.trans hv')
   obtain ⟨T', hT', e⟩ := List.Forall₂.getElem?_l hR.typeTr hTj
-  obtain ⟨-, -, htr, -⟩ := hT.types j t T' ht hT'
+  obtain ⟨-, -, htr, -, -, -, -, -, hagree⟩ := hT.types j t T' ht hT'
   refine ⟨⟨h1.trans hname.symm, h2, h4.trans (hR.params ▸ hT.nparams).symm, h5,
-    h6.trans (names_eq hEl), h7.trans ?_, h8, h9.trans hR.isRec.symm, h10.trans hR.isUnsafe.symm⟩,
-    ?_, ?_, ?_⟩
+    h6.trans (names_eq hEl), h7.trans ?_, h8.trans (by rw [hR.aux]; rfl), h9.trans hR.isRec.symm,
+    h10.trans hR.isUnsafe.symm⟩,
+    ⟨?_, ?_, ?_⟩, ?_⟩
   · exact List.Forall₂.map_eq (f := fun ct : Constructor => ct.name)
       (g := fun c : VConstructor => c.name) (Lean4Lean.List.Forall₂.imp (fun _ _ h => h.1.symm) hcs)
   · rw [hsafety]
@@ -1507,6 +1641,11 @@ theorem inductVals_tr {c₀ c : VContext} {nparams : Nat} {types : List Inductiv
     rw [h2, hR.uvars, hc₂U]
   · show TrExprS c₀.venv v.levelParams [] v.type T.type
     rw [h2, h3, e, hT.base.lparams]; exact htr
+  · intro hl ps B hTe hpl
+    rw [hR.params] at hl hpl ⊢
+    rw [h3] at hl; rw [e] at hTe
+    rw [hR.uvars, hc₂U, hT.base.lparams]
+    exact hagree hl ps B hTe hpl
 
 theorem forall₂_flatMap_ctors {β : Type} {g : InductiveType → Constructor → Nat → β}
     {Q : Nat → VConstructor → β → Prop} :
@@ -1557,7 +1696,7 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
   have hU : d.uvars = c.lparams.length := hR.uvars.trans (by rw [hc₂U])
   have hlen : d.params.length = nparams := hR.params ▸ hT.nparams
   have hcompat : Compat c.lparams params level isUnsafe types stats.nindices d :=
-    ⟨hU, hR.params, hR.level, hR.isUnsafe, (names_eq hEl).symm, hR.nindices⟩
+    ⟨hU, hR.params, hR.level, hR.isUnsafe, (names_eq hEl).symm, hR.nindices, hR.aux, hR.nested⟩
   have hps : venvAx.IsTele d.uvars [] d.params := by
     rw [hR.params, hU, hT.base.lparams]; exact (hT.base.venv ▸ hT.params_tele).mono hle
   rw [params_size hT]
@@ -1574,7 +1713,7 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
   have hv' : v = ctorVal c.lparams nparams isUnsafe t ct q := by
     simp [List.getElem?_zipIdx, hct] at hv; exact hv.symm
   subst hv'
-  obtain ⟨-, har⟩ := ctor_WF henvAx hU hlen hps hname rfl
+  obtain ⟨-, har⟩ := ctor_WF henvAx hU hlen hps hname (hR.nested T (List.mem_of_getElem? hTj)) rfl
     (hC hcompat j t ht ct (List.mem_of_getElem? hct) _ (hR.nindices j T hTj)) hrel
   refine ⟨⟨T, hTj, hc', hrel.1.symm, rfl, hname.symm, hlen.symm, ?_, hR.isUnsafe.symm, ?_⟩,
     ?_, ?_, ?_⟩

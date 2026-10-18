@@ -98,6 +98,7 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
   have mapWF : c.env.constants.WF := c.envAt.tr.map_wf
   have hdecl := AddInductive.decl_WF hT hne hAx henvAx hC hc₂U hR hEl hInd hLE
   have hU : d.uvars = c.lparams.length := hR.uvars.trans (by rw [hc₂U])
+  have hall : d.allTypes = d.types := VInductDecl.allTypes_of_aux hR.aux
   have hAxd : c.venv.addConstList d.typeConsts = some venvAx := by
     rw [VInductDecl.typeConsts, hU,
       AddInductive.typeConsts_eq (X := fun _ _ => _) hEl.types hR.typeTr]
@@ -116,8 +117,12 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
     exact List.Forall₂.map_eq (Lean4Lean.List.Forall₂.imp
       (fun _ ⟨_, _⟩ h => h.1.choose_spec.2.2.1) hcv)
   have hrn : (recs.map ConstantInfo.recInfo).map (·.name) = d.recConsts.map (·.1) := by
-    simp only [VInductDecl.recConsts, List.map_map]
-    exact List.Forall₂.map_eq (Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => h) hRnames)
+    simp only [VInductDecl.recConsts, hall, List.map_map]
+    refine List.Forall₂.map_eq (Lean4Lean.List.Forall₂.imp (fun v p ⟨h, hm⟩ => ?_)
+      hRnames.and_mem_right)
+    have ht := List.mem_zipIdx' hm
+    exact h.trans (VInductDecl.recName_of_types
+      (List.getElem?_eq_some_iff.2 ⟨ht.1, ht.2.symm⟩)).symm
   have mapWFT : envTypes.constants.WF := by rw [hDc]; exact insertConsts_wf mapWF hDfr hDnd
   -- freshness of each group, in the constant maps and in the models
   have hfrC (ci) (hci : ci ∈ cv.map ConstantInfo.ctorInfo) :
@@ -152,7 +157,7 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
   have henvC : envC.WF := VEnv.WF.addConstList henvAx (fun p hp => by
     obtain ⟨⟨j, c'⟩, hc', rfl⟩ := List.mem_map.1 hp
     obtain ⟨T, hT', hcT⟩ := VInductDecl.mem_ctors hc'
-    exact ((hdecl.ctors _ hAxd T hT').2 c' hcT).type) hCadd
+    exact ((hdecl.ctors _ hAxd T (VInductDecl.mem_allTypes_of_types hT')).2 c' hcT).type) hCadd
   have henvR : envR.WF := VEnv.WF.addConstList henvC
     (VInductDecl.recConsts_WF c.envAt.tr.wf hdecl hAxd hCadd) hRadd
   have hrecs := hRtr envC envR (VEnv.addConstList_le hCadd) henvC
@@ -190,8 +195,8 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
       have := hvfr _ (hDfr ci hci); rw [e] at this; cases h.symm.trans this
   have hstep : AddInduct (inductSafety isUnsafe) env.constants (ves.venv (inductSafety isUnsafe)) d
       env'.constants env₂ := by
-    refine .mk (lparams := c.lparams) hU.symm htv (hcs ▸ hcv) (hcs ▸ hrecs) hnd hfr ?_
-      (hcvenv ▸ hAxd) hCadd hRadd hBadd
+    refine .mk (lparams := c.lparams) hU.symm htv (hcs ▸ hcv) (by rw [hall]; exact hcs ▸ hrecs)
+      hnd hfr ⟨_, List.Perm.refl _, ?_⟩ (hcvenv ▸ hAxd) hCadd hRadd hBadd
     rw [hRc, hDCc, hDc, hcenv, inductConsts, insertConsts_append, insertConsts_append]
   refine ⟨hcvenv ▸ hdecl, ⟨_, hstep⟩, fun n hn => ?_⟩
   rw [← hnames] at hn

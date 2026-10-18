@@ -183,7 +183,7 @@ theorem toCtorWhenK.WF {c : VContext} {s : VState} {rval : RecursorVal} (hk : rv
   obtain ⟨fA, argsA', rfl, hfA, hargsA⟩ := hat2'.mkAppList_inv
   cases hfA with | const hcA hlsA hlenA => ?_
   rename_i ciA lsA'
-  obtain ⟨hz, T0, c0, htypes, hctors, hfields⟩ := hK
+  obtain ⟨hz, T0, c0, htypes, -, hctors, hfields⟩ := hK
   obtain rfl : T = T0 := by
     rw [htypes] at ht
     match t, ht with | 0, ht => simpa using ht.symm
@@ -384,6 +384,30 @@ theorem TrExpr.mkAppList {env : VEnv} {Us Δ} (henv : VEnv.WF env)
   have hd' := VEnv.IsDefEqU.appN henv hΔ hd.symm hwf
   ⟨_, TrExprS.mkAppList henv.ordered hΔ hf₂ has (let ⟨_, h⟩ := hd'; ⟨_, h.hasType.2⟩), hd'.symm⟩
 
+/-- The constructor a recursor's rule names, as the environment holds it: for an auxiliary type,
+the earlier type's constructor, with that type's parameters. -/
+theorem ruleCtorInfo {c : VContext} {s : Name} {d : VInductDecl} {t₀ t : Nat}
+    {T : VInductiveType} {c' : VConstructor} (hs : c.venv.inducts s = some (d, t₀))
+    (ht : d.allTypes[t]? = some T) (hcm : c' ∈ T.ctors) :
+    ∃ w, c.env.find? c'.name = some (.ctorInfo w) ∧
+      w.numParams = (T.nested.map (·.args.length)).getD d.params.length := by
+  obtain ⟨env₀, envT, -, hd, hT, hle, -⟩ := c.Ewf.inducts hs
+  rcases VInductDecl.allTypes_cases ht with ht | hTa
+  · have hno : T.nested = none := (hd.types T (List.mem_of_getElem? ht)).2
+    obtain ⟨lp, -, -, hCs⟩ := c.trenv.blockConsts hs
+    obtain ⟨w, hw, hwc⟩ := hCs t c' (VInductDecl.mem_ctors_iff.2 ⟨T, ht, hcm⟩)
+    obtain ⟨-, -, -, -, -, -, hwnp, -⟩ := hwc
+    refine ⟨w, ?_, by simp [hno, hwnp]⟩
+    rw [Kernel.Environment.find?, c.trenv.map_wf.find?'_eq_find?]; exact hw
+  · obtain ⟨o, hno, hAux⟩ := hd.aux T hTa
+    obtain ⟨⟨dI, tI, TI, hind, hTI, -, -, hargslen, -, -, hctors⟩⟩ := hAux envT hT
+    obtain ⟨cI, hcI, hname, -⟩ := Lean4Lean.List.Forall₂.forall_exists_r hctors c' hcm
+    obtain ⟨lp, -, -, hCs⟩ := c.trenv.blockConsts (hle.inducts hind)
+    obtain ⟨w, hw, hwc⟩ := hCs tI cI (VInductDecl.mem_ctors_iff.2 ⟨TI, hTI, hcI⟩)
+    obtain ⟨-, -, -, -, -, -, hwnp, -⟩ := hwc
+    refine ⟨w, ?_, by simp [hno, hwnp, hargslen]⟩
+    rw [Kernel.Environment.find?, c.trenv.map_wf.find?'_eq_find?, hname]; exact hw
+
 theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
     RecM.WF c s (inductiveReduceRec c.env e whnf inferType isDefEq) fun oe _ =>
       ∀ e₁, oe = some e₁ → c.FVarsBelow e e₁ ∧ c.TrExpr e₁ e' := by
@@ -400,14 +424,15 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
   obtain ⟨hname, hsafe, -, -⟩ := c.trenv.find?_uniq hfind hcR
   have hfind' := hfind
   rw [Kernel.Environment.find?, c.trenv.map_wf.find?'_eq_find?] at hfind'
-  obtain ⟨d, t, T, envR, hs, ht, hleR, hTR, -⟩ := c.trenv.recInfo hfind' hsafe
+  obtain ⟨d, T₀, t, T, envR, hs, -, ht, hleR, hTR, -⟩ := c.trenv.recInfo hfind' hsafe
   obtain ⟨hRn, hmi, -, -, hnp, hni, hnmot, hnmin, -, hkK, -, hrules⟩ := hTR
-  have hrecFn : recFn = Lean.mkRecName T.name := (hname : info.name = recFn).symm.trans hRn
+  have hrecFn : recFn = d.recName t := (hname : info.name = recFn).symm.trans hRn
   subst hrecFn
   obtain ⟨hrecC, -⟩ := c.Ewf.recBlock hs
   cases hcR.symm.trans (hrecC t T ht)
   have hargsL : recArgs.toList = e.getAppArgsList := Expr.getAppArgs_toList
-  have hmIdx : majorIdx = d.params.length + d.types.length + d.ctors.length + T.indices.length := by
+  have hmIdx : majorIdx = d.params.length + d.allTypes.length + d.allCtors.length +
+      T.indices.length := by
     simp [majorIdx, RecursorVal.getMajorIdx, hnp, hnmot, hnmin, hni]
   split <;> [rename_i major hmaj; exact .pure nofun]
   -- the recursor's arguments: parameters, motives, minor premises, indices, the major premise
@@ -418,11 +443,11 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
   generalize hL : e.getAppArgsList = L at hargsL hmaj' hargs hlenL
   obtain ⟨eps, R1, rfl, hl1⟩ : ∃ a b, L = a ++ b ∧ a.length = d.params.length :=
     ⟨L.take d.params.length, L.drop _, (List.take_append_drop ..).symm, by simp; omega⟩
-  obtain ⟨eMs, R2, rfl, hl2⟩ : ∃ a b, R1 = a ++ b ∧ a.length = d.types.length :=
-    ⟨R1.take d.types.length, R1.drop _, (List.take_append_drop ..).symm,
+  obtain ⟨eMs, R2, rfl, hl2⟩ : ∃ a b, R1 = a ++ b ∧ a.length = d.allTypes.length :=
+    ⟨R1.take d.allTypes.length, R1.drop _, (List.take_append_drop ..).symm,
       by simp at hlenL ⊢; omega⟩
-  obtain ⟨ems, R3, rfl, hl3⟩ : ∃ a b, R2 = a ++ b ∧ a.length = d.ctors.length :=
-    ⟨R2.take d.ctors.length, R2.drop _, (List.take_append_drop ..).symm,
+  obtain ⟨ems, R3, rfl, hl3⟩ : ∃ a b, R2 = a ++ b ∧ a.length = d.allCtors.length :=
+    ⟨R2.take d.allCtors.length, R2.drop _, (List.take_append_drop ..).symm,
       by simp at hlenL ⊢; omega⟩
   obtain ⟨eidx, R4, rfl, hl4⟩ : ∃ a b, R3 = a ++ b ∧ a.length = T.indices.length :=
     ⟨R3.take T.indices.length, R3.drop _, (List.take_append_drop ..).symm,
@@ -430,7 +455,7 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
   obtain ⟨erest, rfl⟩ : ∃ r, R4 = major :: r := by
     simp only [← List.append_assoc] at hmaj'
     rw [List.getElem?_append_right (by simp; omega)] at hmaj'
-    rw [show d.params.length + d.types.length + d.ctors.length + T.indices.length -
+    rw [show d.params.length + d.allTypes.length + d.allCtors.length + T.indices.length -
       (eps ++ eMs ++ ems ++ eidx).length = 0 by simp; omega] at hmaj'
     match R4, hmaj' with | m :: r, h => exact ⟨r, by simp at h; rw [h]⟩
   simp only [← List.append_assoc] at hargs hL hargsL
@@ -446,15 +471,15 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
   have hwfe := he.wf c.Ewf c.Δwf
   rw [he'] at hwfe
   have H : VExpr.WF c.venv c.lparams.length c.vlctx.toCtx
-      (.appN (.const (Lean.mkRecName T.name) lsR') (ps' ++ Ms' ++ ms' ++ idx' ++ [major'])) :=
+      (.appN (.const (d.recName t) lsR') (ps' ++ Ms' ++ ms' ++ idx' ++ [major'])) :=
     VExpr.appN_wf_prefix c.Ewf.ordered hΓ (bs := rest') (by simpa using hwfe)
   -- the recursor applied up to its major premise, whose arguments follow
-  have hE : c.TrExprS ((Expr.const (Lean.mkRecName T.name) ls).mkAppList
+  have hE : c.TrExprS ((Expr.const (d.recName t) ls).mkAppList
       (eps ++ eMs ++ ems ++ eidx ++ [major]))
-      (.appN (.const (Lean.mkRecName T.name) lsR') (ps' ++ Ms' ++ ms' ++ idx' ++ [major'])) :=
+      (.appN (.const (d.recName t) lsR') (ps' ++ Ms' ++ ms' ++ idx' ++ [major'])) :=
     TrExprS.mkAppList c.Ewf.ordered hΓ (.const (hrecC t T ht) hlsR hlenR)
       (forall₂_append h4 (.cons hmajT .nil)) H
-  have he1 : c.TrExprS (((Expr.const (Lean.mkRecName T.name) ls).mkAppList
+  have he1 : c.TrExprS (((Expr.const (d.recName t) ls).mkAppList
       (eps ++ eMs ++ ems ++ eidx ++ [major])).mkAppList erest) e' := by
     rw [← Expr.mkAppList_append, List.append_assoc _ [major], List.singleton_append, ← hL, ← hfn,
       Expr.mkAppList_getAppArgsList]
@@ -477,14 +502,13 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
     obtain ⟨⟨⟨j, c'⟩, q⟩, hmemF, hj, hrc, hnf, hrhs⟩ :=
       Lean4Lean.List.Forall₂.forall_exists_l hrules rule hmem
     subst j
-    have hq : d.ctors[q]? = some (t, c') :=
+    have hq : d.allCtors[q]? = some (t, c') :=
       List.mk_mem_zipIdx_iff_getElem?.1 (List.mem_filter.1 hmemF).1
-    have hjc : (t, c') ∈ d.ctors := List.mem_of_getElem? hq
-    obtain ⟨lp, -, -, hCs⟩ := c.trenv.blockConsts hs
-    obtain ⟨w, hw, hwc⟩ := hCs t c' hjc
-    have hwfind : c.env.find? c'.name = some (.ctorInfo w) := by
-      rw [Kernel.Environment.find?, c.trenv.map_wf.find?'_eq_find?]; exact hw
-    obtain ⟨-, -, -, -, -, -, hwnp, -, -⟩ := hwc
+    have hcm : c' ∈ T.ctors := by
+      obtain ⟨T', hT', hc⟩ := VInductDecl.mem_allCtors_iff.1 (List.mem_of_getElem? hq)
+      cases ht.symm.trans hT'; exact hc
+    obtain ⟨w, hwfind, hwnp⟩ := ruleCtorInfo hs ht hcm
+    generalize hnP : (T.nested.map (·.args.length)).getD d.params.length = nP at hwnp
     split <;> [rename_i mkInfo hmk; exact .pure nofun]
     rw [hrc, hwfind] at hmk; cases hmk
     split <;> [exact .pure nofun; rename_i hsize]
@@ -497,15 +521,15 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
     cases hfC with | @const _ _ lsC' _ _ hcC hlsC hlenC => ?_
     have hfnc : fn = c'.name := hctorEq.symm.trans hrc
     subst hfnc
-    have hmsize : major₁.getAppArgsList.length = d.params.length + c'.fields.length := by
+    have hmsize : major₁.getAppArgsList.length = nP + c'.fields.length := by
       rw [← Expr.getAppArgs_toList, Array.length_toList, hsize, hwnp, hnf]
     have hmL : major₁.getAppArgs.toList = major₁.getAppArgsList := Expr.getAppArgs_toList
     generalize hML : major₁.getAppArgsList = ML at hmargs hmsize hmL
-    obtain ⟨mps, mfs, rfl, hml1⟩ : ∃ a b, ML = a ++ b ∧ a.length = d.params.length :=
-      ⟨ML.take d.params.length, ML.drop _, (List.take_append_drop ..).symm, by simp; omega⟩
+    obtain ⟨mps, mfs, rfl, hml1⟩ : ∃ a b, ML = a ++ b ∧ a.length = nP :=
+      ⟨ML.take nP, ML.drop _, (List.take_append_drop ..).symm, by simp; omega⟩
     have hml2 : mfs.length = c'.fields.length := by simp at hmsize; omega
     obtain ⟨psC, fs, rfl, hpsCT, hfsT⟩ := Lean4Lean.List.Forall₂.split_left hmargs
-    have hpsC := (Lean4Lean.List.Forall₂.length_eq hpsCT).symm.trans hml1
+    have hpsC := ((Lean4Lean.List.Forall₂.length_eq hpsCT).symm.trans hml1).trans hnP.symm
     have hfs := (Lean4Lean.List.Forall₂.length_eq hfsT).symm.trans hml2
     have hiota := c.Ewf.iota hΓ hs ht hq hps hMs hms hidx H hpsC hfs hMd.symm
     -- the rule's right-hand side at the recursor's levels
@@ -513,9 +537,9 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
     have c2 := c1.weakFV c.Ewf (.from_nil c.mlctx.noBV) c.Δwf
     rw [c1.wf.closedN c.Ewf trivial |>.liftN_eq (Nat.zero_le _)] at c2
     -- the reduct
-    have hfi : info.getFirstIndexIdx = d.params.length + d.types.length + d.ctors.length := by
+    have hfi : info.getFirstIndexIdx = d.params.length + d.allTypes.length + d.allCtors.length := by
       simp [RecursorVal.getFirstIndexIdx, hnp, hnmot, hnmin]
-    have hsize' : major₁.getAppArgs.size = d.params.length + c'.fields.length := by
+    have hsize' : major₁.getAppArgs.size = nP + c'.fields.length := by
       rw [hsize, hwnp, hnf]
     rw [Expr.mkAppRange_eq (args := recArgs) (i := 0) (l₁ := []) (l₂ := eps ++ eMs ++ ems)
         (l₃ := eidx ++ major :: erest) (by simp [hargsL]) rfl (by simp [hfi]; omega),
@@ -523,7 +547,7 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
         (by simp [hmL]) (by rw [hsize', hnf]; omega) (by simp [hsize']; omega)]
     have hT2 : c.TrExpr (((rule.rhs.instantiateLevelParams info.levelParams ls).mkAppList
         (eps ++ eMs ++ ems)).mkAppList mfs)
-        ((VExpr.const (Lean.mkRecName T.name) lsR').appN (ps' ++ Ms' ++ ms' ++ idx' ++ [major'])) := by
+        ((VExpr.const (d.recName t) lsR').appN (ps' ++ Ms' ++ ms' ++ idx' ++ [major'])) := by
       rw [← Expr.mkAppList_append]
       refine (TrExpr.mkAppList c.Ewf hΓ c2 (forall₂_append h3 hfsT) ?_).defeq c.Ewf hΓ hiota.symm
       exact let ⟨_, h⟩ := hiota; ⟨_, h.hasType.2⟩
@@ -580,7 +604,16 @@ theorem inductiveReduceRec.WF {c : VContext} {s : VState} (he : c.TrExprS e e') 
   dsimp only
   split
   · rename_i hk
-    refine (toCtorWhenK.WF hk hs ht (hkK.1 hk) hmi hnp hmajT).bind fun m _ _ ⟨h1, h2⟩ => ?_
+    have hK := hkK.1 hk
+    have ht' : d.types[t]? = some T := by
+      obtain ⟨-, -, -, -, haux, -⟩ := hK
+      rw [VInductDecl.allTypes_of_aux haux] at ht; exact ht
+    have hno : T.nested = none := by
+      obtain ⟨_, _, _, hd, _, _, _⟩ := c.Ewf.inducts hs
+      exact (hd.types T (List.mem_of_getElem? ht')).2
+    rw [hno] at hmi
+    refine (toCtorWhenK.WF hk (c.Ewf.inducts_getElem hs ht') ht' hK hmi hnp hmajT).bind
+      fun m _ _ ⟨h1, h2⟩ => ?_
     exact hjp1 _ _ (hm0.trans h1) h2
   · exact hjp1 _ _ hm0 (hmajT.trExpr c.Ewf c.Δwf)
 
