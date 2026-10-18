@@ -1,5 +1,6 @@
 import Lean4Lean.Verify.LocalContext
 import Lean4Lean.Theory.Typing.EnvLemmas
+import Lean4Lean.Theory.Typing.InductiveRules
 
 namespace Lean4Lean
 open Lean hiding Environment Exception
@@ -268,4 +269,4 @@ theorem TrEnv'.wf (H : TrEnv' safety C Q venv) : venv.WF := by
     exact ⟨_, H.decl <| .quot h1 h2.to_addQuot⟩
   | induct h1 h2 _ ih =>
     have ⟨_, H⟩ := ih
-    exact ⟨_, H.decl <| .induct h1 h2.to_addInduct⟩
+    exact ⟨_, H.decl <| .induct h1 (VInductDecl.generatedWF ⟨_, H⟩ h1) h2.to_addInduct⟩

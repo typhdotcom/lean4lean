@@ -99,11 +99,6 @@ theorem VEnv.AnnotationsDefine.mono {env env' : VEnv} (h : env.AnnotationsDefine
     obtain ⟨As, h1, h2⟩ := h n k i hmem _ hc
     exact ⟨As, h1, hle.defeqs h2⟩
 
-theorem VExpr.instL_lams (ls : List VLevel) : ∀ (As : List VExpr) (e : VExpr),
-    (VExpr.lams As e).instL ls = .lams (As.map (·.instL ls)) (e.instL ls)
-  | [], _ => rfl
-  | _ :: As, e => by simp [VExpr.lams, VExpr.instL, instL_lams ls As e]
-
 theorem VEnv.HasType.lams_ctx {env : VEnv} (henv : env.Ordered) :
     ∀ {Γ As e T}, OnCtx Γ (env.IsType U) → env.HasType U Γ (.lams As e) T →
       OnCtx (As.reverse ++ Γ) (env.IsType U)
@@ -167,18 +162,6 @@ theorem addChecked.WF {env : Environment} (mapWF : env.constants.WF) (allow : Bo
       rw [mapWF.find?_insert] at this; split at this; · cases this
       exact this
     · simp only [List.map_cons, List.mem_cons, forall_eq_or_imp]; exact ⟨hp, h5⟩
-
-/-- `consumeTypeAnnotations` without `partial`. -/
-def _root_.Lean.Expr.consumeTypeAnnotations' : Expr → Expr
-  | .app (.app (.const ``optParam _) A) _ => A.consumeTypeAnnotations'
-  | .app (.app (.const ``autoParam _) A) _ => A.consumeTypeAnnotations'
-  | .app (.const ``outParam _) A => A.consumeTypeAnnotations'
-  | .app (.const ``semiOutParam _) A => A.consumeTypeAnnotations'
-  | e => e
-
-/-- We cannot prove this because `consumeTypeAnnotations` is partial. -/
-axiom _root_.Lean.Expr.consumeTypeAnnotations_eq (e : Expr) :
-    e.consumeTypeAnnotations = e.consumeTypeAnnotations'
 
 variable! (henv : VEnv.WF env) (hann : env.AnnotationsErase)
   {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ) in

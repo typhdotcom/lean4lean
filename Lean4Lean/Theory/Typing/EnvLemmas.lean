@@ -5,6 +5,20 @@ import Lean4Lean.Theory.Typing.InductiveLemmas
 
 namespace Lean4Lean
 
+theorem VEnv.addConst_mono {env₁ env₂ env₁' env₂' : VEnv} (H : env₁ ≤ env₂)
+    (h₁ : env₁.addConst name ci = some env₁') (h₂ : env₂.addConst name ci = some env₂') :
+    env₁' ≤ env₂' := by
+  unfold VEnv.addConst at h₁ h₂
+  split at h₁ <;> cases h₁
+  split at h₂ <;> cases h₂
+  refine { constants {n a} := ?_, defeqs := H.defeqs }
+  dsimp; split <;> [exact id; exact H.constants]
+
+theorem VEnv.addDefEq_mono {env₁ env₂ : VEnv} (H : env₁ ≤ env₂) :
+    env₁.addDefEq df ≤ env₂.addDefEq df where
+  constants := H.constants
+  defeqs := by rintro d (rfl | hd) <;> [exact .inl rfl; exact .inr (H.defeqs hd)]
+
 theorem VEnv.addConsts_le {env env' : VEnv} : ∀ {cis}, env.addConsts cis = some env' → env ≤ env'
   | [], h => by cases h; exact .rfl
   | _ :: _, h => by
@@ -119,6 +133,6 @@ theorem VEnv.WF.ordered : WF env → Ordered env
     | «opaque» h1 h2 => exact .const ih (h1.isType ih ⟨⟩) h2
     | «example» _ => exact ih
     | quot h1 h2 => exact addQuot_WF ih h1 h2
-    | induct h1 h2 => exact addInduct_WF ih h1 h2
+    | induct h1 h2 h3 => exact addInduct_WF ih h1 h2 h3
 
 instance : CoeOut (VEnv.WF env) env.Ordered := ⟨(·.ordered)⟩

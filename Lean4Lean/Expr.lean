@@ -65,7 +65,7 @@ def replaceNoCacheT [Monad m] (f? : Expr → m (Option Expr)) (e : Expr) : m Exp
     | e => return e
 
 @[implemented_by ReplaceImpl.replaceUnsafe']
-partial def replaceM [Monad m] (f? : Expr → m (Option Expr)) (e : Expr) : m Expr :=
+def replaceM [Monad m] (f? : Expr → m (Option Expr)) (e : Expr) : m Expr :=
   e.replaceNoCacheT f?
 
 def natZero : Expr := .const ``Nat.zero []

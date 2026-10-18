@@ -875,6 +875,15 @@ def Subst.cons (σ : Subst) (e : VExpr) : Subst
 
 abbrev Subst.one (e : VExpr) : Subst := .cons .id e
 
+/-- Extend a substitution by a list of values, the last of which is substituted for `bvar 0`:
+the substitution that instantiates a telescope applied to `as`. -/
+def Subst.consList (σ : Subst) : List VExpr → Subst
+  | [] => σ
+  | a :: as => (σ.cons a).consList as
+
+/-- The substitution that performs a lift. -/
+def Subst.ofLift (ρ : Lift) : Subst := fun i => .bvar (ρ.liftVar i)
+
 @[simp] theorem Subst.cons_head (σ : Subst) (e) : (σ.cons e).head = e := rfl
 @[simp] theorem Subst.cons_tail (σ : Subst) (e) : (σ.cons e).tail = σ := rfl
 

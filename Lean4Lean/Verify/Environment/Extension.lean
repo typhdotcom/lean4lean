@@ -15,20 +15,6 @@ theorem TrEnv.exists_addConst (H : TrEnv safety env venv) (hn : env.find? name =
   | none => simp
   | some ci => obtain ⟨ci, hci, _⟩ := H.find?_iff.2 ⟨ci, hfind⟩; cases hn ▸ hci
 
-theorem VEnv.addConst_mono {env₁ env₂ env₁' env₂' : VEnv} (H : env₁ ≤ env₂)
-    (h₁ : env₁.addConst name ci = some env₁') (h₂ : env₂.addConst name ci = some env₂') :
-    env₁' ≤ env₂' := by
-  unfold VEnv.addConst at h₁ h₂
-  split at h₁ <;> cases h₁
-  split at h₂ <;> cases h₂
-  refine { constants {n a} := ?_, defeqs := H.defeqs }
-  dsimp; split <;> [exact id; exact H.constants]
-
-theorem VEnv.addDefEq_mono {env₁ env₂ : VEnv} (H : env₁ ≤ env₂) :
-    env₁.addDefEq df ≤ env₂.addDefEq df where
-  constants := H.constants
-  defeqs := by rintro d (rfl | hd) <;> [exact .inl rfl; exact .inr (H.defeqs hd)]
-
 theorem VEnv.addConsts_mono {env₁ env₂ env₁' env₂' : VEnv} (H : env₁ ≤ env₂) :
     ∀ {cis}, env₁.addConsts cis = some env₁' → env₂.addConsts cis = some env₂' → env₁' ≤ env₂'
   | [], h₁, h₂ => by cases h₁; cases h₂; exact H

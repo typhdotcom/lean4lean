@@ -3,3 +3,7 @@ import Lean4Lean.Theory.Typing.Strong
 import Lean4Lean.Theory.Typing.UniqueTyping
 import Lean4Lean.Theory.Typing.ChurchRosser
 import Lean4Lean.Theory.Typing.HeadReduction
+import Lean4Lean.Theory.Typing.Telescope
+import Lean4Lean.Theory.Typing.InductiveEnv
+import Lean4Lean.Theory.Typing.Recursor
+import Lean4Lean.Theory.Typing.InductiveRules

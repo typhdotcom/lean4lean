@@ -12,18 +12,6 @@ namespace Lean4Lean
 open Lean hiding Environment Exception
 open Kernel
 
-/-- Whether a subterm of `e`, `e` included, satisfies `p`. -/
-def _root_.Lean.Expr.anySub (p : Expr → Bool) : Expr → Bool
-  | e@(.app f a) => p e || f.anySub p || a.anySub p
-  | e@(.lam _ t b _) | e@(.forallE _ t b _) => p e || t.anySub p || b.anySub p
-  | e@(.letE _ t v b _) => p e || t.anySub p || v.anySub p || b.anySub p
-  | e@(.mdata _ b) | e@(.proj _ _ b) => p e || b.anySub p
-  | e => p e
-
-/-- `Expr.find?` is implemented natively: it finds a subterm exactly when one satisfies `p`. -/
-axiom _root_.Lean.Expr.find?_isSome (p : Expr → Bool) (e : Expr) :
-    (e.find? p).isSome = e.anySub p
-
 theorem VExpr.mentions_liftN {ns : List Name} {n : Nat} :
     ∀ (e : VExpr) (k : Nat), (e.liftN n k).mentions ns = e.mentions ns
   | .bvar _, _ | .sort _, _ | .const .., _ => rfl
@@ -1058,6 +1046,7 @@ theorem checkCtor.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List Indu
     (ht : types[idx]? = some t) (ct : Constructor) {β : Type} {cont : M β} {Q : β → Prop}
     (Hk : (∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
       ∀ nidx, stats.nindices[idx]? = some nidx → CtorChecked c.venv c.lparams d t nidx ct) →
+      (∃ C', TrExprS c.venv c.lparams [] ct.type C') →
       AddInductive.WF c cont Q) :
     AddInductive.WF c (do
       liftM (c.env.checkNoMVarNoFVar ct.name ct.type)
@@ -1066,11 +1055,17 @@ theorem checkCtor.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List Indu
       checkConstructors.loop stats isUnsafe idx ct.name ct.type 0 ctx.fuel.inductiveFuel
       cont) Q := by
   refine WF.bind (WF.liftExcept (checkNoMVarNoFVar.WF _ _ _)) fun _ hcl => ?_
-  refine WF.bind (Q := fun _ => True) (fun _ _ => trivial) fun _ _ => ?_
+  refine WF.bind (WF.liftTC (TypeChecker.checkType.WF (c := c.tc) (s := {})
+    (hcl.mono nofun))) fun _ hty => ?_
+  have hCex : ∃ C', TrExprS c.venv c.lparams [] ct.type C' := by
+    obtain ⟨e', -, -, he', -⟩ := hty
+    obtain ⟨es, hs, -⟩ := TrExprS.strengthen hB.wf (VLCtx.FVLift'.from_nil (MLCtx.noBV c.mlctx))
+      c.mlctx_wf.tr.wf (MLCtx.noBV _) he' (hcl.mono nofun)
+    exact ⟨es, hs⟩
   refine WF.bind WF.read fun _ hr => ?_; subst hr
   refine WF.bind (Q := fun _ => ∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
       ∀ nidx, stats.nindices[idx]? = some nidx → CtorChecked c.venv c.lparams d t nidx ct) ?_
-    fun _ h => Hk h
+    fun _ h => Hk h hCex
   obtain ⟨k₁, hk₁, pfvs, hMp, hpar⟩ := hT.paramsCtx
   have hb := hT.base
   have henv := hB.wf
@@ -1145,29 +1140,37 @@ theorem checkConstructors.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : L
     (hB : BlockFresh c₀.venv c.venv types) (hann : c.venv.AnnotationsErase)
     (hUs : c.lparams.Nodup) {isUnsafe : Bool} :
     AddInductive.WF c (checkConstructors types.toArray stats isUnsafe) fun _ =>
-      ∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
-      ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors, ∀ nidx,
-        stats.nindices[j]? = some nidx →
-        CtorChecked c.venv c.lparams d t nidx ct := by
+      (∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
+        ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors, ∀ nidx,
+          stats.nindices[j]? = some nidx →
+          CtorChecked c.venv c.lparams d t nidx ct) ∧
+      ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors,
+        ∃ C', TrExprS c.venv c.lparams [] ct.type C' := by
   unfold checkConstructors
   refine WF.bind WF.getEnv fun env henv => ?_
   subst henv
   refine WF.bind (WF.forIn'_range (P := fun idx => ∀ (h : idx < types.length),
-    ∀ ct ∈ types[idx].ctors, ∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
-      ∀ nidx, stats.nindices[idx]? = some nidx → CtorChecked c.venv c.lparams d types[idx] nidx ct)
-    fun idx hidx s => ?_) fun _ H => WF.pure fun d hd j t ht ct hct nidx hnidx => ?_
+    ∀ ct ∈ types[idx].ctors, (∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
+      ∀ nidx, stats.nindices[idx]? = some nidx →
+        CtorChecked c.venv c.lparams d types[idx] nidx ct) ∧
+      ∃ C', TrExprS c.venv c.lparams [] ct.type C')
+    fun idx hidx s => ?_) fun _ H => WF.pure ⟨fun d hd j t ht ct hct nidx hnidx => ?_,
+      fun j t ht ct hct => ?_⟩
   · have hidx' : idx < types.length := by simpa [Membership.mem] using hidx.2.1
     have ht : types[idx]? = some types[idx] := List.getElem?_eq_getElem hidx'
-    refine WF.bind (WF.forIn_list (P := fun ct => ∀ d, Compat c.lparams params level isUnsafe types
+    refine WF.bind (WF.forIn_list (P := fun ct => (∀ d, Compat c.lparams params level isUnsafe types
       stats.nindices d → ∀ nidx, stats.nindices[idx]? = some nidx →
-        CtorChecked c.venv c.lparams d types[idx] nidx ct) fun ct hct s => ?_)
+        CtorChecked c.venv c.lparams d types[idx] nidx ct) ∧
+      ∃ C', TrExprS c.venv c.lparams [] ct.type C') fun ct hct s => ?_)
       fun _ H => WF.pure ⟨fun _ ct hct => H ct (by simpa using hct), _, rfl⟩
     dsimp only
     split
     · exact WF.bind (Q := fun _ => False) .throw fun _ h => h.elim
-    · exact checkCtor.WF hT hc hU hle hconst hB hann hUs ht ct fun h => WF.pure ⟨h, _, rfl⟩
+    · exact checkCtor.WF hT hc hU hle hconst hB hann hUs ht ct fun h h' => WF.pure ⟨⟨h, h'⟩, _, rfl⟩
   · obtain ⟨hj, rfl⟩ := List.getElem?_eq_some_iff.1 ht
-    exact H j (by simpa using hj) hj ct hct d hd nidx hnidx
+    exact (H j (by simpa using hj) hj ct hct).1 d hd nidx hnidx
+  · obtain ⟨hj, rfl⟩ := List.getElem?_eq_some_iff.1 ht
+    exact (H j (by simpa using hj) hj ct hct).2
 
 theorem declareConstructors.le_arity : ∀ (i : Nat) (e : Expr), i ≤ declareConstructors.arity i e
   | i, .forallE _ _ b _ => by
@@ -1512,9 +1515,18 @@ theorem isLargeEliminator.WF {c₀ c : VContext} {nparams : Nat} {types : List I
       show (if stats.isNotZero then pure true else _) = _; rw [hnz]; rfl
     rw [this] at hb; cases hb; cases hbt
 
+theorem getElimLevel.loop_eq {lparams : List Name} :
+    ∀ {fuel : Nat} {u : Name} {i : Nat} {l : Level},
+      getElimLevel.loop lparams u i fuel = .ok l → ∃ u, l = .param u ∧ u ∉ lparams
+  | fuel + 1, u, i, l, h => by
+    unfold getElimLevel.loop at h
+    split at h
+    · exact getElimLevel.loop_eq h
+    · rename_i hu; cases h; exact ⟨u, rfl, fun hm => hu (List.elem_eq_true_of_mem hm)⟩
+
 /-- `getElimLevel`: the recursor's motive gets a fresh level parameter only when the block may
-eliminate into every sort. `getElimLevel` is `partial`, so nothing about its result can be shown
-yet: its loop searches `u`, `u_1`, `u_2`, … for a name not among the level parameters. -/
+eliminate into every sort, searching `u`, `u_1`, `u_2`, … for a name not among the level
+parameters. -/
 theorem getElimLevel.WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     {c' : VContext} (hc' : c'.lparams = c.lparams) (hle : c₀.venv ≤ c'.venv) (henv : c'.venv.WF)
@@ -1525,8 +1537,14 @@ theorem getElimLevel.WF {c₀ c : VContext} {nparams : Nat} {types : List Induct
     WF c' (getElimLevel stats types.toArray) fun l =>
       (l ≠ .zero → ∀ d, Compat c'.lparams params level isUnsafe types stats.nindices d →
         Elaborates c'.venv c'.lparams nparams level types d → d.LargeElimOK) ∧
-      (l = .zero ∨ ∃ u, l = .param u ∧ u ∉ c'.lparams) :=
-  sorry
+      (l = .zero ∨ ∃ u, l = .param u ∧ u ∉ c'.lparams) := by
+  unfold getElimLevel
+  refine WF.bind (isLargeEliminator.WF hT hc' hle henv hann hC) fun b hb => ?_
+  cases b
+  · exact WF.pure ⟨fun h => absurd rfl h, .inl rfl⟩
+  · intro l h
+    obtain ⟨u, rfl, hu⟩ := getElimLevel.loop_eq h
+    exact ⟨fun _ => hb rfl, .inr ⟨u, rfl, hu⟩⟩
 
 end AddInductive
 end Lean4Lean

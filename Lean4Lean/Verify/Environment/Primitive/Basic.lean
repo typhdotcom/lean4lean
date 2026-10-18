@@ -90,11 +90,6 @@ theorem VExpr.insts_appN (g : List VExpr) : ∀ (e : VExpr) as,
   | _, [] => rfl
   | e, a :: as => by simp [VExpr.appN, insts_appN g (e.app a) as]
 
-theorem VExpr.subst_appN (γ : VExpr.Subst) : ∀ (e : VExpr) as,
-    (e.appN as).subst γ = (e.subst γ).appN (as.map (·.subst γ))
-  | _, [] => rfl
-  | e, a :: as => by simp [VExpr.appN, subst_appN γ (e.app a) as]
-
 /-! ### Lambda telescopes
 
 A telescope of binders is opened by `lambdaTelescope` and closed again by giving each binder a
@@ -182,11 +177,6 @@ theorem VExpr.liftN_lams : ∀ (As : List VExpr) (e : VExpr) (n k : Nat),
     refine ⟨A.liftN n k :: As', ?_, by simp [hlen]⟩
     have hk : k + 1 + As.length = k + (A :: As).length := by simp; omega
     simp only [VExpr.lams_cons, VExpr.liftN, h, hk]
-
-theorem VExpr.lams_append : ∀ (As Bs : List VExpr) e,
-    VExpr.lams (As ++ Bs) e = VExpr.lams As (VExpr.lams Bs e)
-  | [], _, _ => rfl
-  | _ :: As, Bs, e => by simp [VExpr.lams, lams_append As Bs e]
 
 /-- The number of leading lambda binders, which is exactly how many `lambdaTelescope` opens: its
 loop matches on `.lam` syntactically, with no `whnf` in between. A caller who wrote the measure

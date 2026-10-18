@@ -42,6 +42,7 @@ inductive VDecl.WF : VEnv → VDecl → VEnv → Prop where
     VDecl.WF env .quot env'
   | induct :
     decl.WF env →
+    decl.GeneratedWF env →
     env.addInduct decl = some env' →
     VDecl.WF env (.induct decl) env'
 

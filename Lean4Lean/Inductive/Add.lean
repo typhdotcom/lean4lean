@@ -11,11 +11,30 @@ open private Lean.Kernel.Environment.add from Lean.Environment
 namespace AddInductive
 open TypeChecker
 
+/-- Stands for the recursor applied to the parameters, motives and minor premises in an
+`IHInfo`, which is recorded before the minor premises exist. Not a name the kernel generates. -/
+def recPlaceholder : Expr := .fvar ⟨`_recursor⟩
+
+/-- An inductive hypothesis of a minor premise: the type its recursive field ends in, and its
+value, closed over the binders the field's type opens to (which are out of scope afterwards, so
+their local variables may be reused), with `recPlaceholder` for the recursor. -/
+structure IHInfo where
+  itIdx : Nat
+  val : Expr
+
+/-- A minor premise's fields and inductive hypotheses, which the recursor rule for its
+constructor is built from. -/
+structure MinorInfo where
+  fields : Array Expr
+  ihs : Array IHInfo
+
+/-- A type's motive, with its type, and its minor premises. The recursor's indices and major
+premise are the motive's type's binders. -/
 structure RecInfo where
   motive : Expr
+  motiveType : Expr
   minors : Array Expr
-  indices : Array Expr
-  major : Expr
+  minorInfos : Array MinorInfo
   deriving Inhabited
 
 structure InductiveStats where
@@ -276,15 +295,18 @@ def isLargeEliminator (stats : InductiveStats) (indTypes : Array InductiveType) 
     loop ctor.type 0 #[] (← readThe Context).fuel.inductiveFuel
   | _ => return false
 
-partial -- TODO: remove
 def getElimLevel (stats : InductiveStats) (indTypes : Array InductiveType) :
     M Level := do
   unless ← isLargeEliminator stats indTypes do return .zero
   let {lparams, ..} ← read
-  let rec loop u i := Id.run do
-    unless lparams.contains u do return .param u
-    loop ((`u).appendIndexAfter i) (i + 1)
-  return loop `u 1
+  let rec loop (u : Name) (i : Nat) : Nat → Except Exception Level
+    | 0 =>
+      -- Unreachable by pigeonhole: `u`, `u_1`, ..., `u_n` are `n + 1` distinct names, and at most
+      -- `n` of them are among the `n` level parameters.
+      throw <| .other "failed to find a universe name for the recursor"
+    | fuel + 1 =>
+      if lparams.contains u then loop ((`u).appendIndexAfter i) (i + 1) fuel else pure (.param u)
+  loop `u 1 (lparams.length + 1)
 
 def isKTarget (stats : InductiveStats) (indTypes : Array InductiveType) : M Bool := do
   let #[indType] := indTypes | return false
@@ -295,15 +317,20 @@ def isKTarget (stats : InductiveStats) (indTypes : Array InductiveType) : M Bool
     | _ => true
   return loop 0 ctor.type
 
-@[inline] def getIIndices (stats : InductiveStats) (t : Expr) : Nat × Array Expr :=
-  ((isValidIndApp? stats t).get!, t.getAppArgs[stats.params.size:])
+/-- The type and indices `t` applies a type of the block at. A recursive field's type may end in
+something else after `whnf`, when its declared domain only normalizes to a block application
+through a type annotation that is not the identity (see `divergences.md`). -/
+def getIIndices (stats : InductiveStats) (t : Expr) : M (Nat × Array Expr) := do
+  let some i := isValidIndApp? stats t
+    | throw <| .other "invalid recursive argument, it does not end in a type of the block"
+  return (i, t.getAppArgs[stats.params.size:])
 
 -- FIXME: The function below has been exploded into nested loops as standalone functions
 -- because I couldn't get them all to compile together as `let rec`s.
 namespace mkRecInfos
 
 def loopArgs1 (stats : InductiveStats) (type : Expr) (i : Nat) (indices : Array Expr)
-    (fuel : Nat) (k : Array Expr → M α) : M α := match fuel with
+    (fuel : Nat) (k : Expr → Nat → Array Expr → M α) : M α := match fuel with
   | 0 => throw .deepRecursion
   | fuel+1 => do
     if let .forallE name dom body bi := type then
@@ -313,20 +340,27 @@ def loopArgs1 (stats : InductiveStats) (type : Expr) (i : Nat) (indices : Array 
         withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
         loopArgs1 stats (← whnf <| body.instantiate1 arg) i (indices.push arg) fuel k
     else
-      k indices
+      k type i indices
 
 variable (stats : InductiveStats) (indTypes : Array InductiveType) (elimLevel : Level) in
 def loopInd1 (dIdx : Nat) (recInfos : Array RecInfo) (k : Array RecInfo → M α) : M α := do
   if _h : dIdx < indTypes.size then
     let ctx ← readThe Context
-    loopArgs1 stats (← whnf indTypes[dIdx].type) 0 #[] ctx.fuel.inductiveFuel fun indices =>
-    let tTy := mkAppN (mkAppN stats.indConsts[dIdx]! stats.params) indices
-    withLocalDecl `t .default tTy.consumeTypeAnnotations fun major => do
-    let lctx ← getLCtx
-    let motiveTy := lctx.mkForall indices <| lctx.mkForall #[major] <| .sort elimLevel
+    -- The indices and major premise are only in scope for the motive's type, so that the
+    -- motives follow the parameters directly in the local context, as in the recursor's type.
+    let motiveTy ← loopArgs1 stats (← whnf indTypes[dIdx].type) 0 #[] ctx.fuel.inductiveFuel
+      fun r nparams indices => do
+      unless r.isSort && nparams == stats.params.size &&
+          some indices.size == stats.nindices[dIdx]? do
+        throw <| .other "invalid inductive datatype declaration, its type changed shape"
+      let tTy := mkAppN (mkAppN stats.indConsts[dIdx]! stats.params) indices
+      withLocalDecl `t .default tTy.consumeTypeAnnotations fun major => do
+      let lctx ← getLCtx
+      return lctx.mkForall indices <| lctx.mkForall #[major] <| .sort elimLevel
+    let motiveType := motiveTy.consumeTypeAnnotations
     let name := if indTypes.size > 1 then (`motive).appendIndexAfter (dIdx+1) else `motive
-    withLocalDecl name .default motiveTy.consumeTypeAnnotations fun motive => do
-    loopInd1 (dIdx + 1) (recInfos.push { motive, minors := #[], indices, major }) k
+    withLocalDecl name .default motiveType fun motive => do
+    loopInd1 (dIdx + 1) (recInfos.push { motive, motiveType, minors := #[], minorInfos := #[] }) k
   else
     k recInfos
 termination_by indTypes.size - dIdx
@@ -344,7 +378,10 @@ where
       else
         withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
         let bu := bu.push arg
-        let u := if (← isRecArg stats dom).isSome then u.push arg else u
+        -- The `hasIndOcc` test never decides: `isRecArg` only normalizes, and no definition in
+        -- the environment can mention the block's fresh names.
+        let u := if hasIndOcc stats.indConsts dom && (← isRecArg stats dom).isSome then u.push arg
+          else u
         loop (body.instantiate1 arg) (i + 1) bu u fuel
     else k t bu u
 
@@ -361,18 +398,21 @@ where
       k uiTy xs
 
 variable (stats : InductiveStats) (u : Array Expr) (recInfos : Array RecInfo) in
-def loopU (i : Nat) (v : Array Expr) (k : Array Expr → M α) : M α := do
+def loopU (i : Nat) (v : Array Expr) (ihs : Array IHInfo)
+    (k : Array Expr → Array IHInfo → M α) : M α := do
   if _h : i < u.size then
     let ui := u[i]
-    let viTy ← loopUArgs ui fun uiTy xs => do
-      let (itIdx, itIndices) := getIIndices stats uiTy
-      return (← getLCtx).mkForall xs <|
-        .app (mkAppN recInfos[itIdx]!.motive itIndices) (mkAppN ui xs)
+    let (viTy, ih) ← loopUArgs ui fun uiTy xs => do
+      let (itIdx, itIndices) ← getIIndices stats uiTy
+      let lctx ← getLCtx
+      return (lctx.mkForall xs <| .app (mkAppN recInfos[itIdx]!.motive itIndices) (mkAppN ui xs),
+        { itIdx, val := lctx.mkLambda xs <|
+          (mkAppN recPlaceholder itIndices).app (mkAppN ui xs) })
     let vName := ((← getLCtx).get! ui.fvarId!).userName.appendAfter "_ih"
     withLocalDecl vName .default viTy.consumeTypeAnnotations fun vi => do
-    loopU (i + 1) (v.push vi) k
+    loopU (i + 1) (v.push vi) (ihs.push ih) k
   else
-    k v
+    k v ihs
 termination_by u.size - i
 
 variable (stats : InductiveStats) (indTypeName : Name) (dIdx : Nat) in
@@ -380,15 +420,16 @@ def loopCtors (recInfos : Array RecInfo)
     (ctors : List Constructor) (k : Array RecInfo → M α) : M α := match ctors with
   | ctor::ctors =>
     loopCtorArgs stats ctor.type fun t bu u => do
-    let (itIdx, itIndices) := getIIndices stats t
+    let (itIdx, itIndices) ← getIIndices stats t
     let introApp := mkAppN (mkAppN (.const ctor.name stats.levels) stats.params) bu
     let motiveApp := Expr.app (mkAppN recInfos[itIdx]!.motive itIndices) introApp
-    loopU stats u recInfos 0 #[] fun v => do
+    loopU stats u recInfos 0 #[] #[] fun v ihs => do
     let lctx ← getLCtx
     let minorTy := lctx.mkForall bu <| lctx.mkForall v motiveApp
     let minorName := ctor.name.replacePrefix indTypeName .anonymous
     withLocalDecl minorName .default minorTy.consumeTypeAnnotations fun minor => do
-    let recInfos := recInfos.modify dIdx fun s => { s with minors := s.minors.push minor }
+    let recInfos := recInfos.modify dIdx fun s => { s with
+      minors := s.minors.push minor, minorInfos := s.minorInfos.push { fields := bu, ihs } }
     loopCtors recInfos ctors k
   | [] => k recInfos
 
@@ -416,41 +457,46 @@ def getRecLevels (elimLevel : Level) (levels : List Level) : List Level :=
 def getRecLevelParams (elimLevel : Level) (lparams : List Name) : List Name :=
   if let .param u := elimLevel then u :: lparams else lparams
 
+/-- The level parameters `mkRecInfos` runs at: the block's, then the motives' universe, if it is
+a new one. Expressions name their level parameters, so the order is the block's own business; the
+recursor puts the motives' universe first (`getRecLevelParams`). -/
+def mkRecInfosLevelParams (elimLevel : Level) (lparams : List Name) : List Name :=
+  if let .param u := elimLevel then lparams ++ [u] else lparams
+
+/-- `Π indices, Π major, motive indices major`, from the motive's type
+`Π indices, Π major, Sort u`, with `n` binders already passed. -/
+def recTypeTail (motive : Expr) : Expr → (n : Nat := 0) → Expr
+  | .forallE name dom body bi, n => .forallE name dom (recTypeTail motive body (n + 1)) bi
+  | _, n => .app (mkAppN motive ((List.range (n - 1)).reverse.map (.bvar <| · + 1)).toArray)
+    (.bvar 0)
+
+/-- The rules of the `dIdx`th recursor, from the fields and inductive hypotheses `mkRecInfos`
+recorded for each of its minor premises, whose index in `minors` starts at `minorIdx`. -/
 def mkRecRules (indTypes : Array InductiveType) (elimLevel : Level) (stats : InductiveStats)
-    (dIdx : Nat) (motives : Array Expr) (minors : Array Expr) :
+    (dIdx : Nat) (motives : Array Expr) (minors : Array Expr) (info : RecInfo) :
     StateT Nat M (List RecursorRule) := do
   let d := indTypes[dIdx]!
   let lvls := getRecLevels elimLevel stats.levels
+  let lctx ← getLCtx
   let mut rules := #[]
-  for ctor in d.ctors do
-    let rule ← fun minorIdx => mkRecInfos.loopCtorArgs stats ctor.type fun _ bu u =>
-      let rec loopU i (v : Array Expr) k := do
-        if _h : i < u.size then
-          let ui := u[i]
-          let val ← mkRecInfos.loopUArgs ui fun uiTy xs => do
-            let (itIdx, itIndices) := getIIndices stats uiTy
-            let val := .const (mkRecName indTypes[itIdx]!.name) lvls
-            let val := mkAppN (mkAppN (mkAppN (mkAppN val stats.params) motives) minors) itIndices
-            return (← getLCtx).mkLambda xs <| val.app (mkAppN ui xs)
-          loopU (i + 1) (v.push val) k
-        else
-          k v
-      termination_by u.size - i
-      loopU 0 #[] fun v => do
-      let lctx ← getLCtx
-      let rule := {
-        ctor := ctor.name
-        nfields := bu.size
-        rhs := lctx.mkLambda stats.params <| lctx.mkLambda motives <|
-          lctx.mkLambda minors <| lctx.mkLambda bu <|
-          mkAppN (mkAppN minors[minorIdx]! bu) v
-      }
-      return (rule, minorIdx + 1)
-    rules := rules.push rule
+  for ctor in d.ctors, minorInfo in info.minorInfos do
+    let minorIdx ← get
+    let v := minorInfo.ihs.map fun ih =>
+      let val := .const (mkRecName indTypes[ih.itIdx]!.name) lvls
+      ih.val.replaceFVar recPlaceholder <| mkAppN (mkAppN (mkAppN val stats.params) motives) minors
+    let bu := minorInfo.fields
+    rules := rules.push {
+      ctor := ctor.name
+      nfields := bu.size
+      rhs := lctx.mkLambda stats.params <| lctx.mkLambda motives <|
+        lctx.mkLambda minors <| lctx.mkLambda bu <|
+        mkAppN (mkAppN minors[minorIdx]! bu) v
+    }
+    set (minorIdx + 1)
   return rules.toList
 
 /-- Add the recursors, built from the local variables `mkRecInfos` opened, to `env`. -/
-def declareRecursors (env : Environment) (stats : InductiveStats)
+def declareRecursors (env : Environment) (lparams : List Name) (stats : InductiveStats)
     (indTypes : Array InductiveType) (elimLevel : Level) (k : Bool)
     (recInfos : Array RecInfo) : M Environment := do
   let motives := recInfos.map (·.motive)
@@ -462,7 +508,7 @@ def declareRecursors (env : Environment) (stats : InductiveStats)
   let isUnsafe := (← read).safety != .safe
   StateT.run' (s := 0) do
   let mut env := env
-  let {allowPrimitive, lparams, ..} ← read
+  let allowPrimitive := (← read).allowPrimitive
   for h : dIdx in [:indTypes.size] do
     let indType := indTypes[dIdx]
     let info := recInfos[dIdx]!
@@ -470,10 +516,8 @@ def declareRecursors (env : Environment) (stats : InductiveStats)
       lctx.mkForall stats.params <|
       lctx.mkForall motives <|
       lctx.mkForall minors <|
-      lctx.mkForall info.indices <|
-      lctx.mkForall #[info.major] <|
-      .app (mkAppN info.motive info.indices) info.major
-    let rules ← mkRecRules indTypes elimLevel stats dIdx motives minors
+      recTypeTail info.motive info.motiveType
+    let rules ← mkRecRules indTypes elimLevel stats dIdx motives minors info
     let name := mkRecName indType.name
     env.checkName name allowPrimitive
     env := env.add <| .recInfo {
@@ -500,6 +544,16 @@ def declareTypeAxioms (indTypes : Array InductiveType) (isUnsafe : Bool) : M Env
         return ax env ctor.name ctor.type
     else return env
 
+/-- The environment the recursors are built in: the one the block was checked in, with its
+constructors as axioms too, which the recursors' minor premises mention (see `divergences.md`).
+For `Bool` and `Nat` they are axioms already. -/
+def declareCtorAxioms (indTypes : Array InductiveType) (isUnsafe : Bool) : M Environment :=
+  fun c => if c.allowPrimitive then pure c.env else
+    indTypes.foldlM (init := c.env) fun env t => t.ctors.foldlM (init := env) fun env ctor => do
+      env.checkName ctor.name c.allowPrimitive
+      return env.add <| .axiomInfo
+        { name := ctor.name, levelParams := c.lparams, type := ctor.type, isUnsafe }
+
 def run (nparams : Nat) (types : List InductiveType) (numNested : Nat) : M Environment := do
   let isUnsafe := (← read).safety != .safe
   let indTypes := types.toArray
@@ -512,7 +566,11 @@ def run (nparams : Nat) (types : List InductiveType) (numNested : Nat) : M Envir
   let envCtors ← withEnv envTypes <| declareConstructors stats indTypes isUnsafe
   let elimLevel ← getElimLevel stats indTypes
   let k ← isKTarget stats indTypes
-  mkRecInfos stats indTypes elimLevel (declareRecursors envCtors stats indTypes elimLevel k)
+  withEnv (← declareCtorAxioms indTypes isUnsafe) do
+  -- The motives may live in a universe `elimLevel` that is not one of the block's.
+  withReader (fun ctx => { ctx with lparams := mkRecInfosLevelParams elimLevel ctx.lparams }) do
+  mkRecInfos stats indTypes elimLevel
+    (declareRecursors envCtors lparams stats indTypes elimLevel k)
 
 end AddInductive
 
@@ -592,15 +650,24 @@ instance : MonadNameGenerator M where
   getNGen := return (← get).ngen
   setNGen ngen := modify fun s => { s with ngen }
 
--- TODO: remove partial
-partial def mkUniqueName (n : Name) : M Name := fun env s =>
-  let rec loop i :=
+def mkUniqueName (n : Name) : M Name := fun env s =>
+  let rec loop (i : Nat) (fuel : UInt64) : Except Exception (Name × State) :=
     let r := n.appendIndexAfter i
     if env.contains r then
-      loop (i + 1)
+      if fuel = 0 then
+        -- Unreachable: the names tried are distinct, and no environment holds 2^64 constants.
+        throw <| .other s!"failed to find a fresh name for '{n}'"
+      else loop (i + 1) (fuel - 1)
     else
       pure (r, { s with nextIdx := i + 1 })
-  loop s.nextIdx
+  termination_by fuel.toNat
+  decreasing_by
+    rename_i h
+    have : fuel.toNat ≠ 0 := fun h' => h (UInt64.toNat_inj.1 (by simpa using h'))
+    rw [UInt64.toNat_sub_of_le _ _
+      (by simpa [UInt64.le_iff_toNat_le] using Nat.one_le_iff_ne_zero.2 this)]
+    simp; omega
+  loop s.nextIdx 0xFFFFFFFFFFFFFFFF
 
 def illFormed : Exception :=
   .other "invalid nested inductive datatype, ill-formed declaration"
