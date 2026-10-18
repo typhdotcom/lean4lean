@@ -478,7 +478,8 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
   have hsafe : (c₀.safety != .safe) = false := rfl
   simp only [hsafe]
   have henv₀ := (wf.tr (safety := inductSafety false)).wf
-  refine AddInductive.checkInductiveTypes.WF rfl henv₀ (List.cons_ne_nil _ _)
+  refine AddInductive.checkInductiveTypes.WF rfl henv₀
+    (show ConstMap.Closed env.constants from TrEnv'.closed (wf.tr (safety := .unsafe)) wf.hasPrimitives) (List.cons_ne_nil _ _)
     fun stats c params level typeTr hT => ?_
   have hb := hT.base
   have hcl : c.lparams = [] := hb.lparams
@@ -570,13 +571,6 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     exact AddInductive.primCtor_checked hIv (by rw [hd.uvars, hcl]; rfl) hd.params
       (by rw [hT]; rfl) hTn (hd.nested T (by rw [hT]; exact .head _)) hTi
       (by rw [hd.level]; exact hlev) rfl (hct ct hct')
-  refine AddInductive.WF.bind (AddInductive.getElimLevel.WF hT
-    (c' := c.withEnv envAx venvAx wfAx hleAx) rfl hle₀ wfAx.tr.wf (hchk venvAx hIAx))
-    fun elimLevel hE => ?_
-  refine AddInductive.WF.bind (AddInductive.isKTarget.WF hT (c' := c.withEnv envAx venvAx wfAx hleAx)
-    rfl hle₀ wfAx.tr.wf (hchk venvAx hIAx)) fun kflag hK => ?_
-  have hlp : c₀.toContext.lparams = (c.withEnv envAx venvAx wfAx hleAx).lparams := hb.lparams.symm
-  conv => arg 2; arg 2; intro; arg 2; rw [hlp]
   -- the checking environment: the type and constructors as axioms, closed
   have hcl₀ : ConstMap.Closed c.env.constants := by
     rw [hcenv]; exact TrEnv'.closed (wf.tr (safety := .unsafe)) wf.hasPrimitives
@@ -610,6 +604,13 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
       · obtain ⟨ct, hct', rfl⟩ := List.mem_map.1 hax
         simp only [beq_iff_eq]; intro he
         exact hpnd.1 (List.mem_map.2 ⟨_, hax, he.symm⟩)
+  refine AddInductive.WF.bind (AddInductive.getElimLevel.WF hT
+    (c' := c.withEnv envAx venvAx wfAx hleAx) rfl hle₀ wfAx.tr.wf hclosed (hchk venvAx hIAx))
+    fun elimLevel hE => ?_
+  refine AddInductive.WF.bind (AddInductive.isKTarget.WF hT (c' := c.withEnv envAx venvAx wfAx hleAx)
+    rfl hle₀ wfAx.tr.wf (hchk venvAx hIAx)) fun kflag hK => ?_
+  have hlp : c₀.toContext.lparams = (c.withEnv envAx venvAx wfAx hleAx).lparams := hb.lparams.symm
+  conv => arg 2; arg 2; intro; arg 2; rw [hlp]
   -- the constructors are axioms already
   generalize hcAx : c.withEnv envAx venvAx wfAx hleAx = cAx at *
   have hcAxenv : cAx.env = envAx := by rw [← hcAx]; rfl

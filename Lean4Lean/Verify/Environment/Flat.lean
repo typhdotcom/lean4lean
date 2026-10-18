@@ -36,6 +36,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
   simp only [hsafe]
   have henv₀ := (wf.tr (safety := inductSafety isUnsafe)).wf
   refine AddInductive.checkInductiveTypes.WF rfl henv₀
+    (show ConstMap.Closed env.constants from TrEnv'.closed (wf.tr (safety := .unsafe)) wf.hasPrimitives)
     hne fun stats c params level typeTr hT => ?_
   refine AddInductive.WF.bind (AddInductive.WF.and AddInductive.declareInductiveTypes.WF
     AddInductive.declareInductiveTypes.ne_dummy)
@@ -69,23 +70,6 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     · rcases hnew n (hT.base.venv ▸ h0) h1 with hn | ⟨hp, -⟩
       · exact hn
       · cases hT.base.allowPrimitive.symm.trans hp
-  refine AddInductive.WF.bind (AddInductive.checkConstructors.WF
-    (c := c.withEnv envAx venvAx wfAx hleAx) hT rfl rfl hle₀ hconst hB
-    (by show c.lparams.Nodup; rw [hT.base.lparams]; exact hUs))
-    fun _ ⟨hC, hCt⟩ => ?_
-  have mapWFT : envTypes.constants.WF := by
-    rw [hDc]; exact insertConsts_wf c.envAt.tr.map_wf hDfr hDnd
-  refine AddInductive.WF.bind (AddInductive.WF.withEnvRaw
-    (AddInductive.declareConstructors.WF (c := { (c.withEnv envAx venvAx wfAx hleAx).toContext with
-      env := envTypes }) mapWFT)) fun envCtors hDC => ?_
-  refine AddInductive.WF.bind (AddInductive.getElimLevel.WF hT
-    (c' := c.withEnv envAx venvAx wfAx hleAx) rfl hle₀ wfAx.tr.wf hC)
-    fun elimLevel hE => ?_
-  refine AddInductive.WF.bind (AddInductive.isKTarget.WF hT (c' := c.withEnv envAx venvAx wfAx hleAx)
-    rfl hle₀ wfAx.tr.wf hC) fun kflag hK => ?_
-  have hlp : c₀.toContext.lparams = (c.withEnv envAx venvAx wfAx hleAx).lparams :=
-    hT.base.lparams.symm
-  conv => arg 2; arg 2; intro; arg 2; rw [hlp]
   -- the checking environment: the block's types as axioms, closed
   have hcenv₀ : c.env = env := hT.base.env
   have hfrT (t) (ht : t ∈ types) : c.env.constants.find? t.name = none :=
@@ -127,6 +111,23 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     obtain ⟨_, _, htr, -⟩ := hT.types j t T' hj hT'
     have := TrExprS.suppIn_env c₀.envAt.tr c₀.envAt.hasPrimitives htr
     rwa [← hT.base.env, ← hT.base.lparams] at this
+  refine AddInductive.WF.bind (AddInductive.checkConstructors.WF
+    (c := c.withEnv envAx venvAx wfAx hleAx) hT rfl rfl hle₀ hconst hB
+    (by show c.lparams.Nodup; rw [hT.base.lparams]; exact hUs) hclosed)
+    fun _ ⟨hC, hCt⟩ => ?_
+  have mapWFT : envTypes.constants.WF := by
+    rw [hDc]; exact insertConsts_wf c.envAt.tr.map_wf hDfr hDnd
+  refine AddInductive.WF.bind (AddInductive.WF.withEnvRaw
+    (AddInductive.declareConstructors.WF (c := { (c.withEnv envAx venvAx wfAx hleAx).toContext with
+      env := envTypes }) mapWFT)) fun envCtors hDC => ?_
+  refine AddInductive.WF.bind (AddInductive.getElimLevel.WF hT
+    (c' := c.withEnv envAx venvAx wfAx hleAx) rfl hle₀ wfAx.tr.wf hclosed hC)
+    fun elimLevel hE => ?_
+  refine AddInductive.WF.bind (AddInductive.isKTarget.WF hT (c' := c.withEnv envAx venvAx wfAx hleAx)
+    rfl hle₀ wfAx.tr.wf hC) fun kflag hK => ?_
+  have hlp : c₀.toContext.lparams = (c.withEnv envAx venvAx wfAx hleAx).lparams :=
+    hT.base.lparams.symm
+  conv => arg 2; arg 2; intro; arg 2; rw [hlp]
   have henvB : ∀ n ci, envAx.find? n = some ci → n ∉ types.map (·.name) →
       ci.SuppIn fun m => m ∉ types.map (·.name) := by
     intro n ci h hn

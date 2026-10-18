@@ -55,25 +55,20 @@ theorem isDefEqLambda.SS {S : Supp} {c₁ c₂ : Context} {s : State} {subst : A
           (Q := fun x _ => ∀ y, x = some y → Dom c₁ y ∧ y.SuppIn S)
           fun _ eq => by cases eq; exact ⟨hd hd₂, hsi hs₂.1⟩).bind fun _ _ _ h => this h
   intro x s hx
-  unfold F; split
-  · extract_lets d₂'
-    have hd' : Dom c₁ d₂' ∧ d₂'.SuppIn S := by
-      unfold d₂'; cases x with
-      | none => exact ⟨hd hd₂, hsi hs₂.1⟩
-      | some y => exact hx y rfl
-    refine .stateWF fun wf => .withLocalDecl hd'.1 ?_
-    have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
-    refine isDefEqLambda.SS (hA.mkLocalDecl wf) (Supp.Closed.push hS wf hd'.2) (fun a ha => ?_)
-      (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
-    · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
-  · refine isDefEqLambda.SS hA hS (fun a ha => ?_) hb₁ hb₂ hs₁.2 hs₂.2
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact hsub a ha
-    · exact ⟨Dom.default, Expr.SuppIn.default hS.2.dummy⟩
+  unfold F
+  extract_lets d₂'
+  have hd' : Dom c₁ d₂' ∧ d₂'.SuppIn S := by
+    unfold d₂'; cases x with
+    | none => exact ⟨hd hd₂, hsi hs₂.1⟩
+    | some y => exact hx y rfl
+  refine .stateWF fun wf => .withLocalDecl hd'.1 ?_
+  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
+  refine isDefEqLambda.SS (hA.mkLocalDecl wf) (Supp.Closed.push hS wf hd'.2) (fun a ha => ?_)
+    (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
+  simp only [Array.mem_push] at ha
+  obtain ha | rfl := ha
+  · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
+  · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
 
 theorem isDefEqForall.SS {S : Supp} {c₁ c₂ : Context} {s : State} {subst : Array Expr}
     (hA : Agree S c₁ c₂) (hS : S.Closed c₁)
@@ -104,25 +99,20 @@ theorem isDefEqForall.SS {S : Supp} {c₁ c₂ : Context} {s : State} {subst : A
           (Q := fun x _ => ∀ y, x = some y → Dom c₁ y ∧ y.SuppIn S)
           fun _ eq => by cases eq; exact ⟨hd hd₂, hsi hs₂.1⟩).bind fun _ _ _ h => this h
   intro x s hx
-  unfold F; split
-  · extract_lets d₂'
-    have hd' : Dom c₁ d₂' ∧ d₂'.SuppIn S := by
-      unfold d₂'; cases x with
-      | none => exact ⟨hd hd₂, hsi hs₂.1⟩
-      | some y => exact hx y rfl
-    refine .stateWF fun wf => .withLocalDecl hd'.1 ?_
-    have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
-    refine isDefEqForall.SS (hA.mkLocalDecl wf) (Supp.Closed.push hS wf hd'.2) (fun a ha => ?_)
-      (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
-    · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
-  · refine isDefEqForall.SS hA hS (fun a ha => ?_) hb₁ hb₂ hs₁.2 hs₂.2
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact hsub a ha
-    · exact ⟨Dom.default, Expr.SuppIn.default hS.2.dummy⟩
+  unfold F
+  extract_lets d₂'
+  have hd' : Dom c₁ d₂' ∧ d₂'.SuppIn S := by
+    unfold d₂'; cases x with
+    | none => exact ⟨hd hd₂, hsi hs₂.1⟩
+    | some y => exact hx y rfl
+  refine .stateWF fun wf => .withLocalDecl hd'.1 ?_
+  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
+  refine isDefEqForall.SS (hA.mkLocalDecl wf) (Supp.Closed.push hS wf hd'.2) (fun a ha => ?_)
+    (hb₁.mono E) (hb₂.mono E) (hs₁.2.mono Supp.le_addFVars) (hs₂.2.mono Supp.le_addFVars)
+  simp only [Array.mem_push] at ha
+  obtain ha | rfl := ha
+  · exact ⟨(hsub a ha).1.mono E, (hsub a ha).2.mono Supp.le_addFVars⟩
+  · exact ⟨fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom, .inr (by simp)⟩
 
 theorem quickIsDefEq.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (h₁ : Dom c₁ e₁) (h₂ : Dom c₁ e₂) (hs₁ : e₁.SuppIn S) (hs₂ : e₂.SuppIn S) :

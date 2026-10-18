@@ -91,7 +91,7 @@ theorem VState.WF.empty1 {env : Environment} {safety : DefinitionSafety} {venv :
     VState.WF (.mk1 wf lparams fuel) {} where
   trctx := .nil
   ngen_wf := nofun
-  ectx := ⟨[], .refl, trivial, .refl, .empty, nofun⟩
+  ectx := .empty
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
   inferTypeC_lit := .empty

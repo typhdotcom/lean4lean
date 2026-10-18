@@ -226,7 +226,9 @@ theorem RecM.SS.withLocalDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Exp
     {Q name ty bi} (hty : Dom c₁ ty)
     (H : RecM.SS { c₁ with lctx := c₁.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
       { c₂ with lctx := c₂.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
-      { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₂ (.fvar ⟨s.ngen.curr⟩)) Q) :
+      { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₂ (.fvar ⟨s.ngen.curr⟩)) Q)
+    (hQ : ∀ a (s₁ s₂ : State), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     RecM.SS c₁ c₂ s (withLocalDecl name bi ty f₁) (withLocalDecl name bi ty f₂) Q := by
   intro m hm
   have enter (wf : SuppState c₁ s) := by
@@ -234,16 +236,22 @@ theorem RecM.SS.withLocalDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Exp
     exact And.intro hE <| wf.enter rfl hE (wf.lctxWF.mkLocalDecl hE.fresh) fun d hd => by
       simp [LocalContext.find?_mkLocalDecl wf.lctxWF hE.fresh] at hd; subst hd
       exact ⟨hty, by simp [LocalDecl.value', Expr.fvarsList, hE.dom]⟩
-  refine ⟨fun wf a s' e => ?_, fun wf a s' e => (H m hm).2 (enter wf).2 a s' e⟩
-  have ⟨hE, wf₁⟩ := enter wf
-  obtain ⟨wf₂, hle, hQ⟩ := (H m hm).1 wf₁ a s' e
-  exact ⟨wf.exit hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle, hQ⟩
+  refine ⟨fun wf a s' e => ?_, fun wf a s' e => ?_⟩
+  · have ⟨hE, wf₁⟩ := enter wf
+    obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
+    obtain ⟨wf₂, hle, hQ'⟩ := (H m hm).1 wf₁ a _ e₁
+    exact ⟨wf.restore hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle,
+      hQ _ s₁ _ rfl hQ'⟩
+  · obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
+    exact withFreshId_ok ((H m hm).2 (enter wf).2 a _ e₁)
 
 theorem RecM.SS.withLetDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Expr → RecM α}
     {Q name ty val} (hty : Dom c₁ ty) (hval : Dom c₁ val)
     (H : RecM.SS { c₁ with lctx := c₁.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
       { c₂ with lctx := c₂.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
-      { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₂ (.fvar ⟨s.ngen.curr⟩)) Q) :
+      { s with ngen := s.ngen.next } (f₁ (.fvar ⟨s.ngen.curr⟩)) (f₂ (.fvar ⟨s.ngen.curr⟩)) Q)
+    (hQ : ∀ a (s₁ s₂ : State), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     RecM.SS c₁ c₂ s (withLetDecl name ty val f₁) (withLetDecl name ty val f₂) Q := by
   intro m hm
   have enter (wf : SuppState c₁ s) := by
@@ -251,10 +259,14 @@ theorem RecM.SS.withLetDecl {c₁ c₂ : Context} {s : State} {f₁ f₂ : Expr 
     exact And.intro hE <| wf.enter rfl hE (wf.lctxWF.mkLetDecl hE.fresh) fun d hd => by
       simp [LocalContext.find?_mkLetDecl wf.lctxWF hE.fresh] at hd; subst hd
       exact ⟨hty, fun y hy => hE.dom_of (hval y hy)⟩
-  refine ⟨fun wf a s' e => ?_, fun wf a s' e => (H m hm).2 (enter wf).2 a s' e⟩
-  have ⟨hE, wf₁⟩ := enter wf
-  obtain ⟨wf₂, hle, hQ⟩ := (H m hm).1 wf₁ a s' e
-  exact ⟨wf.exit hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle, hQ⟩
+  refine ⟨fun wf a s' e => ?_, fun wf a s' e => ?_⟩
+  · have ⟨hE, wf₁⟩ := enter wf
+    obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
+    obtain ⟨wf₂, hle, hQ'⟩ := (H m hm).1 wf₁ a _ e₁
+    exact ⟨wf.restore hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle,
+      hQ _ s₁ _ rfl hQ'⟩
+  · obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
+    exact withFreshId_ok ((H m hm).2 (enter wf).2 a _ e₁)
 
 theorem RecM.SS.withEagerReduce {c₁ c₂ : Context} {s : State} {x₁ x₂ : RecM α} {Q}
     (H : RecM.SS { c₁ with eagerReduce := true } { c₂ with eagerReduce := true } s x₁ x₂ Q) :

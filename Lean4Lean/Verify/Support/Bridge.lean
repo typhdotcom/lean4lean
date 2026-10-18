@@ -405,7 +405,7 @@ theorem _root_.Lean4Lean.TypeChecker.VState.WF.emptyAt (c : TypeChecker.VContext
     TypeChecker.VState.WF c {} where
   trctx := c.mlctx_wf.tr
   ngen_wf := hnk
-  ectx := ⟨c.mlctx.vlctx, .refl, c.Δwf, .refl, .empty, hnk⟩
+  ectx := .empty
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
   inferTypeC_lit := .empty
@@ -936,6 +936,142 @@ def VContext.withLParams (c : VContext) (pre : List Name) (hpre : ∀ u ∈ pre,
 theorem WF.withLParams {c : VContext} {pre : List Name} (hpre : ∀ u ∈ pre, u ∉ c.lparams)
     {x : M α} {Q} (H : WF (c.withLParams pre hpre) x Q) :
     WF c (withReader (fun ctx => { ctx with lparams := pre ++ ctx.lparams }) x) Q := H
+
+/-! ### Kernel calls verified in a smaller context
+
+A call the kernel makes in its local context, on an input that mentions only the variables of `m`
+(`Ext`), runs the same way in `m` alone, and is verified there. -/
+
+/-- The type checker's context with local context `m` over `c`'s environment: the kernel's
+context with the variables a call does not read removed. -/
+def VContext.small (c : VContext) (m : TypeChecker.MLCtx) (hm : m.WF c.venv c.lparams) :
+    TypeChecker.VContext :=
+  @TypeChecker.VContext.withMLC c.tc m ⟨hm⟩
+
+@[simp] theorem VContext.small_mlctx {c : VContext} {m hm} : (c.small m hm).mlctx = m := rfl
+@[simp] theorem VContext.small_venv {c : VContext} {m hm} : (c.small m hm).venv = c.venv := rfl
+@[simp] theorem VContext.small_lparams {c : VContext} {m hm} :
+    (c.small m hm).lparams = c.lparams := rfl
+@[simp] theorem VContext.small_env {c : VContext} {m hm} : (c.small m hm).env = c.env := rfl
+
+/-- What a call over the variables of `m` may mention: any constant and universe parameter. -/
+def Ext.supp (m : TypeChecker.MLCtx) : Supp := ⟨(· ∈ m.vlctx.fvars), fun _ => True, fun _ => True⟩
+
+theorem Ext.suppIn_iff {m : TypeChecker.MLCtx} {e : Expr} :
+    e.SuppIn (Ext.supp m) ↔ ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars := Expr.suppIn_fvars
+
+theorem Ext.mem_fvars {m cb ρ} (H : Ext m cb ρ) {fv : FVarId} (h : fv ∈ m.vlctx.fvars) :
+    fv ∈ cb.mlctx.vlctx.fvars := H.lift.fvars_sublist.subset h
+
+theorem Ext.dom {m cb ρ} (H : Ext m cb ρ) {fv : FVarId} (h : fv ∈ m.vlctx.fvars) :
+    cb.lctx.Dom fv := by
+  have := (cb.lctx_eq ▸ cb.mlctx_wf.tr).find?_eq_some.2 (H.mem_fvars h)
+  exact Option.isSome_iff_exists.2 this
+
+theorem Ext.agree {m cb ρ} (H : Ext m cb ρ) :
+    TypeChecker.Agree (Ext.supp m) cb.tc.toContext (cb.small m H.wf).toContext where
+  env _ _ := rfl
+  lctx fv hfv := (H.lctx fv hfv).symm
+  wf := H.wf.tr.1
+  dom fv h := H.dom (H.wf.tr.find?_eq_some.1 (Option.isSome_iff_exists.1 h))
+  quotInit := rfl
+  safety := rfl
+  eagerReduce := rfl
+  lparams _ _ h := h
+  fuel := rfl
+
+theorem Ext.suppClosed {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants) :
+    (Ext.supp m).Closed cb.tc.toContext := by
+  refine ⟨fun fv d hfv hd => ?_, ⟨fun n ci h _ => ?_, fun _ _ _ => ⟨trivial, trivial, trivial⟩,
+    fun _ _ _ => ⟨trivial, trivial⟩, trivial⟩⟩
+  · have e := H.lctx fv hfv
+    change cb.lctx.find? fv = some d at hd
+    rw [hd] at e
+    obtain ⟨d', hd', he⟩ : ∃ d', m.lctx.find? fv = some d' ∧ d.erase = d'.erase := by
+      cases h : m.lctx.find? fv <;> rw [h] at e <;> simp_all
+    obtain ⟨h1, h2⟩ := LocalDecl.erase_type he
+    have htr := H.wf.tr
+    have hm : d' ∈ m.lctx.toList := by
+      rw [htr.1.find?_eq_find?_toList] at hd'; exact List.mem_of_find?_eq_some hd'
+    obtain ⟨_, _, -, -, -, h3, h4⟩ := htr.find?_of_mem cb.tc.Ewf hm
+    rw [h1, h2]
+    exact ⟨Ext.suppIn_iff.2 (fvarsIn_iff.1 h4.fvarsIn).1, Ext.suppIn_iff.2 (fvarsIn_iff.1 h3.fvarsIn).1⟩
+  · exact (VContext.suppState (c := cb) hcl).envClosed n ci h
+
+theorem Ext.notKernel {m cb ρ} (H : Ext m cb ρ) :
+    ∀ fv ∈ (cb.small m H.wf).mlctx.vlctx.fvars, ({} : TypeChecker.State).ngen.Reserves fv :=
+  fun fv h => cb.notKernel fv (H.mem_fvars h)
+
+theorem Ext.tdom {m cb ρ} (H : Ext m cb ρ) {e : Expr} (h : ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars) :
+    TypeChecker.Dom cb.tc.toContext e := fun fv hfv => H.dom (h fv hfv)
+
+theorem Ext.liftTC {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+    {x : TypeChecker.M α} {Q P : α → Prop}
+    (hsim : TypeChecker.M.SS cb.tc.toContext (cb.small m H.wf).toContext {} x x fun a _ => P a)
+    (W : TypeChecker.M.WF (cb.small m H.wf) {} x fun a _ => Q a) :
+    WF cb (monadLift x : M α) fun a => Q a :=
+  (WF.liftTC_sim H.notKernel (VContext.suppState hcl) hsim W).mono fun _ h => h.2
+
+/-- `whnf` in the kernel's context, verified in `m`. -/
+theorem Ext.whnf {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+    {e : Expr} {E : VExpr} (he : (cb.small m H.wf).TrExprS e E) :
+    WF cb (monadLift (TypeChecker.whnf e) : M Expr) fun e₁ =>
+      (cb.small m H.wf).FVarsBelow e e₁ ∧ (cb.small m H.wf).TrExpr e₁ E := by
+  have hs : ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars := (fvarsIn_iff.1 he.fvarsIn).1
+  exact H.liftTC hcl (P := fun _ => True) (TypeChecker.RecM.SS.run
+    (fun _ hm => (hm.whnf H.agree (H.suppClosed hcl) (H.tdom hs) (Ext.suppIn_iff.2 hs)).mono
+      fun _ _ _ _ => trivial) rfl)
+    (TypeChecker.whnf.WF he)
+
+/-- `isDefEq` in the kernel's context, verified in `m`. -/
+theorem Ext.isDefEq' {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+    {e₁ e₂ : Expr} {E₁ E₂ : VExpr} (h₁ : (cb.small m H.wf).TrExprS e₁ E₁)
+    (h₂ : (cb.small m H.wf).TrExprS e₂ E₂) :
+    WF cb (monadLift (TypeChecker.isDefEq e₁ e₂) : M Bool) fun b =>
+      b → (cb.small m H.wf).IsDefEqU E₁ E₂ := by
+  have hs₁ : ∀ fv ∈ e₁.fvarsList, fv ∈ m.vlctx.fvars := (fvarsIn_iff.1 h₁.fvarsIn).1
+  have hs₂ : ∀ fv ∈ e₂.fvarsList, fv ∈ m.vlctx.fvars := (fvarsIn_iff.1 h₂.fvarsIn).1
+  exact H.liftTC hcl (P := fun _ => True) (TypeChecker.RecM.SS.run
+    (TypeChecker.Inner.isDefEq.SS H.agree (H.suppClosed hcl) (H.tdom hs₁) (H.tdom hs₂)
+      (Ext.suppIn_iff.2 hs₁) (Ext.suppIn_iff.2 hs₂)) rfl)
+    (TypeChecker.isDefEq.WF h₁ h₂)
+
+/-- `ensureSort` in the kernel's context, verified in `m`. -/
+theorem Ext.ensureSort {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+    {e e₀ : Expr} {E : VExpr} (he : (cb.small m H.wf).TrExprS e E) :
+    WF cb (monadLift (TypeChecker.ensureSort e e₀) : M Expr) fun e1 =>
+      (cb.small m H.wf).TrExpr e1 E ∧ ∃ u, e1 = .sort u := by
+  have hs : ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars := (fvarsIn_iff.1 he.fvarsIn).1
+  exact H.liftTC hcl (P := fun _ => True) (TypeChecker.RecM.SS.run
+    ((TypeChecker.Inner.ensureSortCore.SS H.agree (H.suppClosed hcl) (H.tdom hs)
+      (Ext.suppIn_iff.2 hs)).mono fun _ _ _ _ => trivial) rfl)
+    (TypeChecker.ensureSort.WF he)
+
+/-- `checkType` in the kernel's context, verified in `m`. -/
+theorem Ext.checkType {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+    {e : Expr} (hfv : e.FVarsIn (· ∈ m.vlctx.fvars)) :
+    WF cb (monadLift (TypeChecker.checkType e) : M Expr) fun ty =>
+      ∃ e' ty', (cb.small m H.wf).TrTyping e ty e' ty' := by
+  have hs : ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars := (fvarsIn_iff.1 hfv).1
+  exact H.liftTC hcl (P := fun _ => True) (TypeChecker.RecM.SS.run
+    ((TypeChecker.Inner.inferType.SS H.agree (H.suppClosed hcl) (H.tdom hs)
+      (Ext.suppIn_iff.2 hs)).mono fun _ _ _ _ => trivial) rfl)
+    (TypeChecker.checkType.WF hfv)
+
+/-- `ensureType` in the kernel's context, verified in `m`. -/
+theorem Ext.ensureType {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+    {e : Expr} {E : VExpr} (he : (cb.small m H.wf).TrExprS e E) {inferOnly : Bool} :
+    WF cb (monadLift (TypeChecker.ensureType e inferOnly) : M Expr) fun e1 =>
+      ∃ e', (cb.small m H.wf).TrExprS e e' ∧ ∃ u u', e1 = .sort u ∧
+        VLevel.ofLevel cb.lparams u = some u' ∧ (cb.small m H.wf).HasType e' (.sort u') := by
+  have hs : ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars := (fvarsIn_iff.1 he.fvarsIn).1
+  refine H.liftTC hcl (P := fun _ => True) ?_ (TypeChecker.ensureType.WF he)
+  refine TypeChecker.M.SS.bind (TypeChecker.RecM.SS.run
+    (TypeChecker.Inner.inferType.SS H.agree (H.suppClosed hcl) (H.tdom hs)
+      (Ext.suppIn_iff.2 hs)) rfl) fun ty _ _ hQ => ?_
+  have hty : ty.SuppIn (Ext.supp m) := hQ _ (H.suppClosed hcl) (Ext.suppIn_iff.2 hs)
+  exact TypeChecker.RecM.SS.run ((TypeChecker.Inner.ensureSortCore.SS H.agree (H.suppClosed hcl)
+    (H.tdom (Ext.suppIn_iff.1 hty)) hty).mono fun _ _ _ _ => trivial) rfl
 
 end AddInductive
 

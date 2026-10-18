@@ -54,24 +54,19 @@ theorem isDefEqLambda.SWF {c : Context} {s : State} {subst : Array Expr}
           (Q := fun x _ => ∀ y, x = some y → Dom c y)
           fun _ eq => by cases eq; exact Dom.instRev hsub hd₂).bind fun _ _ _ h => this h
   intro x s hx
-  unfold F; split
-  · extract_lets d₂'
-    have hd : Dom c d₂' := by
-      unfold d₂'; cases x with
-      | none => exact Dom.instRev hsub hd₂
-      | some y => exact hx y rfl
-    refine .stateWF fun wf => .withLocalDecl hd ?_
-    have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
-    refine isDefEqLambda.SWF (fun a ha => ?_) (hb₁.mono E) (hb₂.mono E)
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact (hsub a ha).mono E
-    · exact fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom
-  · refine isDefEqLambda.SWF (fun a ha => ?_) hb₁ hb₂
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact hsub a ha
-    · exact Dom.default
+  unfold F
+  extract_lets d₂'
+  have hd : Dom c d₂' := by
+    unfold d₂'; cases x with
+    | none => exact Dom.instRev hsub hd₂
+    | some y => exact hx y rfl
+  refine .stateWF fun wf => .withLocalDecl hd ?_
+  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
+  refine isDefEqLambda.SWF (fun a ha => ?_) (hb₁.mono E) (hb₂.mono E)
+  simp only [Array.mem_push] at ha
+  obtain ha | rfl := ha
+  · exact (hsub a ha).mono E
+  · exact fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom
 
 theorem isDefEqForall.SWF {c : Context} {s : State} {subst : Array Expr}
     (hsub : ∀ a ∈ subst, Dom c a) (h₁ : Dom c e₁) (h₂ : Dom c e₂) :
@@ -95,24 +90,19 @@ theorem isDefEqForall.SWF {c : Context} {s : State} {subst : Array Expr}
           (Q := fun x _ => ∀ y, x = some y → Dom c y)
           fun _ eq => by cases eq; exact Dom.instRev hsub hd₂).bind fun _ _ _ h => this h
   intro x s hx
-  unfold F; split
-  · extract_lets d₂'
-    have hd : Dom c d₂' := by
-      unfold d₂'; cases x with
-      | none => exact Dom.instRev hsub hd₂
-      | some y => exact hx y rfl
-    refine .stateWF fun wf => .withLocalDecl hd ?_
-    have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
-    refine isDefEqForall.SWF (fun a ha => ?_) (hb₁.mono E) (hb₂.mono E)
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact (hsub a ha).mono E
-    · exact fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom
-  · refine isDefEqForall.SWF (fun a ha => ?_) hb₁ hb₂
-    simp only [Array.mem_push] at ha
-    obtain ha | rfl := ha
-    · exact hsub a ha
-    · exact Dom.default
+  unfold F
+  extract_lets d₂'
+  have hd : Dom c d₂' := by
+    unfold d₂'; cases x with
+    | none => exact Dom.instRev hsub hd₂
+    | some y => exact hx y rfl
+  refine .stateWF fun wf => .withLocalDecl hd ?_
+  have E := wf.ctxExt (name := n₂) (ty := d₂') (bi := bi₂)
+  refine isDefEqForall.SWF (fun a ha => ?_) (hb₁.mono E) (hb₂.mono E)
+  simp only [Array.mem_push] at ha
+  obtain ha | rfl := ha
+  · exact (hsub a ha).mono E
+  · exact fun _ h => by simp [Expr.fvarsList] at h; subst h; exact E.dom
 
 theorem quickIsDefEq.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂ : Dom c e₂) :
     (quickIsDefEq e₁ e₂ useHash).SWF c s fun _ _ => True := by

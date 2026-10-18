@@ -67,10 +67,12 @@ theorem TypeChecker.M.WF.withNatProbe {c : VContext} {m : MLCtx} [cwf : c.MLCWF 
       ∀ cwf' s', s₀ ≤ s' → ¬s.ngen.Reserves id →
         let : TrTerm c.venv c.lparams m'.vlctx (.fvar id) .nat :=
           .fvar (VLCtx.find?_vlam_self (ty := .nat)) (.bvar .zero)
-        M.WF (c.withMLC m' (wf := cwf')) s' (f (.fvar id)) Q) :
+        M.WF (c.withMLC m' (wf := cwf')) s' (f (.fvar id)) Q)
+    (hQ : ∀ a (s₁ s₂ : VState), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     (withLocalDecl name .default q(Nat) f).WF (c.withMLC m) s Q :=
   .withLocalDecl (hprim.trNat c.Ewf.ordered hnat)
-    (hprim.natIsType c.Ewf.ordered hnat (c.withMLC m).Δwf.toCtx) hs H
+    (hprim.natIsType c.Ewf.ordered hnat (c.withMLC m).Δwf.toCtx) hs H hQ
 
 /-- The `Bool` counterpart, for the operator the bitwise operations probe. -/
 theorem TypeChecker.M.WF.withBoolProbe {c : VContext} {m : MLCtx} [cwf : c.MLCWF m]
@@ -80,10 +82,12 @@ theorem TypeChecker.M.WF.withBoolProbe {c : VContext} {m : MLCtx} [cwf : c.MLCWF
       ∀ cwf' s', s₀ ≤ s' → ¬s.ngen.Reserves id →
         let : TrTerm c.venv c.lparams m'.vlctx (.fvar id) .bool :=
           .fvar (VLCtx.find?_vlam_self (ty := .bool)) (.bvar .zero)
-        M.WF (c.withMLC m' (wf := cwf')) s' (f (.fvar id)) Q) :
+        M.WF (c.withMLC m' (wf := cwf')) s' (f (.fvar id)) Q)
+    (hQ : ∀ a (s₁ s₂ : VState), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     (withLocalDecl name .default q(Bool) f).WF (c.withMLC m) s Q :=
   .withLocalDecl (hprim.trBool c.Ewf.ordered hbool)
-    (hprim.boolIsType c.Ewf.ordered hbool (c.withMLC m).Δwf.toCtx) hs H
+    (hprim.boolIsType c.Ewf.ordered hbool (c.withMLC m).Δwf.toCtx) hs H hQ
 
 theorem VExpr.insts_appN (g : List VExpr) : ∀ (e : VExpr) as,
     (e.appN as).insts g = (e.insts g).appN (as.map (·.insts g))
@@ -830,7 +834,9 @@ theorem lambdaTelescope.loop.WF {c : VContext} {α} {k : Array Expr → Expr →
     (harr : arr.toList.reverse = (m.fvarRevList n hn).map .fvar)
     (he₀ : e₀ = m.mkLambda n hn (Expr.instantiateList e arr.toList.reverse))
     {As} (hinv : lambdaTelescope.Inv c m₀ m arr n hn As e₀' e')
-    (hs : s₀ ≤ s) (he : (c.withMLC m).TrExprS (Expr.instantiateList e arr.toList.reverse) e') :
+    (hs : s₀ ≤ s) (he : (c.withMLC m).TrExprS (Expr.instantiateList e arr.toList.reverse) e')
+    (hQ : ∀ a (s₁ s₂ : VState), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     (lambdaTelescope.loop k arr e).WF (c.withMLC m) s Q := by
   have hcl : ∀ a ∈ arr, a.looseBVarRange' = 0 := fun a ha => by
     have : a ∈ arr.toList.reverse := by simpa using ha
@@ -841,7 +847,7 @@ theorem lambdaTelescope.loop.WF {c : VContext} {α} {k : Array Expr → Expr →
     let .lam (ty' := domv) (body' := body') domty hdom hbody := Expr.instantiateList_lam ▸ he
     intro hinv
     rw [Expr.instantiateRev_eq_instantiateList hcl]
-    refine M.WF.withLocalDecl hdom domty hs fun fv cwf' s' hs' _ => ?_
+    refine M.WF.withLocalDecl hdom domty hs (fun fv cwf' s' hs' _ => ?_) hQ
     have hinst : Expr.instantiateList body ((arr.push (Expr.fvar fv)).toList.reverse)
         = (Expr.instantiateList body arr.toList.reverse 1).instantiate1' (.fvar fv) := by
       rw [show (arr.push (Expr.fvar fv)).toList.reverse
@@ -849,7 +855,7 @@ theorem lambdaTelescope.loop.WF {c : VContext} {α} {k : Array Expr → Expr →
       exact (Expr.instantiateList_instantiate1_comm (a := .fvar fv) (by trivial)).symm
     refine lambdaTelescope.loop.WF H _ (arr.push (.fvar fv)) _ s' body'
       (Nat.succ_le_succ hn) (by simp only [Expr.lambdaArity] at harity ⊢; omega)
-      (by simp [hdrop]) (by simp [harr]) ?_ (As := As ++ [domv]) ⟨?_, ?_, ?_, ?_, ?_⟩ hs' ?_
+      (by simp [hdrop]) (by simp [harr]) ?_ (As := As ++ [domv]) ⟨?_, ?_, ?_, ?_, ?_⟩ hs' ?_ hQ
     · -- the abstraction the new binder adds cancels the instantiation, because the body's
       -- variables are the old context's and `withLocalDecl` handed back a fresh one
       have hcancel : Expr.abstract1 fv
@@ -897,10 +903,12 @@ theorem lambdaTelescope.WF {c : VContext} {α} {k : Array Expr → Expr → M α
       s ≤ s' → m'.dropN n hn = m → fvs.toList.reverse = (m'.fvarRevList n hn).map .fvar →
       e = m'.mkLambda n hn body → lambdaTelescope.Inv c m m' fvs n hn As e' body' →
       e.lambdaArity = n →
-      (c.withMLC m').TrExprS body body' → (k fvs body).WF (c.withMLC m') s' Q) :
+      (c.withMLC m').TrExprS body body' → (k fvs body).WF (c.withMLC m') s' Q)
+    (hQ : ∀ a (s₁ s₂ : VState), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     (lambdaTelescope e k).WF (c.withMLC m) s Q :=
   lambdaTelescope.loop.WF H e #[] m s e' (n := 0) (Nat.zero_le _) (by simp) rfl (by simp) (by simp)
-    (As := []) ⟨rfl, by simp, .refl, by simp, rfl⟩ .rfl he
+    (As := []) ⟨rfl, by simp, .refl, by simp, rfl⟩ .rfl he hQ
 
 theorem TrExprS.eraseMData {env : VEnv} {Us : List Name} {Δ : VLCtx} {e : Expr} {e' : VExpr}
     (H : TrExprS env Us Δ e e') : TrExprS env Us Δ (Primitive.eraseMData e) e' := by

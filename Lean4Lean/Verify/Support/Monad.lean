@@ -233,15 +233,6 @@ theorem CtxExt.condSupp_up {c c' : TypeChecker.Context} (H : CtxExt c c' fv)
     simpa [LocalContext.Dom, H.find x hne] using hd x hx
   exact (h.2 _ (H.closed_restrict hs hS) hd' (he.restrict hd')).mono restrict_le
 
-/-- A cache entry made in an extension holds in `c`. -/
-theorem CtxExt.condSupp_down {c c' : TypeChecker.Context} (H : CtxExt c c' fv)
-    (hs : ∀ x d, c.lctx.find? x = some d →
-      (∀ y ∈ d.type.fvarsList, c.lctx.Dom y) ∧ ∀ y ∈ d.value'.fvarsList, c.lctx.Dom y)
-    {ngen : NameGenerator} {e r : Expr} (h : CondSupp c' ngen e r) : CondSupp c ngen e r := by
-  refine ⟨h.1, fun S hS hd he => ?_⟩
-  exact (h.2 _ (H.closed_restrict' hs hS) (fun x hx => H.dom_of (hd x hx))
-    (he.restrict hd)).mono restrict_le
-
 namespace TypeChecker
 
 /-- A successful run of `x` keeps the state's caches as `SuppState` says, hands out free variables
@@ -370,21 +361,23 @@ theorem _root_.Lean4Lean.SuppState.enter {c c' : Context} {s : State} (wf : Supp
     · simp only [LocalContext.Dom, H.find x hx] at h
       exact (wf.reserves x h).mono hle
 
-/-- Leaving a binder: the state is as `SuppState` says in the context outside it. -/
-theorem _root_.Lean4Lean.SuppState.exit {c c' : Context} {s s' : State} (wf : SuppState c s) {fv : FVarId}
-    (H : CtxExt c c' fv) (wf' : SuppState c' s') (hle : s.ngen ≤ s'.ngen) :
-    SuppState c s' := by
-  have down {e r} (h : CondSupp c' s'.ngen e r) : CondSupp c s'.ngen e r :=
-    H.condSupp_down wf.wellScoped h
+/-- Leaving a binder restores the caches of the state it was entered with. -/
+theorem _root_.Lean4Lean.SuppState.restore {c c' : Context} {s s' : State} (wf : SuppState c s)
+    {fv : FVarId} (H : CtxExt c c' fv) (wf' : SuppState c' s') (hle : s.ngen ≤ s'.ngen) :
+    SuppState c (s.restore s') := by
+  have up {e r} (h : CondSupp c s.ngen e r) : CondSupp c s'.ngen e r :=
+    ⟨fun x hx => (h.1 x hx).mono hle, h.2⟩
   exact ⟨wf.lctxWF, wf.wellScoped, wf.envClosed, fun x h => (wf.reserves x h).mono hle,
-    fun e r h => down (wf'.inferTypeI e r h), fun e r h => down (wf'.inferTypeC e r h),
-    fun e r h => down (wf'.whnfCore e r h), fun e r h => down (wf'.whnf e r h),
+    fun e r h => up (wf.inferTypeI e r h), fun e r h => up (wf.inferTypeC e r h),
+    fun e r h => up (wf.whnfCore e r h), fun e r h => up (wf.whnf e r h),
     fun e r h S hS => wf'.unfold e r h S (H.env.symm ▸ hS)⟩
 
 theorem RecM.SWF.withLocalDecl {c : Context} {s : State} {f : Expr → RecM α} {Q name ty bi}
     (hty : ∀ fv ∈ ty.fvarsList, c.lctx.Dom fv)
     (H : RecM.SWF { c with lctx := c.lctx.mkLocalDecl ⟨s.ngen.curr⟩ name ty bi }
-      { s with ngen := s.ngen.next } (f (.fvar ⟨s.ngen.curr⟩)) Q) :
+      { s with ngen := s.ngen.next } (f (.fvar ⟨s.ngen.curr⟩)) Q)
+    (hQ : ∀ a (s₁ s₂ : State), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     RecM.SWF c s (withLocalDecl name bi ty f) Q := by
   intro m hm wf a s' e
   have hE := wf.ctxExt (name := name) (ty := ty) (bi := bi)
@@ -393,13 +386,17 @@ theorem RecM.SWF.withLocalDecl {c : Context} {s : State} {f : Expr → RecM α} 
   have wf₁ := wf.enter rfl hE hwf' fun d hd => by
     simp [LocalContext.find?_mkLocalDecl wf.lctxWF hE.fresh] at hd; subst hd
     exact ⟨hty, by simp [LocalDecl.value', Expr.fvarsList, hE.dom]⟩
-  obtain ⟨wf₂, hle, hQ⟩ := H m hm wf₁ a s' e
-  exact ⟨wf.exit hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle, hQ⟩
+  obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
+  obtain ⟨wf₂, hle, hQ'⟩ := H m hm wf₁ a _ e₁
+  exact ⟨wf.restore hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle,
+    hQ _ s₁ _ rfl hQ'⟩
 
 theorem RecM.SWF.withLetDecl {c : Context} {s : State} {f : Expr → RecM α} {Q name ty val}
     (hty : ∀ fv ∈ ty.fvarsList, c.lctx.Dom fv) (hval : ∀ fv ∈ val.fvarsList, c.lctx.Dom fv)
     (H : RecM.SWF { c with lctx := c.lctx.mkLetDecl ⟨s.ngen.curr⟩ name ty val }
-      { s with ngen := s.ngen.next } (f (.fvar ⟨s.ngen.curr⟩)) Q) :
+      { s with ngen := s.ngen.next } (f (.fvar ⟨s.ngen.curr⟩)) Q)
+    (hQ : ∀ a (s₁ s₂ : State), s₁.ngen = s₂.ngen → Q a s₁ → Q a s₂ := by
+      intro _ _ _ _ h; exact h) :
     RecM.SWF c s (withLetDecl name ty val f) Q := by
   intro m hm wf a s' e
   have hE := wf.ctxExtLet (name := name) (ty := ty) (val := val)
@@ -408,8 +405,10 @@ theorem RecM.SWF.withLetDecl {c : Context} {s : State} {f : Expr → RecM α} {Q
   have wf₁ := wf.enter rfl hE hwf' fun d hd => by
     simp [LocalContext.find?_mkLetDecl wf.lctxWF hE.fresh] at hd; subst hd
     exact ⟨hty, fun y hy => hE.dom_of (hval y hy)⟩
-  obtain ⟨wf₂, hle, hQ⟩ := H m hm wf₁ a s' e
-  exact ⟨wf.exit hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle, hQ⟩
+  obtain ⟨s₁, e₁, rfl⟩ := withFreshId_run e
+  obtain ⟨wf₂, hle, hQ'⟩ := H m hm wf₁ a _ e₁
+  exact ⟨wf.restore hE wf₂ (NameGenerator.LE.next.trans hle), NameGenerator.LE.next.trans hle,
+    hQ _ s₁ _ rfl hQ'⟩
 
 end TypeChecker
 end Lean4Lean

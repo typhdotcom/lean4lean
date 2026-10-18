@@ -184,7 +184,7 @@ theorem TypeChecker.VState.WF.ofMLCtx {env : Environment} {safety : DefinitionSa
     VState.WF (.ofMLCtx wf lparams fuel M hM) {} where
   trctx := hM.tr
   ngen_wf := hres
-  ectx := ⟨M.vlctx, _, hM.tr.wf, .refl, .empty, hres⟩
+  ectx := .empty
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
   inferTypeC_lit := .empty

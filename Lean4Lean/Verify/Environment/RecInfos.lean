@@ -202,14 +202,6 @@ theorem declareCtorAxioms.WF {c : VContext} {types : List InductiveType} {isUnsa
   · obtain ⟨ct, hct, rfl⟩ := List.mem_map.1 hax; exact hfind ct hct
   · obtain ⟨ct, hct, rfl⟩ := List.mem_map.1 hax; exact hnp ct hct
 
-/-- The type checker's context with local context `m` over `c`'s environment: the kernel's
-context with the variables a call does not read removed. -/
-def VContext.small (c : VContext) (m : TypeChecker.MLCtx) (hm : m.WF c.venv c.lparams) :
-    TypeChecker.VContext :=
-  @TypeChecker.VContext.withMLC c.tc m ⟨hm⟩
-
-@[simp] theorem VContext.small_mlctx {c : VContext} {m hm} : (c.small m hm).mlctx = m := rfl
-
 /-- What `loopArgs1` keeps, having passed `i` parameters of a type declared at
 `Π params idx₀, Sort u` and opened its indices `fvs` at translations `idx`: the small context `m`
 is the parameters `Mp` and those indices; the type left translates to `V`, defeq to the rest of
@@ -567,20 +559,6 @@ theorem _root_.Lean4Lean.TypeChecker.MLCtx.IsTele.length {m : TypeChecker.MLCtx}
   induction h with
   | nil => rfl
   | vlam _ ih => simp [TypeChecker.MLCtx.length, ih]
-
-theorem _root_.Lean4Lean.TypeChecker.MLCtx.WF.find?_dropN {env : VEnv} {Us : List Name} :
-    ∀ {m : TypeChecker.MLCtx}, m.WF env Us → ∀ n hn {x : FVarId},
-    x ∈ (m.dropN n hn).vlctx.fvars → m.lctx.find? x = (m.dropN n hn).lctx.find? x
-  | _, _, 0, _, _, _ => rfl
-  | .vlam fv _ _ _ _ m', wf, n+1, hn, x, hx
-  | .vlet fv _ _ _ _ _ m', wf, n+1, hn, x, hx => by
-    have hx' : x ∈ m'.vlctx.fvars := TypeChecker.MLCtx.dropN_fvars_subset n _ hx
-    have hne : fv ≠ x := fun e => by subst e; exact (wf.1.tr.find?_eq_none.1 wf.2.1) hx'
-    simp only [TypeChecker.MLCtx.lctx, TypeChecker.MLCtx.dropN]
-    first
-    | rw [LocalContext.find?_mkLocalDecl wf.1.tr.1 wf.2.1, if_neg (by simpa using hne)]
-    | rw [LocalContext.find?_mkLetDecl wf.1.tr.1 wf.2.1, if_neg (by simpa using hne)]
-    exact TypeChecker.MLCtx.WF.find?_dropN wf.1 n _ hx
 
 theorem _root_.Lean4Lean.TypeChecker.MLCtx.mkForall_forallE : ∀ (n : Nat) {m : TypeChecker.MLCtx}
     {fvs : List FVarId} {tys : List VExpr}, m.IsTele fvs tys → ∀ hn name dom body bi,

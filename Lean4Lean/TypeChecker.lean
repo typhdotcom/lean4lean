@@ -55,8 +55,14 @@ instance [Monad m] : MonadNameGenerator (StateT State m) where
   getNGen := return (← get).ngen
   setNGen ngen := modify fun s => { s with ngen }
 
+/-- A fresh variable's scope keeps the equivalences and cached results found in it to itself: they
+may rest on the variable, and are not known to hold without it. -/
 instance : MonadLocalNameGenerator M where
-  withFreshId x := do x (← mkFreshId)
+  withFreshId x := do
+    let { inferTypeI, inferTypeC, whnfCoreCache, whnfCache, eqvManager, .. } ← get
+    let r ← x (← mkFreshId)
+    modify fun s => { s with inferTypeI, inferTypeC, whnfCoreCache, whnfCache, eqvManager }
+    pure r
 
 instance (priority := low) : MonadWithReaderOf LocalContext M where
   withReader f := withReader fun s => { s with lctx := f s.lctx }
@@ -559,12 +565,9 @@ def isDefEqLambda (t s : Expr) (subst : Array Expr := #[]) : RecM Bool :=
       let tType := tDom.instantiateRev subst
       if !(← isDefEq tType sType) then return false
       pure (some sType)
-    if tBody.hasLooseBVars || sBody.hasLooseBVars then
-      let sType := sType.getD (sDom.instantiateRev subst)
-      withLocalDecl name bi sType fun fv => do
-        isDefEqLambda tBody sBody (subst.push fv)
-    else
-      isDefEqLambda tBody sBody (subst.push default)
+    let sType := sType.getD (sDom.instantiateRev subst)
+    withLocalDecl name bi sType fun fv =>
+      isDefEqLambda tBody sBody (subst.push fv)
   | t, s => isDefEq (t.instantiateRev subst) (s.instantiateRev subst)
 
 /-- If `t` and `s` are for-all expressions, checks that their domains are defeq and recurses on the
@@ -578,12 +581,9 @@ def isDefEqForall (t s : Expr) (subst : Array Expr := #[]) : RecM Bool :=
       let tType := tDom.instantiateRev subst
       if !(← isDefEq tType sType) then return false
       pure (some sType)
-    if tBody.hasLooseBVars || sBody.hasLooseBVars then
-      let sType := sType.getD (sDom.instantiateRev subst)
-      withLocalDecl name bi sType fun fv =>
-        isDefEqForall tBody sBody (subst.push fv)
-    else
-      isDefEqForall tBody sBody (subst.push default)
+    let sType := sType.getD (sDom.instantiateRev subst)
+    withLocalDecl name bi sType fun fv =>
+      isDefEqForall tBody sBody (subst.push fv)
   | t, s => isDefEq (t.instantiateRev subst) (s.instantiateRev subst)
 
 /-- Decides definitional equality of `t` and `s` in the cases that can be settled without

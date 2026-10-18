@@ -347,7 +347,7 @@ theorem WF.liftExcept {c : VContext} {x : Except Exception α} {Q} (h : x.WF Q) 
 theorem VState.WF.emptyM (c : VContext) : TypeChecker.VState.WF c.tc {} where
   trctx := c.mlctx_wf.tr
   ngen_wf := c.notKernel
-  ectx := ⟨c.mlctx.vlctx, .refl, c.tc.Δwf, .refl, .empty, c.notKernel⟩
+  ectx := .empty
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
   inferTypeC_lit := .empty
