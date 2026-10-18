@@ -407,6 +407,9 @@ structure TypeVarsAt (cT : VContext) (pre : List Name) (Mp : TypeChecker.MLCtx)
       (Mp.instL (VLevel.shift pre.length cT.lparams.length)).vlctx.toCtx
       (motiveTy t.name cT.lparams.length params.length
         (VLevel.shift pre.length cT.lparams.length) idx ml)
+  /-- The major premise is declared at an application of the type. -/
+  top : ∃ name ty ty' bi m', m = .vlam majorFv name ty ty' bi m' ∧
+    ∃ us, ty.getAppFn = .const t.name us
 
 def TypeVars (cT : VContext) (pre : List Name) (Mp : TypeChecker.MLCtx)
     (pfvs : List FVarId) (params : List VExpr) (level ml : VLevel) (t : InductiveType)
@@ -449,6 +452,15 @@ theorem checkTypeAnnotation.defn {env : Environment} {n : Name} {k : Nat} {u : U
     (h : checkTypeAnnotation env n k = .ok u) : ∃ v, env.find? n = some (.defnInfo v) := by
   unfold checkTypeAnnotation at h
   split at h <;> [exact ⟨_, ‹_›⟩; cases h]
+
+theorem _root_.Lean.Expr.getAppFn_mkAppN' (f : Expr) (as : Array Expr) :
+    (mkAppN f as).getAppFn = f.getAppFn := by
+  rw [mkAppN, ← Array.foldl_toList]
+  have : ∀ (as : List Expr) (f : Expr), (as.foldl mkApp f).getAppFn = f.getAppFn := by
+    intro as; induction as with
+    | nil => intro; rfl
+    | cons a as ih => intro f; rw [List.foldl_cons, ih]; rfl
+  exact this _ _
 
 /-- Stripping leaves an application of a constant that is not a definition alone. -/
 theorem stripAnnotations_const_head {env : Environment} {n : Name} {ls : List Level}
@@ -737,28 +749,34 @@ context `cb` is `base` with their blocks pushed, and each is as `TypeVarsAt` say
 structure Ind1Inv (cT : VContext) (X : Name → Prop) (pre : List Name) (Mp : TypeChecker.MLCtx)
     (hMp : Mp.WF cT.venv cT.lparams) (pfvs : List FVarId) (params : List VExpr) (level ml : VLevel)
     (types : List InductiveType) (typeTr : List VExpr) (stats : InductiveStats)
-    (env : Environment) (base : List FVarId) (tds : List TyData) (cb : VContext) : Prop where
+    (env : Environment) (VB : VEnv) (base : List FVarId) (tds : List TyData) (cb : VContext) :
+    Prop where
   sub : ∃ ρp, Sub X pre ρp (cT.small Mp hMp) cb
   bext : ∃ ρB, Ext (motivesCtx (Mp.instL (VLevel.shift pre.length cT.lparams.length)) tds) cb ρB
   env : cb.env = env
+  venv : cb.venv = VB
+  allowPrimitive : cb.allowPrimitive = cT.allowPrimitive
   fvars : cb.mlctx.vlctx.fvars = (tds.reverse.map TyData.block).flatten ++ base
   recs : ∀ (j : Nat) (td : TyData), tds[j]? = some td → ∃ t T' nidx, types[j]? = some t ∧
     typeTr[j]? = some T' ∧
     stats.nindices[j]? = some nidx ∧
     TypeVarsAt cT pre Mp pfvs params level ml t T' nidx td.info td.idx cb td.fvs td.major
       td.motive td.m
+  mtr : ∀ (j : Nat) (td : TyData), tds[j]? = some td → ∃ t, types[j]? = some t ∧
+    td.mtr = motiveTy t.name cT.lparams.length params.length
+      (VLevel.shift pre.length cT.lparams.length) td.idx ml
 
 theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {level ml : VLevel} {types : List InductiveType} {typeTr : List VExpr}
-    {stats : InductiveStats} {elimLevel : Level} {env : Environment} {base : List FVarId}
-    (hS : RecSetup cT pre Mp pfvs params level ml types typeTr stats elimLevel env)
+    {stats : InductiveStats} {elimLevel : Level} {env : Environment} {VB : VEnv}
+    {base : List FVarId} (hS : RecSetup cT pre Mp pfvs params level ml types typeTr stats elimLevel env)
     {k : Array RecInfo → M α} {Q}
     (H : ∀ tds cb, tds.length = types.length →
-      Ind1Inv cT X pre Mp hMp pfvs params level ml types typeTr stats env base tds cb →
+      Ind1Inv cT X pre Mp hMp pfvs params level ml types typeTr stats env VB base tds cb →
       WF cb (k (tds.map TyData.info).toArray) Q) :
     ∀ n tds cb, tds.length + n = types.length →
-      Ind1Inv cT X pre Mp hMp pfvs params level ml types typeTr stats env base tds cb →
+      Ind1Inv cT X pre Mp hMp pfvs params level ml types typeTr stats env VB base tds cb →
       WF cb (mkRecInfos.loopInd1 stats types.toArray elimLevel tds.length
         (tds.map TyData.info).toArray k) Q := by
   intro n
@@ -789,7 +807,8 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
         (hT.closedN' henv.ordered.closed trivial).1 htr
     refine WF.bind (hsubP.whnf hTr) fun e₁ h₁ => ?_
     obtain ⟨-, -, htr₁⟩ := h₁
-    let P (cb' : VContext) : Prop := cb'.env = env ∧
+    let P (cb' : VContext) : Prop :=
+      (cb'.env = env ∧ cb'.venv = VB ∧ cb'.allowPrimitive = cT.allowPrimitive) ∧
       (∀ (j : Nat) (td : TyData), tds[j]? = some td → ∃ t T' nidx, types[j]? = some t ∧
         typeTr[j]? = some T' ∧ stats.nindices[j]? = some nidx ∧
         TypeVarsAt cT pre Mp pfvs params level ml t T' nidx td.info td.idx cb' td.fvs td.major
@@ -808,7 +827,7 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       exact hdef.weak0 henv.ordered
     refine loopArgs1.WF (hMp := hMp) (idx₀ := idx₀) (u := u) hS.MpT hS.par (F₀ := cb.mlctx.vlctx.fvars)
       (P := P) hP ?_ _ e₁ 0 [] [] Mp hMp T' cb ρp ρp
-      ⟨by simpa using hS.MpT, by simp, ⟨hI.env, hI.recs, hI.bext⟩, ⟨Nat.zero_le _, rfl⟩, hsubP, hsubP,
+      ⟨by simpa using hS.MpT, by simp, ⟨⟨hI.env, hI.venv, hI.allowPrimitive⟩, hI.recs, hI.bext⟩, ⟨Nat.zero_le _, rfl⟩, hsubP, hsubP,
         htr₁, Nat.zero_le _, fun _ => rfl, fun _ => ⟨.nil, ?_⟩⟩
     · intro r i fvs idx m hm V cb' ρ ρp' hA
       dsimp only
@@ -843,7 +862,7 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
         refine WF.bind (Q := (· = mkAppN (.const types[tds.length].name stats.levels)
           ((pfvs ++ fvs).map .fvar).toArray))
           (fun r hr => stripAnnotations_const_head
-            (hA.pred.1 ▸ hS.notDefn _ (List.getElem_mem hj)) hr) fun tTy htTy' => ?_
+            (hA.pred.1.1 ▸ hS.notDefn _ (List.getElem_mem hj)) hr) fun tTy htTy' => ?_
         subst htTy'
         -- the declared type, at the indices read off
         have hU0 : cT.venv.IsType cT.lparams.length [] (.foralls (params ++ idx₀) (.sort u)) :=
@@ -974,13 +993,14 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
             (majorTy types[tds.length].name cT.lparams.length params.length idx.length) .default m,
           idx, motName, motE, motiveTy types[tds.length].name cT.lparams.length params.length
               (VLevel.shift pre.length cT.lparams.length) idx ml⟩
-        have hcb₂env : cb₂.env = env := by rw [← hcb₂]; exact hA.pred.1
+        have hcb₂env : cb₂.env = env := by rw [← hcb₂]; exact hA.pred.1.1
         have hnew : TypeVarsAt cT pre Mp pfvs params level ml types[tds.length] T' idx₀.length
             td.info td.idx (cb₂.push motName motE _ .default (hBM.trExprS hBTr) (hBM.isType hBIT))
             td.fvs td.major td.motive td.m := by
           refine ⟨rfl, wfM, hA.tele.vlam, ⟨show fvs.length + 1 ≤ m.length + 1 by omega, hbase⟩,
             by simp [td]; omega, hdefI, fun fv hfv => ?_, fun hfv => ?_,
-            ⟨_, motE, VContext.push_find?_self, hmTr, hmIT⟩⟩
+            ⟨_, motE, VContext.push_find?_self, hmTr, hmIT⟩,
+            ⟨_, _, _, _, _, rfl, _, Expr.getAppFn_mkAppN' _ _⟩⟩
           · have := hsubM.lctx fv hfv
             obtain ⟨d, hd⟩ := Sub.find?_cs
               (cs := Sub.pushS (cT.small m hm) ⟨cb'.ngen.curr⟩ `t _ _ .default wfM) hfv
@@ -992,8 +1012,11 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
           sub := ⟨_, hsubPM.skip (hBM.trExprS hBTr) (hBM.isType hBIT)⟩
           bext := ⟨_, by rw [motivesCtx_append]; exact hBM.push hBTr hBIT⟩
           env := hcb₂env
+          venv := show cb₂.venv = VB by rw [← hcb₂]; exact hA.pred.1.2.1
+          allowPrimitive := show cb₂.allowPrimitive = _ by rw [← hcb₂]; exact hA.pred.1.2.2
           fvars := ?_
-          recs := ?_ }
+          recs := ?_
+          mtr := ?_ }
         · simpa [TyData.info, td, motName] using this
         · show VLCtx.fvars (_ :: cb₂.mlctx.vlctx) = _
           have hcf : cb₂.mlctx.vlctx.fvars = ⟨cb'.ngen.curr⟩ :: cb'.mlctx.vlctx.fvars := by
@@ -1013,6 +1036,15 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
               cases h : j - tds.length <;> simp_all
             obtain rfl : j = tds.length := by omega
             exact ⟨_, T', idx₀.length, List.getElem?_eq_getElem hj, hT', hnidx, hnew⟩
+        · intro j td' hj'
+          rcases Nat.lt_or_ge j tds.length with hlt' | hge'
+          · rw [List.getElem?_append_left hlt'] at hj'
+            exact hI.mtr j td' hj'
+          · rw [List.getElem?_append_right hge'] at hj'
+            obtain ⟨hj0, rfl⟩ : j - tds.length = 0 ∧ td = td' := by
+              cases h : j - tds.length <;> simp_all
+            obtain rfl : j = tds.length := by omega
+            exact ⟨_, List.getElem?_eq_getElem hj, rfl⟩
       · exact WF.bind (Q := fun _ => False) .throw fun _ h => h.elim
     · have := hS.MpT.toCtx
       simp only [List.length_nil, List.drop_zero, List.reverse_nil, List.nil_append,

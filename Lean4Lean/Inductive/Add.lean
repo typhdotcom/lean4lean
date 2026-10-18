@@ -41,16 +41,25 @@ def stripAnnotations (env : Environment) : Expr → Except Exception Expr
     checkTypeAnnotation env ``semiOutParam 1; stripAnnotations env A
   | e => pure e
 
-/-- Stands for the recursor applied to the parameters, motives and minor premises in an
-`IHInfo`, which is recorded before the minor premises exist. Not a name the kernel generates. -/
-def recPlaceholder : Expr := .fvar ⟨`_recursor⟩
-
-/-- An inductive hypothesis of a minor premise: the type its recursive field ends in, and its
-value, closed over the binders the field's type opens to (which are out of scope afterwards, so
-their local variables may be reused), with `recPlaceholder` for the recursor. -/
+/-- An inductive hypothesis of a minor premise, recorded before the minor premises, and so the
+recursor, exist: the type its recursive field ends in, and the pieces of its value. The binders
+the field's type opens to are out of scope afterwards, so their local variables may be reused;
+the pieces are closed over them. -/
 structure IHInfo where
   itIdx : Nat
-  val : Expr
+  /-- The binders, each type abstracted over the ones before it. -/
+  binders : Array (Name × Expr × BinderInfo)
+  /-- The indices of the type the field ends in, abstracted over the binders. -/
+  indices : Array Expr
+  /-- The recursive field. -/
+  field : Expr
+
+/-- `fun xs => rec indices (field xs)`, for `rec` the recursor applied to the parameters, motives
+and minor premises. -/
+def IHInfo.value (ih : IHInfo) (rec : Expr) : Expr :=
+  ih.binders.foldr (fun (name, ty, bi) b => .lam name ty b bi) <|
+    .app (mkAppN rec ih.indices)
+      (mkAppN ih.field ((Array.range ih.binders.size).reverse.map .bvar))
 
 /-- A minor premise's fields and inductive hypotheses, which the recursor rule for its
 constructor is built from. -/
@@ -432,8 +441,11 @@ def loopU (i : Nat) (v : Array Expr) (ihs : Array IHInfo)
       let (itIdx, itIndices) ← getIIndices stats uiTy
       let lctx ← getLCtx
       return (lctx.mkForall xs <| .app (mkAppN recInfos[itIdx]!.motive itIndices) (mkAppN ui xs),
-        { itIdx, val := lctx.mkLambda xs <|
-          (mkAppN recPlaceholder itIndices).app (mkAppN ui xs) })
+        { itIdx, field := ui
+          binders := xs.mapIdx fun i x => match lctx.findFVar? x with
+            | some d => (d.userName, d.type.abstractRange i xs, d.binderInfo)
+            | none => (.anonymous, x, .default)
+          indices := itIndices.map (·.abstract xs) })
     let vName := ((← getLCtx).get! ui.fvarId!).userName.appendAfter "_ih"
     withLocalDecl vName .default (← consumeTypeAnnotations viTy) fun vi => do
     loopU (i + 1) (v.push vi) (ihs.push ih) k
@@ -496,7 +508,7 @@ def mkRecRules (indTypes : Array InductiveType) (elimLevel : Level) (stats : Ind
     let minorIdx ← get
     let v := minorInfo.ihs.map fun ih =>
       let val := .const (mkRecName indTypes[ih.itIdx]!.name) lvls
-      ih.val.replaceFVar recPlaceholder <| mkAppN (mkAppN (mkAppN val stats.params) motives) minors
+      ih.value <| mkAppN (mkAppN (mkAppN val stats.params) motives) minors
     let bu := minorInfo.fields
     rules := rules.push {
       ctor := ctor.name

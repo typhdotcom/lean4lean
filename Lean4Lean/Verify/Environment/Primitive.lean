@@ -69,12 +69,17 @@ names without the shape the model assumes for it. -/
 
 /-- Adding a run of constants, one after another: the part of `AddInduct` the primitive invariant
 depends on. The declared type and its constructors become constants of the types declared for
-them; `AddInduct` also adds the recursor and its rules, none of which is a primitive. -/
+them; `AddInduct` also adds the recursor, which is no primitive, its rules, and the block's
+record. -/
 inductive AddsConsts : VEnv → List (Name × VExpr) → VEnv → Prop
   | id {env} : AddsConsts env [] env
   | const {env env₁ env₂ n ty l} : env.addConst n ⟨0, ty⟩ = some env₁ →
     AddsConsts env₁ l env₂ → AddsConsts env ((n, ty) :: l) env₂
   | defeq : AddsConsts (env.addDefEq df) l env₂ → AddsConsts env l env₂
+  | other {env env₁ env₂ n ci l} : env.addConst n ci = some env₁ →
+    Environment.primitives.contains n = false → AddsConsts env₁ l env₂ → AddsConsts env l env₂
+  | block {env env₁ env₂ d l} : env.addBlock d = some env₁ → AddsConsts env₁ l env₂ →
+    AddsConsts env l env₂
 
 /-- A constant already present survives the run: a later step cannot take its name, because
 `addConst` at a name that is already there fails. -/
@@ -88,6 +93,12 @@ theorem AddsConsts.constants_stable {venv env' : VEnv} {cs} (H : AddsConsts venv
     have hne : m ≠ n := by
       rintro rfl; unfold VEnv.addConst at hadd; rw [h] at hadd; exact absurd hadd nofun
     rw [VEnv.addConst_constants_eq hadd]; simp [hne, h]
+  | @other env env₁ _ m ci' l hadd _ _ ih =>
+    refine ih ?_
+    have hne : m ≠ n := by
+      rintro rfl; unfold VEnv.addConst at hadd; rw [h] at hadd; exact absurd hadd nofun
+    rw [VEnv.addConst_constants_eq hadd]; simp [hne, h]
+  | block hb _ ih => exact ih (by rw [VEnv.addBlock_constants hb]; exact h)
 
 /-- Each constant of the run is present at the end, with the type it was added at. -/
 theorem AddsConsts.constants_of_mem {venv env' : VEnv} {cs} (H : AddsConsts venv cs env')
@@ -99,16 +110,24 @@ theorem AddsConsts.constants_of_mem {venv env' : VEnv} {cs} (H : AddsConsts venv
     obtain h | h := List.mem_cons.1 hmem
     · cases h; apply hrest.constants_stable; rw [VEnv.addConst_constants_eq hadd]; simp
     · exact ih h
+  | other _ _ _ ih => exact ih hmem
+  | block _ _ ih => exact ih hmem
 
-/-- A spec whose name is none of the ones being added survives the run. -/
+/-- A spec of a primitive name none of the ones being added survives the run. -/
 theorem AddsConsts.holds_of_ne {venv env' : VEnv} {cs} (H : AddsConsts venv cs env')
-    {n : Name} {s : PrimSpec} (hs : s.Holds venv n) (hne : ∀ q ∈ cs, q.1 ≠ n) :
+    {n : Name} (hpn : Environment.primitives.contains n) {s : PrimSpec} (hs : s.Holds venv n)
+    (hne : ∀ q ∈ cs, q.1 ≠ n) :
     s.Holds env' n := by
   induction H with
   | id => exact hs
   | defeq hadd ih => exact ih hs.addDefEq hne
   | @const env env₁ env₂ m ty l hadd _ ih =>
     exact ih (hs.addConst (hne _ (.head _)) hadd) fun q hq => hne q (.tail _ hq)
+  | @other env env₁ env₂ m ci' l hadd hnp _ ih =>
+    refine ih (hs.addConst ?_ hadd) hne
+    rintro rfl
+    simp [hpn] at hnp
+  | block hb _ ih => exact ih (hs.addBlock hb) hne
 
 /-- The constants `Bool`'s declaration contributes. -/
 def boolConsts : List (Name × VExpr) :=
@@ -122,7 +141,7 @@ theorem AddsConsts.hasPrimitives_bool {venv env' : VEnv} (H : AddsConsts venv bo
     (hprim : venv.HasPrimitives) : env'.HasPrimitives := by
   intro (p, s) hp
   by_cases hx : ∀ q ∈ boolConsts, q.fst ≠ p
-  · exact H.holds_of_ne (hprim _ hp) hx
+  · exact H.holds_of_ne (mem_primSpecs_contains hp) (hprim _ hp) hx
   simp at hx
   have ⟨x, hx⟩ := hx
   have := List.mem_map_of_mem (f := (·.1)) hx
@@ -138,7 +157,7 @@ theorem AddsConsts.hasPrimitives_nat {venv env' : VEnv} (H : AddsConsts venv nat
     (hprim : venv.HasPrimitives) : env'.HasPrimitives := by
   intro (p, s) hp
   by_cases hx : ∀ q ∈ natConsts, q.fst ≠ p
-  · exact H.holds_of_ne (hprim _ hp) hx
+  · exact H.holds_of_ne (mem_primSpecs_contains hp) (hprim _ hp) hx
   simp at hx
   have ⟨x, hx⟩ := hx
   have := List.mem_map_of_mem (f := (·.1)) hx
@@ -156,10 +175,9 @@ type at `Type`, and the constructors `primSpecs` speaks about -- and adding the 
 contributes keeps the primitive invariant.
 
 The second half is what the guard is *for*: `containsImplies` needs the constructors to arrive
-with the type, and the two `typeEq` entries need them to have exactly the declared types. What is
-still missing is the other side of the handshake -- deriving `AddsConsts` for these constants from
-the `AddInduct` step `addInductive` takes, which is what `addDecl.WF`'s `inductDecl` case waits
-on. -/
+with the type, and the two `typeEq` entries need them to have exactly the declared types.
+`AddsConsts.of_addInduct` derives `AddsConsts` for these constants from the `AddInduct` step
+`addInductive` takes. -/
 def PrimitiveInductiveResult (lparams : List Name) (nparams : Nat)
     (types : List InductiveType) (isUnsafe : Bool) : Prop :=
   isUnsafe = false ∧ lparams = [] ∧ nparams = 0 ∧

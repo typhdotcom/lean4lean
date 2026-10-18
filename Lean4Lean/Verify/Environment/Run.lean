@@ -1314,6 +1314,21 @@ def recTypeExpr (lctx : LocalContext) (stats : InductiveStats) (recInfos : Array
   lctx.mkForall #[info.major] <|
   .app (mkAppN info.motive info.indices) info.major
 
+/-- The right-hand side `mkRecRules` builds for the block's `q`th constructor, from the record
+`mi` of its minor premise. -/
+def ruleRhs (lctx : LocalContext) (types : Array InductiveType) (stats : InductiveStats)
+    (lvls : List Level) (motives minors : Array Expr) (q : Nat) (mi : MinorInfo) : Expr :=
+  let v := mi.ihs.map fun ih =>
+    ih.value (mkAppN (mkAppN (mkAppN (.const (mkRecName types[ih.itIdx]!.name) lvls)
+      stats.params) motives) minors)
+  lctx.mkLambda stats.params <| lctx.mkLambda motives <| lctx.mkLambda minors <|
+    lctx.mkLambda mi.fields <| mkAppN (mkAppN minors[q]! mi.fields) v
+
+/-- `RecursorVal.getMajorInduct`'s walk down the binders. -/
+def majorInductGo : Nat → Expr → Name
+  | 0, e => e.bindingDomain!.getAppFn.constName!
+  | n + 1, e => majorInductGo n e.bindingBody!
+
 /-- What `mkRecInfos` establishes, for the continuation it calls with `recInfos` in `c`: the
 block elaborates to a declaration `d`, whose recursors' types are what the local variables
 `mkRecInfos` opened abstract to. -/
@@ -1349,58 +1364,35 @@ structure RecInfosData (c₂ : VContext) (nparams : Nat) (types : List Inductive
       (∀ p ∈ d.ctorConsts, envC.constants p.1 = some p.2) →
       TrExprS envC (getRecLevelParams elimLevel c₂.lparams) []
         (recTypeExpr c.lctx stats recInfos info) (d.recType d.recLevels d.motiveLevel i T)
-
-/-- `mkRecInfos`, in the checking environment with the constructors added as axioms. Its
-constructors' fields are read as `d`'s fields, which `run` then builds the recursors from. -/
-theorem mkRecInfos.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
-    {stats params level typeTr} (hT : TypesData c₀ nparams types stats c₁ params level typeTr)
-    (hc : c.mlctx = c₁.mlctx) (hU : c.lparams = c₁.lparams) (hle : c₀.venv ≤ c.venv)
-    (henv : c.venv.WF) {isUnsafe : Bool}
-    (hp : c.allowPrimitive = false)
-    (hC : ∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
-      ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors, ∀ nidx,
-        stats.nindices[j]? = some nidx → CtorChecked c.venv c.lparams d t nidx ct)
-    (hCt : ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors,
-      ∃ C', TrExprS c.venv c.lparams [] ct.type C')
-    {elimLevel : Level} {k : Array RecInfo → M α} {Q}
-    (H : ∀ recInfos c' d,
-      RecInfosData c nparams types stats params level typeTr isUnsafe elimLevel recInfos c' d →
-      WF c' (k recInfos) Q) :
-    WF c (do withEnv (← declareCtorAxioms types.toArray isUnsafe) <|
-      withReader (fun ctx => { ctx with lparams := getRecLevelParams elimLevel ctx.lparams }) <|
-      mkRecInfos stats types.toArray elimLevel k) Q :=
-  sorry
-
-/-- `declareRecursors`: it adds one recursor per type, each translating, in any model of the
-environment with the block's types and constructors, to the spec's recursor, with its rules
-translating to the iota rules in any model that also has the recursors. -/
-theorem declareRecursors.WF {c₂ c : VContext} {nparams : Nat} {types : List InductiveType}
-    {stats params level typeTr isUnsafe elimLevel recInfos d}
-    (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c d)
-    (hE : d.LargeElim ↔ elimLevel ≠ .zero)
-    (hEu : elimLevel = .zero ∨ ∃ u, elimLevel = .param u ∧ u ∉ c₂.lparams)
-    {kflag : Bool} (hK : kflag = true ↔ d.IsKTarget) {envCtors : Environment}
-    (mapWF : envCtors.constants.WF) :
-    WF c (declareRecursors envCtors c₂.lparams stats types.toArray elimLevel kflag recInfos)
-      fun env' =>
-      ∃ recs : List RecursorVal,
-        env'.constants = insertConsts envCtors.constants (recs.map .recInfo) ∧
-        env'.quotInit = envCtors.quotInit ∧
-        ((recs.map ConstantInfo.recInfo).map (·.name)).Nodup ∧
-        (∀ ci ∈ recs.map ConstantInfo.recInfo, envCtors.constants.find? ci.name = none) ∧
-        (∀ ci ∈ recs.map ConstantInfo.recInfo,
-          Environment.primitives.contains ci.name → c.allowPrimitive) ∧
-        List.Forall₂ (fun v (p : VInductiveType × Nat) => v.name = Lean.mkRecName p.1.name)
-          recs d.types.zipIdx ∧
-        ∀ (envC envR : VEnv), c₂.venv ≤ envC → envC.WF →
-          (∀ p ∈ d.ctorConsts, envC.constants p.1 = some p.2) →
-          envC.addConstList d.recConsts = some envR → envR.WF →
-          List.Forall₂ (fun v (p : VInductiveType × Nat) =>
-            TrRecVal d c₂.lparams envR p.2 p.1 v ∧
-            TrConstant c.safety envC (.recInfo v)
-              ⟨d.recUVars, d.recType d.recLevels d.motiveLevel p.2 p.1⟩)
-            recs d.types.zipIdx :=
-  sorry
+  nparams : stats.params.size = d.params.length
+  nminors : (recInfos.flatMap (·.minors)).size = d.ctors.length
+  /-- The recursor's major premise is the type's: what `RecursorVal.getMajorInduct` reads. -/
+  major : ∀ (i : Nat) (T : VInductiveType) info, d.types[i]? = some T → recInfos[i]? = some info →
+    majorInductGo (stats.params.size + recInfos.size + (recInfos.flatMap (·.minors)).size +
+      stats.nindices[i]!) (recTypeExpr c.lctx stats recInfos info) = T.name
+  /-- Without parameters, a constructor's first binder whose domain carries no annotation is its
+  first field's type, and an axiom there gives an inductive hypothesis without binders. -/
+  first : d.params = [] → List.Forall₂ (fun (t : InductiveType) (T : VInductiveType) =>
+    List.Forall₂ (fun (ct : Constructor) (cv : VConstructor) => ∀ nm D b bi,
+      ct.type = .forallE nm D b bi → D.consumeTypeAnnotations' = D → ∀ f, cv.fields[0]? = some f →
+        TrExprS c₂.venv c₂.lparams [] D f.type ∧
+        ∀ n us ax ra, D = .const n us → c₂.env.find? n = some (.axiomInfo ax) →
+          f.recArg = some ra → ra.binders = []) t.ctors T.ctors) types d.types
+  /-- A record of a minor premise per constructor of each type. -/
+  infoCount : List.Forall₂ (fun (info : RecInfo) (T : VInductiveType) =>
+    info.minorInfos.size = T.ctors.length) recInfos.toList d.types
+  /-- The rule `mkRecRules` builds from the record of the `q`th constructor's minor premise
+  translates to its iota rule, in any model with the recursors. -/
+  rules : ∀ q j cv, d.ctors[q]? = some (j, cv) → ∃ mi,
+    (recInfos.toList.flatMap (·.minorInfos.toList))[q]? = some mi ∧
+    mi.fields.size = cv.fields.length ∧
+    ∀ envC envR : VEnv, c₂.venv ≤ envC → envC.WF →
+      (∀ p ∈ d.ctorConsts, envC.constants p.1 = some p.2) →
+      envC.addConstList d.recConsts = some envR → envR.WF →
+      TrExprS envR (getRecLevelParams elimLevel c₂.lparams) []
+        (ruleRhs c.lctx types.toArray stats (getRecLevels elimLevel stats.levels)
+          (recInfos.map (·.motive)) (recInfos.flatMap (·.minors)) q mi)
+        (d.iotaRule d.recLevels d.motiveLevel (VLevel.params d.recUVars) q j cv).rhs
 
 theorem typeConsts_eq {U : Nat} {X : InductiveType → VInductiveType → Prop} :
     ∀ {types : List InductiveType} {Ts : List VInductiveType} {typeTr : List VExpr},
@@ -1421,11 +1413,12 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     (hC : Compat c.lparams params level isUnsafe types stats.nindices d →
       ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors, ∀ nidx,
         stats.nindices[j]? = some nidx → CtorChecked venvAx c.lparams d t nidx ct)
-    {c₂ c₃ : VContext} {elimLevel recInfos} (hc₂ : c₂.venv = venvAx) (hc₂U : c₂.lparams = c.lparams)
+    {c₂ c₃ : VContext} {elimLevel recInfos} (hc₂U : c₂.lparams = c.lparams)
     (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c₃ d)
+    (hEl : Elaborates venvAx c.lparams nparams level types d)
+    (hInd : ∀ T ∈ d.types, T.WF venvAx d)
     (hLE : elimLevel ≠ .zero → d.LargeElimOK) :
     d.WF c.venv := by
-  have hEl : Elaborates venvAx c.lparams nparams level types d := hc₂ ▸ hc₂U ▸ hR.elaborates
   have hU : d.uvars = c.lparams.length := hR.uvars.trans (by rw [hc₂U])
   have hlen : d.params.length = nparams := hR.params ▸ hT.nparams
   have hle := VEnv.addConstList_le hAx
@@ -1457,7 +1450,7 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     obtain ⟨j, t, hj, ht, -⟩ := htypes T hTm
     obtain ⟨t', ht', hname, hcs⟩ := List.Forall₂.getElem?_r hEl.types hj
     obtain rfl : t = t' := Option.some.inj (ht.symm.trans ht')
-    refine ⟨hc₂ ▸ hR.indices T hTm, fun c hc => ?_⟩
+    refine ⟨hInd T hTm, fun c hc => ?_⟩
     obtain ⟨ct, hct, hrel⟩ := Lean4Lean.List.Forall₂.forall_exists_r hcs c hc
     have hps : env'.IsTele d.uvars [] d.params := by
       rw [hR.params, hU, hU₀]; exact (hV₀ ▸ hT.params_tele).mono hle
@@ -1559,12 +1552,12 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
     (hC : Compat c.lparams params level isUnsafe types stats.nindices d →
       ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors, ∀ nidx,
         stats.nindices[j]? = some nidx → CtorChecked venvAx c.lparams d t nidx ct)
-    {c₂ c₃ : VContext} {elimLevel recInfos} (hc₂ : c₂.venv = venvAx) (hc₂U : c₂.lparams = c.lparams)
-    (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c₃ d) :
+    {c₂ c₃ : VContext} {elimLevel recInfos} (hc₂U : c₂.lparams = c.lparams)
+    (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c₃ d)
+    (hEl : Elaborates venvAx c.lparams nparams level types d) :
     List.Forall₂ (fun v (j, c') => TrCtorVal d c.lparams j c' v ∧
       TrConstant c.safety venvAx (.ctorInfo v) ⟨d.uvars, c'.type⟩)
       (ctorVals c.lparams stats.params.size types isUnsafe) d.ctors := by
-  have hEl : Elaborates venvAx c.lparams nparams level types d := hc₂ ▸ hc₂U ▸ hR.elaborates
   have hU : d.uvars = c.lparams.length := hR.uvars.trans (by rw [hc₂U])
   have hlen : d.params.length = nparams := hR.params ▸ hT.nparams
   have hcompat : Compat c.lparams params level isUnsafe types stats.nindices d :=
