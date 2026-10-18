@@ -1,4 +1,5 @@
 import Lean4Lean.Verify.Environment.Flat
+import Lean4Lean.Verify.Environment.Quot
 
 namespace Lean4Lean
 open Lean4Lean
@@ -109,18 +110,6 @@ theorem addOpaque.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : Op
     have hto := hmono.trans (wf.mono hvis)
     exact .opaque (ci' := ci') ⟨⟨htr, hname⟩, hvalue.mono hto⟩
       (by rwa [← old.map_wf.find?'_eq_find?]) (hci.mono hto) hadd old
-
-/-- Initializing quotients, which is verified only up to this boundary. What it needs:
-* that `Eq` is safe. Neither kernel checks this, and without it the safe model cannot contain
-  `Quot`, whose constants' types mention `Eq`.
-* that the `Eq` `checkEqType` accepts translates to `eqConst`, so that each model is
-  `QuotReady`.
-* translations of the four constants `addQuot` adds, giving `AddQuot` at each safety level. -/
-theorem addQuot.WF_uninit {env : Environment} {ves : VEnvs} (wf : ves.WF env)
-    (h : env.quotInit = false) :
-    (Environment.addQuot env).WF fun env' =>
-      ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety :=
-  sorry
 
 theorem addQuot.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) :
     (Environment.addQuot env).WF fun env' =>
