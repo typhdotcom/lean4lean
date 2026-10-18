@@ -81,3 +81,55 @@ def merge (m : ScopedEquivManager) (ids : Scopes) (n1 n2 l : Nat) : ScopedEquivM
     { m with rank := m.rank.set! r2 (k2 + 1) }
 
 end ScopedEquivManager
+
+namespace ScopedEquivManager
+
+/-- Records that `e1` and `e2` are equivalent at level `l`, or deeper if their free variables
+belong to a deeper scope (`lv`). -/
+def addEquiv (ids : Scopes) (lv : Expr → Nat) (e1 e2 : Expr) (l : Nat) :
+    StateM ScopedEquivManager Unit := do
+  let n1 ← toNode e1
+  let n2 ← toNode e2
+  modify (·.merge ids n1 n2 (max l (max (lv e1) (lv e2))))
+
+/-- Both computations find an equivalence, at the deeper of their levels. -/
+@[inline] def both (x : StateM ScopedEquivManager (Option Nat))
+    (y : Unit → StateM ScopedEquivManager (Option Nat)) : StateM ScopedEquivManager (Option Nat) := do
+  let some a ← x | return none
+  let some b ← y () | return none
+  return some (max a b)
+
+/-- `e1` and `e2` are equivalent by current links, up to the structure of terms, with the deepest
+level the equivalence rests on. -/
+def isEquiv (ids : Scopes) (lv : Expr → Nat) (useHash : Bool) (e1 e2 : Expr) :
+    StateM ScopedEquivManager (Option Nat) := do
+  if ptrEqExpr e1 e2 then return some 0
+  if useHash && e1.hash != e2.hash then return none
+  if e1.isBVar && e2.isBVar then return if e1.bvarIdx! == e2.bvarIdx! then some 0 else none
+  let n1 ← toNode e1
+  let n2 ← toNode e2
+  if let some l := (← get).connLevel ids n1 n2 then return some l
+  let result ←
+    match e1, e2 with
+    | .const c1 l1, .const c2 l2 => pure <| if c1 == c2 && l1 == l2 then some 0 else none
+    | .mvar a1, .mvar a2 | .fvar a1, .fvar a2
+    | .sort a1, .sort a2 | .lit a1, .lit a2 => pure <| if a1 == a2 then some 0 else none
+    | .app f1 a1, .app f2 a2 =>
+      both (isEquiv ids lv useHash f1 f2) fun _ => isEquiv ids lv useHash a1 a2
+    | .lam _ d1 b1 _, .lam _ d2 b2 _ =>
+      both (isEquiv ids lv useHash d1 d2) fun _ => isEquiv ids lv useHash b1 b2
+    | .mdata _ a1, .mdata _ a2 => isEquiv ids lv useHash a1 a2
+    | .forallE _ d1 b1 _, .forallE _ d2 b2 _ =>
+      both (isEquiv ids lv useHash d1 d2) fun _ => isEquiv ids lv useHash b1 b2
+    | .proj s1 i1 e1, .proj s2 i2 e2 =>
+      if s1 == s2 && i1 == i2 then isEquiv ids lv useHash e1 e2 else pure none
+    | .letE _ t1 v1 b1 _, .letE _ t2 v2 b2 _ =>
+      both (both (isEquiv ids lv useHash t1 t2) fun _ => isEquiv ids lv useHash v1 v2)
+        fun _ => isEquiv ids lv useHash b1 b2
+    | _, _ => pure none
+  let some l := result | return none
+  modify (·.merge ids n1 n2 (max l (max (lv e1) (lv e2))))
+  return some l
+termination_by e1
+
+end ScopedEquivManager

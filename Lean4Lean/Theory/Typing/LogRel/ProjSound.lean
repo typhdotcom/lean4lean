@@ -1,4 +1,5 @@
 import Lean4Lean.Theory.Typing.LogRel.SoundLemmas
+import Lean4Lean.Theory.Typing.LogRel.RuleBodies
 
 /-!
 # Projections are sound in the model
@@ -160,6 +161,284 @@ theorem FieldsWF.view_interp (hM : ModelEnv env) {envX : VEnv} (hX : SoundHyps e
         refine ⟨b, h1, ?_⟩
         simpa [List.append_assoc] using h2) k x f' hx hf'
       simpa using this
+
+
+/-- Interpretations of the terms of a substitution interpret its variables at `pushAll`. -/
+theorem pushAll_consList {ρ : Valuation} {P : List TShape} {σs : List VExpr}
+    (hP : List.Forall₂ (fun y x => LE_Interp env ρ y x) P σs) :
+    ∀ i, LE_Interp env ρ (pushAll .nil P i) (VExpr.Subst.dflt.consList σs i) := by
+  intro i
+  have hl : P.length = σs.length := List.Forall₂.length_eq hP
+  rw [pushAll_apply, VExpr.Subst.consList_apply]
+  by_cases hi : i < σs.length
+  · rw [dif_pos (by omega), dif_pos hi, List.getElem_reverse, List.getElem_reverse]
+    exact hP.getElem?' (List.getElem?_eq_getElem _) (List.getElem?_eq_getElem _) |>.mono
+      (by simp only [hl]; exact .rfl)
+  · rw [dif_neg (by omega)]; exact .bot
+
+/-- A telescope typed in `envX` is sound in the model of `env`, binder by binder. -/
+theorem IsTele.soundAt (hM : ModelEnv env) {envX : VEnv} (hX : SoundHyps envX env)
+    (hXe : envX ≤ env) (hO : envX.Ordered) {U : Nat} :
+    ∀ {Γ Qs : List VExpr}, envX.IsTele U Γ Qs → OnCtx Γ (envX.IsType U) →
+      ∀ i (A : VExpr), Qs[i]? = some A → ∃ u, SoundTy env ((Qs.take i).reverse ++ Γ) A (.sort u)
+  | _, [], _, _, _, _, h => by cases h
+  | Γ, Q :: Qs, .cons ⟨u, hA⟩ h, hΓ, i, A, hi => by
+    cases i with
+    | zero =>
+      cases hi
+      exact ⟨u, (hX.strongSound' hM hXe hO hΓ hA).left.sound⟩
+    | succ i =>
+      obtain ⟨v, H⟩ := IsTele.soundAt hM hX hXe hO h ⟨hΓ, _, hA⟩ i A hi
+      exact ⟨v, by simpa using H⟩
+
+theorem _root_.Lean4Lean.VExpr.ClosedN.foralls_getElem :
+    ∀ {As : List VExpr} {B : VExpr} {k : Nat}, (VExpr.foralls As B).ClosedN k →
+      ∀ i (A : VExpr), As[i]? = some A → A.ClosedN (k + i)
+  | [], _, _, _, _, _, h => by cases h
+  | _ :: _, _, _, h, 0, _, hi => by cases hi; exact h.1
+  | _ :: _, _, _, h, i+1, _, hi => by
+    have := VExpr.ClosedN.foralls_getElem h.2 i _ hi
+    rwa [Nat.add_right_comm, Nat.add_assoc] at this
+
+
+/-- `ProjSound` for a block declared in `E₁`, whose model of `envT` (the block's types as axioms)
+is sound. -/
+theorem projSound_at (hM : ModelEnv env) {E₁ envT : VEnv} (hE₁ : E₁.WF) {d : VInductDecl}
+    (hd : d.WF E₁) (hTs : E₁.addConstList d.typeConsts = some envT) (hle : envT ≤ env)
+    (hX : SoundHyps envT env) {s : Name} {t : Nat} (hs : env.inducts s = some (d, t))
+    {T : VInductiveType} (hT : d.types[t]? = some T) (hname : T.name = s)
+    {Γ : List VExpr} {c : VConstructor} {k : Nat} {f : VField} {ls : List VLevel}
+    {As I : List VExpr} {e : VExpr} {u : VLevel} {U : Nat}
+    (hcs : T.ctors = [c]) (hf : c.fields[k]? = some f)
+    (hls : ∀ l ∈ ls, l.WF U) (hlen : ls.length = d.uvars) (hAs : As.length = d.params.length)
+    (hI : I.length = T.indices.length)
+    (hS : StrongSound env U Γ (.appN (.const s ls) (As ++ I)) (.sort u))
+    (he : StrongSound env U Γ e (.appN (.const s ls) (As ++ I))) :
+    SoundTy env Γ (.proj s k e) (c.projType ls s k As e) := by
+  have hO : envT.Ordered := (VEnv.WF.addConstList hE₁ (fun p hp => by
+    obtain ⟨T, hT, rfl⟩ := List.mem_map.1 hp
+    exact (hd.types T hT).1) hTs).ordered
+  have hle₁ : E₁ ≤ envT := VEnv.addConstList_le hTs
+  have hTm : T ∈ d.allTypes := List.mem_append_left _ (List.mem_of_getElem? hT)
+  obtain ⟨hTW, hCW⟩ := hd.ctors envT hTs T hTm
+  have hcW := hCW c (by simp [hcs])
+  obtain ⟨Ps, Ds, hcty, hPD, hFW, -⟩ := hcW.shape
+  have hPs : Ps.length = d.params.length := hPD.length_eq
+  have hPT : envT.IsTele d.uvars [] d.params := hd.params.mono hle₁
+  have hΓP : OnCtx d.params.reverse (envT.IsType d.uvars) := by simpa using hPT.onCtx trivial
+  intro Γ₀ ρ W m hm
+  cases hm with
+  | bot => exact InterpTyped.bot
+  | proj hs' hT' hcs' hce hx hmx =>
+  rename_i n x fs d' t' T' c'
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hs.symm.trans hs'))
+  obtain rfl : T = T' := Option.some.inj (hT.symm.trans hT')
+  obtain rfl : c = c' := (List.cons.inj (hcs.symm.trans hcs')).1
+  by_cases hne : IsStruct c.name → WShape.ListNonZero fs
+  · obtain ⟨m1, a, hle1, hm1, ha, hty⟩ := he.sound W hce
+    have hcty' : c.type.instL ls = .foralls (Ps.map (·.instL ls) ++ Ds.map (·.instL ls))
+        ((T.typeApp (VLevel.params d.uvars) (VExpr.bvars d.params.length c.fields.length)
+          c.indices).instL ls) := by
+      rw [hcty, VEnv.foralls_instL', List.map_append]
+    obtain ⟨N, fs1, p, hle2, hfs, hp, hfields⟩ := ctor_fields_typed hM hs hT
+      (i := 0) (by simp [hcs]) (by simp [hcs]) hcty' (by simpa using hPs)
+      (args := As ++ I) (by simp [hAs, hI]) hne hle1 hty ha
+    rw [List.take_left' hAs] at hp
+    -- the parameters, typed along the block's telescope
+    have hQT : envT.IsTele U [] ((d.params ++ T.indices).map (·.instL ls)) := by
+      simpa using ((hPT.append (by simpa using hTW.indices)).instL hls (Γ := []))
+    obtain ⟨_, hdef⟩ := hTW.defeq
+    have hdef' := hdef.instL hls (ls := ls)
+    rw [VEnv.foralls_instL'] at hdef'
+    have hRcl := (hdef'.closedN' hO.closed trivial).2.1
+    have hcT : env.constants s = some ⟨d.uvars, T.type⟩ := hname ▸ hle.constants
+      (VEnv.addConstList_constants_of_mem hTs (List.mem_map.2 ⟨T, List.mem_of_getElem? hT, rfl⟩))
+    have hTcl : (T.type.instL ls).ClosedN := (hdef'.closedN' hO.closed trivial).1
+    obtain ⟨hTS, -⟩ := StrongSound.spine hM
+      (Qs := (d.params ++ T.indices).map (·.instL ls)) (R := .sort (d.level.inst ls))
+      (fun i A hA => ⟨by simpa using VEnv.IsTele.closedN hO hQT trivial i A hA,
+        by simpa using IsTele.soundAt hM hX hle hO hQT trivial i A hA⟩)
+      hRcl (fun ci hci _ => by
+        cases hcT.symm.trans hci
+        exact SoundEq.closed hM hTcl hRcl
+          (hX.strongSound' hM hle hO (Γ := []) trivial hdef').sound)
+      (As ++ I).length (As ++ I) rfl (by simp [hAs, hI]) hS
+    have hTS' := hTS.take d.params.length
+    rw [List.take_take, Nat.min_eq_left (by simp [hAs]), List.take_left' hAs,
+      ← List.map_take, List.take_left' rfl] at hTS'
+    obtain ⟨P, hP1, hP2, hP3⟩ := hTS'.exists_fits hM W (pushAll_consList hp)
+    have hpl : p.length = As.length := List.Forall₂.length_eq hp
+    have hPl : P.length = As.length := List.Forall₂.length_eq hP1
+    have hρLE : (pushAll .nil p).LE (pushAll .nil P) := fun i => by
+      by_cases hi : i < As.length
+      · exact hP3 i hi
+      · rw [pushAll_apply, pushAll_apply, dif_neg (by omega), dif_neg (by omega), hpl, hPl]
+        exact .rfl
+    -- the fields, typed at interpretations of their declared domains over `P`
+    have hccl : (c.type.instL ls).ClosedN := by
+      obtain ⟨_, h⟩ := hcW.type; exact (h.closedN hO trivial).instL
+    rw [hcty'] at hccl
+    have hfsl : fs1.length = fs.length := (List.Forall₂.length_eq hfs).symm
+    have hxs : ∀ i x (D : VExpr), fs1[i]? = some x → Ds[i]? = some D →
+        ∃ b : WShape N, x.HasType b ∧
+          LE_Interp env (pushAll .nil (P ++ (fs1.take i).map (·.T))) b.T (D.instL ls) := by
+      intro i x D hx hD
+      have hD' : (Ds.map (·.instL ls))[i]? = some (D.instL ls) := by simp [hD]
+      obtain ⟨b, hb1, hb2⟩ := hfields i x _ hx hD'
+      have hil : i < fs1.length := (List.getElem?_eq_some_iff.1 hx).1
+      have hcl : (D.instL ls).ClosedN (Ps.length + i) := by
+        have := VExpr.ClosedN.foralls_getElem hccl (Ps.length + i) (D.instL ls)
+          (by rw [List.getElem?_append_right (by simp), List.length_map, Nat.add_sub_cancel_left,
+            hD'])
+        simpa using this
+      have h1 := LE_Interp.closed hM.closed hcl (ρ' := pushAll .nil (p ++ (fs1.take i).map (·.T)))
+        (fun j hj => by
+          rw [pushAll_apply, pushAll_apply]
+          have : j < (p ++ (fs1.take i).map (·.T)).length := by simp [hpl, hAs, ← hPs]; omega
+          rw [dif_pos this, dif_pos this]) hb2
+      refine ⟨b, hb1, h1.mono_l ?_⟩
+      rw [pushAll_append, pushAll_append]
+      exact pushAll_mono hρLE (List.forall₂_refl' fun _ => .rfl)
+    have W' : Valuation.Fits env [] (d.params.reverse.map (·.instL ls)) (pushAll .nil P) := by
+      rw [List.map_reverse]; exact hP2
+    obtain ⟨x1, hx1⟩ : ∃ x1, fs1[k]? = some x1 :=
+      ⟨_, List.getElem?_eq_getElem (by rw [hfsl]; exact (List.getElem?_eq_some_iff.1 hx).1)⟩
+    have hxx1 : x.T ≤ x1.T := hfs.getElem?' hx hx1
+    obtain ⟨b, hb1, hb2⟩ := FieldsWF.view_interp hM hX hle hO hls hFW hΓP W' hxs k x1 f hx1 hf
+    have hce1 : LE_Interp env ρ (WShape.ctor' c.name fs1).T e := hm1.mono hle2
+    refine InterpTyped.mk (hmx.trans hxx1) (.proj hs hT hcs hce1 hx1 .rfl) ?_ (WShape.HasType.T hb1)
+    unfold VConstructor.projType
+    rw [hf]
+    refine TeleSubst.interp_subst hM (List.forall₂_append' hP1 ?_) hb2
+    have hkl : k ≤ fs1.length := by have := (List.getElem?_eq_some_iff.1 hx1).1; omega
+    refine List.forall₂_of_getElem? (by simp [VExpr.projs, hkl]) fun j y z hy hz => ?_
+    have hj : j < k := by simpa [VExpr.projs] using (List.getElem?_eq_some_iff.1 hz).1
+    simp only [VExpr.projs, List.getElem?_map, List.getElem?_range hj, Option.map_some,
+      Option.some.injEq] at hz
+    subst hz
+    simp only [List.getElem?_map, List.getElem?_take_of_lt hj] at hy
+    obtain ⟨y', hy', rfl⟩ := Option.map_eq_some_iff.1 hy
+    exact .proj hs hT hcs hce1 hy' .rfl
+  · have hz : x.1 ≤ .bot := by
+      refine Classical.byContradiction fun h => hne fun _ => ⟨x, List.mem_of_getElem? hx, h⟩
+    obtain ⟨m', a, h1, h2, h3, h4⟩ := InterpTyped.bot (env := env) (ρ := ρ) (n := n)
+      (M := .proj s k e) (A := c.projType ls s k As e)
+    exact ⟨m', a, hmx.trans ((WShape.LE.T (b := .bot) hz).trans h1), h2, h3, h4⟩
+
+
+/-- A constructor shape that does not collapse, below another constructor shape: the same
+constructor, with smaller fields. -/
+theorem TShape.ctor'_le_ctor' {c c' : Name} {l : List (WShape n)} {l' : List (WShape n')}
+    (hne : IsStruct c → WShape.ListNonZero l)
+    (h : (WShape.ctor' c l).T ≤ (WShape.ctor' c' l').T) :
+    c = c' ∧ List.Forall₂ (fun x y => x.T ≤ y.T) l l' := by
+  have hK1 : n ≤ max n n' := Nat.le_max_left ..
+  have hK2 : n' ≤ max n n' := Nat.le_max_right ..
+  rw [TShape.LE.def (m := max n n' + 1) (by simp; omega) (by simp; omega)]
+    at h
+  simp only [WShape.T, WShape.lift_ctor' hK1, WShape.lift_ctor' hK2] at h
+  have hne' : IsStruct c → WShape.ListNonZero (l.map (WShape.lift (max n n'))) :=
+    fun hs => (WShape.ListNonZero.lift_iff hK1).2 (hne hs)
+  obtain ⟨l'', h'', heq, hl⟩ := WShape.ctor'_le.1 h hne'
+  unfold WShape.ctor' at heq
+  split at heq
+  · obtain ⟨rfl, rfl⟩ := WShape.ctor.inj.1 heq
+    refine ⟨rfl, ?_⟩
+    rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff] at hl
+    exact List.Forall₂.imp (fun x y hxy =>
+      (TShape.LE.def (m := max n n') (by simp [WShape.T]; omega) (by simp [WShape.T]; omega)).2 hxy) hl
+  · simp [WShape.ext_iff, WShape.ctor, WShape.bot, Shape.bot] at heq
+
+
+/-- A constructor's `Const` derivation at its arity: `bot`, or the constructor shape of its
+fields at levels where its type is not a proposition. -/
+theorem Const.ctor_inv (hR : ConstRoles env) {s : Name} {d : VInductDecl} {t t' : Nat}
+    {T : VInductiveType} {c' : VConstructor} (hs : env.inducts s = some (d, t))
+    (hT : d.types[t']? = some T) (hc : c' ∈ T.ctors) {ls : List VLevel}
+    {R : TShape → VExpr → Prop} {rargs : List (WShape n)} {m : TShape}
+    (hl : rargs.length = d.params.length + c'.fields.length)
+    (H : Const env c'.name ls R rargs m) :
+    m ≤ TShape.bot ∨ ¬d.PropAt ls ∧
+      m ≤ (WShape.ctor' c'.name (rargs.reverse.drop d.params.length)).T := by
+  have hA : ConstArity env c'.name (.ctor d t' c') (d.params.length + c'.fields.length) :=
+    .ctor hs hT hc rfl
+  cases H with
+  | bot => exact .inl TShape.bot_eqv.1
+  | lam h1 h2 =>
+    refine .inl (h2.trans ((WShape.lam'_le_bot fun x y h => WShape.LE.T_iff.1
+      ((Const.compat_mismatch hR (by simp; omega) (h1 x y h) hA).trans
+        TShape.bot_eqv.2)).T.trans TShape.bot_eqv.1))
+  | delta h1 h2 => cases hR (.delta h1 h2) hA
+  | indTy h1 h2 => cases hR (.indTy h1 h2) hA
+  | ctor h1 h2 h3 h4 h5 h6 h7 =>
+    have := hR (.ctor h1 h2 h3 h4) hA
+    cases this
+    exact .inr ⟨h5, h7⟩
+  | iota h1 h2 _ h4 => cases hR (.recursor h1 h2 h4) hA
+  | kIota h1 h2 _ h4 => cases hR (.recursor h1 h2 h4) hA
+  | quotTy h1 h2 => cases hR (.quotTy h1 h2) hA
+  | quotMk h1 h2 => cases hR (.quotMk h1 h2) hA
+  | quot h1 h2 => cases hR (.quotLift h1 h2) hA
+  | quotK h1 h2 => cases hR (.quotLift h1 h2) hA
+
+
+/-- An interpretation of a constructor applied to its parameters and fields: `bot`, or the
+constructor shape of interpretations of the fields, at levels where its type is not a
+proposition. -/
+theorem ctorApp_inv (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t t' : Nat}
+    {T : VInductiveType} {c' : VConstructor} (hs : env.inducts s = some (d, t))
+    (hT : d.types[t']? = some T) (hc : c' ∈ T.ctors) {ls : List VLevel} {As fs : List VExpr}
+    (hAs : As.length = d.params.length) (hfs : fs.length = c'.fields.length)
+    {ρ : Valuation} {m : TShape}
+    (H : LE_Interp env ρ m ((VExpr.const c'.name ls).appN (As ++ fs))) :
+    m ≤ TShape.bot ∨ ¬d.PropAt ls ∧ ∃ k, ∃ rf : List (WShape k),
+      List.Forall₂ (fun x A => LE_Interp env ρ x.T A) rf fs ∧
+      m ≤ (WShape.ctor' c'.name rf).T := by
+  have hA : ConstArity env c'.name (.ctor d t' c') (d.params.length + c'.fields.length) :=
+    .ctor hs hT hc rfl
+  rw [← spine_eq_appN] at H
+  obtain ⟨n0, H0⟩ := H.spine_inv hM.roles (fun r n h => by
+    cases hM.roles h hA
+    rw [← hA.determ h]; simp [hAs, hfs]; omega)
+  obtain ⟨rargs, y, hra, hmy, hC⟩ := H0 n0 (Nat.le_refl _)
+  have hl : rargs.length = d.params.length + c'.fields.length := by
+    rw [List.Forall₂.length_eq hra]; simp [hAs, hfs]; omega
+  rcases Const.ctor_inv hM.roles hs hT hc hl hC with h | ⟨hP, h⟩
+  · exact .inl (hmy.trans h)
+  · refine .inr ⟨hP, n0, _, ?_, hmy.trans h⟩
+    have h2 := (List.Forall₂.reverse (l := rargs) (l' := (As ++ fs).reverse)).2 hra
+    rw [List.reverse_reverse] at h2
+    have := List.forall₂_drop' (k := d.params.length) h2
+    rwa [List.drop_left' hAs] at this
+
+
+/-- A projection of a constructor application's interpretations are its field's. -/
+theorem projIota_le (hM : ModelEnv env) {s : Name} {d : VInductDecl} {t : Nat}
+    {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
+    (hT : d.types[t]? = some T) (hcs : T.ctors = [c]) {ls : List VLevel} {As fs : List VExpr}
+    {k : Nat} {a : VExpr} (hAs : As.length = d.params.length)
+    (hfs : fs.length = c.fields.length) (ha : fs[k]? = some a) {ρ : Valuation} {m : TShape}
+    (H : LE_Interp env ρ m (.proj s k ((VExpr.const c.name ls).appN (As ++ fs)))) :
+    LE_Interp env ρ m a := by
+  cases H with
+  | bot => exact .bot
+  | proj hs' hT' hcs' hce hx hmx =>
+  rename_i n x fs' d' t' T' c'
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hs.symm.trans hs'))
+  obtain rfl : T = T' := Option.some.inj (hT.symm.trans hT')
+  obtain rfl : c = c' := (List.cons.inj (hcs.symm.trans hcs')).1
+  by_cases hne : IsStruct c.name → WShape.ListNonZero fs'
+  · rcases ctorApp_inv hM hs hT (by simp [hcs]) hAs hfs hce with h | ⟨-, k', rf, hrf, h⟩
+    · obtain ⟨l', h', heq, -⟩ := WShape.ctor'_le.1 (WShape.LE.of_T (h.trans TShape.bot_eqv.2)) hne
+      simp [WShape.ext_iff, WShape.ctor, WShape.bot, Shape.bot] at heq
+    · obtain ⟨-, hl⟩ := TShape.ctor'_le_ctor' hne h
+      obtain ⟨y, hy⟩ : ∃ y, rf[k]? = some y :=
+        ⟨_, List.getElem?_eq_getElem (by
+          rw [← List.Forall₂.length_eq hl]; exact (List.getElem?_eq_some_iff.1 hx).1)⟩
+      exact (hrf.getElem?' hy ha).mono (hmx.trans (hl.getElem?' hx hy))
+  · have hz : x.1 ≤ .bot := by
+      refine Classical.byContradiction fun h => hne fun _ => ⟨x, List.mem_of_getElem? hx, h⟩
+    exact LE_Interp.mono (hmx.trans (WShape.LE.T (b := .bot) hz)) .bot
 
 end LogRel
 end Lean4Lean

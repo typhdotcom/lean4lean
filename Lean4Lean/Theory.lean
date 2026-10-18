@@ -11,6 +11,7 @@ import Lean4Lean.Theory.Typing.LogRel.Sound
 import Lean4Lean.Theory.Typing.LogRel.SoundEnv
 import Lean4Lean.Theory.Typing.LogRel.SoundLemmas
 import Lean4Lean.Theory.Typing.LogRel.ProjSound
+import Lean4Lean.Theory.Typing.LogRel.Realize
 import Lean4Lean.Theory.Typing.LogRel.Inv
 import Lean4Lean.Theory.Typing.LogRel.RuleBodies
 import Lean4Lean.Theory.Typing.Telescope
