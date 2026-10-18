@@ -297,6 +297,7 @@ inductive StRed : List VExpr → VExpr → VExpr → Prop where
   | app : Γ ⊢ e ⤳* .app f a → Γ ⊢ f ⤳< f' → Γ ⊢ a ⤳< a' → Γ ⊢ e ⤳< .app f' a'
   | lam : Γ ⊢ e ⤳* .lam A body → Γ ⊢ A ⤳< A' → A::Γ ⊢ body ⤳< body' → Γ ⊢ e ⤳< .lam A' body'
   | forallE : Γ ⊢ e ⤳* .forallE A B → Γ ⊢ A ⤳< A' → A::Γ ⊢ B ⤳< B' → Γ ⊢ e ⤳< .forallE A' B'
+  | proj : Γ ⊢ e ⤳* .proj s k x → Γ ⊢ x ⤳< x' → Γ ⊢ e ⤳< .proj s k x'
 
 protected theorem StRed.rfl : ∀ {e}, Γ ⊢ e ⤳< e
   | .bvar _ => .bvar .rfl
@@ -305,25 +306,28 @@ protected theorem StRed.rfl : ∀ {e}, Γ ⊢ e ⤳< e
   | .app .. => .app .rfl .rfl .rfl
   | .lam .. => .lam .rfl .rfl .rfl
   | .forallE .. => .forallE .rfl .rfl .rfl
+  | .proj .. => .proj .rfl .rfl
 
 theorem StRed.bvar_l (H : Γ ⊢ .bvar i ⤳< e) : e = .bvar i := by
   cases H with
-  | bvar h1 | sort h1 | const h1 | app h1 | lam h1 | forallE h1 => cases WHNF.bvar.whRedS h1 <;> rfl
+  | bvar h1 | sort h1 | const h1 | app h1 | lam h1 | forallE h1 | proj h1 =>
+    cases WHNF.bvar.whRedS h1 <;> rfl
 
 theorem StRed.sort_l (H : Γ ⊢ .sort u ⤳< e) : e = .sort u := by
   cases H with
-  | bvar h1 | sort h1 | const h1 | app h1 | lam h1 | forallE h1 => cases WHNF.sort.whRedS h1 <;> rfl
+  | bvar h1 | sort h1 | const h1 | app h1 | lam h1 | forallE h1 | proj h1 =>
+    cases WHNF.sort.whRedS h1 <;> rfl
 
 theorem StRed.lam_l (H : Γ ⊢ .lam A B ⤳< e) :
     ∃ A' B', e = .lam A' B' ∧ Γ ⊢ A ⤳< A' ∧ A::Γ ⊢ B ⤳< B' := by
   cases H with
-  | bvar h1 | sort h1 | const h1 | app h1 | forallE h1 => cases WHNF.lam.whRedS h1
+  | bvar h1 | sort h1 | const h1 | app h1 | forallE h1 | proj h1 => cases WHNF.lam.whRedS h1
   | lam h1 h2 h3 => cases WHNF.lam.whRedS h1; exact ⟨_, _, rfl, h2, h3⟩
 
 theorem StRed.forallE_l (H : Γ ⊢ .forallE A B ⤳< e) :
     ∃ A' B', e = .forallE A' B' ∧ Γ ⊢ A ⤳< A' ∧ A::Γ ⊢ B ⤳< B' := by
   cases H with
-  | bvar h1 | sort h1 | const h1 | app h1 | lam h1 => cases WHNF.forallE.whRedS h1
+  | bvar h1 | sort h1 | const h1 | app h1 | lam h1 | proj h1 => cases WHNF.forallE.whRedS h1
   | forallE h1 h2 h3 => cases WHNF.forallE.whRedS h1; exact ⟨_, _, rfl, h2, h3⟩
 
 variable! (hΓ₀ : OnCtx Γ₀ (IsType env univs)) in
@@ -342,6 +346,9 @@ theorem StRed.defeqDFC (W : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
   | forallE h1 _ _ ih1 ih2 =>
     let hΓ := W.isType' hΓ₀; have ⟨⟨_, hA⟩, _, hB⟩ := (h1.hasType hΓ h).forallE_inv henv
     exact .forallE (h1.defeqDFC W) (ih1 W hA) (ih2 (W.succ hA) hB)
+  | proj h1 =>
+    let hΓ := W.isType' hΓ₀
+    exact absurd (h1.hasType hΓ h) (Params.proj_untyped hΓ)
 
 theorem StRed.parRedS (H : Γ ⊢ e ⤳< e') : Γ ⊢ e ≫* e' := by
   induction H with
@@ -349,6 +356,7 @@ theorem StRed.parRedS (H : Γ ⊢ e ⤳< e') : Γ ⊢ e ≫* e' := by
   | app h1 _ _ ih1 ih2 => exact h1.parRedS.trans (ih1.app ih2)
   | lam h1 _ _ ih1 ih2 => exact h1.parRedS.trans (ih1.lam ih2)
   | forallE h1 _ _ ih1 ih2 => exact h1.parRedS.trans (ih1.forallE ih2)
+  | proj h1 _ ih => exact h1.parRedS.trans ih.proj
 
 theorem StRed.whRed (H1 : Γ ⊢ e₁ ⤳* e₂) (H2 : Γ ⊢ e₂ ⤳< e') : Γ ⊢ e₁ ⤳< e' := by
   cases H2 with
@@ -358,6 +366,7 @@ theorem StRed.whRed (H1 : Γ ⊢ e₁ ⤳* e₂) (H2 : Γ ⊢ e₂ ⤳< e') : Γ
   | app h1 h2 h3 => exact .app (H1.trans h1) h2 h3
   | lam h1 h2 h3 => exact .lam (H1.trans h1) h2 h3
   | forallE h1 h2 h3 => exact .forallE (H1.trans h1) h2 h3
+  | proj h1 h2 => exact .proj (H1.trans h1) h2
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
 theorem StRed.defeq (H : Γ ⊢ e1 ⤳< e2) (he : Γ ⊢ e1 : A) : Γ ⊢ e1 ≡ e2 : A :=
@@ -372,6 +381,7 @@ theorem StRed.weak' (W : Ctx.Lift' ρ Γ Γ') (H : Γ ⊢ e1 ⤳< e2) :
   | app h1 _ _ ih1 ih2 => exact .app (h1.weak' W) (ih1 W) (ih2 W)
   | lam h1 _ _ ih1 ih2 => exact .lam (h1.weak' W) (ih1 W) (ih2 W.cons)
   | forallE h1 _ _ ih1 ih2 => exact .forallE (h1.weak' W) (ih1 W) (ih2 W.cons)
+  | proj h1 _ ih => exact .proj (h1.weak' W) (ih W)
 
 theorem StRed.weakN (W : Ctx.LiftN n k Γ Γ') (H : Γ ⊢ e1 ⤳< e2) :
     Γ' ⊢ e1.liftN n k ⤳< e2.liftN n k := by
@@ -397,6 +407,7 @@ theorem StRed.instN (W : Ctx.InstN Γ₀ a1 A₀ k Γ₁ Γ)
   | app h1 _ _ ih1 ih2 => exact .app (h1.instN H₀' W) (ih1 W) (ih2 W)
   | lam h1 _ _ ih1 ih2 => exact .lam (h1.instN H₀' W) (ih1 W) (ih2 W.succ)
   | forallE h1 _ _ ih1 ih2 => exact .forallE (h1.instN H₀' W) (ih1 W) (ih2 W.succ)
+  | proj h1 _ ih => exact .proj (h1.instN H₀' W) (ih W)
 
 theorem StRed.apply_pat {p : Pattern} (r : p.RHS) {m1 m2 m3}
     (H : ∀ a, Γ ⊢ m2 a ⤳< m3 a) : Γ ⊢ r.apply m1 m2 ⤳< r.apply m1 m3 := by
@@ -422,6 +433,10 @@ theorem StRed.triangle (W : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
     let .forallE a1 a2 a3 := H1
     have hΓ := W.isType' hΓ₀; have ⟨⟨_, hA⟩, _, he⟩ := (a1.hasType hΓ h).forallE_inv henv
     exact .forallE a1 (ih1 W hA a2) (ih2 (W.succ (a2.defeq hΓ hA)) he.hasType.1 a3)
+  | proj =>
+    let .proj a1 _ := H1
+    have hΓ := W.isType' hΓ₀
+    exact absurd (a1.hasType hΓ h) (Params.proj_untyped hΓ)
   | beta _ _ ih1 ih2 =>
     let .app a1 a2 a3 := H1; let .lam a4 a5 a6 := a2
     have hΓ := W.isType' hΓ₀; have ⟨_, _, hf, ha⟩ := (a1.hasType hΓ h).app_inv henv hΓ
@@ -655,6 +670,7 @@ theorem InferType.exists (H : Γ ⊢ a : A) : ∃ A', Γ ⊢ a ▷ A' := by
     have ⟨_, h⟩ := (hV.hasType hΓ').uniq henv hΓ' h2.hasType
     have ⟨_, rV, _⟩ := h.reduce_sort hΓ'
     exact ⟨_, .forallE hU rU hV rV⟩
+  | proj h1 h2 h3 => exact absurd h3 (noProj h1 h2)
 
 def InferTypeS (Γ : List VExpr) (e A : VExpr) := ∃ A', Γ ⊢ e ▷ A' ∧ Γ ⊢ A' ⤳* A
 scoped notation:65 Γ " ⊢ " e1 " ▷* " e2:36 => InferTypeS Γ e1 e2

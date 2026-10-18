@@ -81,6 +81,11 @@ structure Typing where
   forallE_inv : Γ ⊢ .forallE A B : V → ∃ u v, Γ ⊢ A : .sort u ∧ A::Γ ⊢ B : .sort v
   app_inv : Γ ⊢ .app f a : V → ∃ A B, Γ ⊢ f : .forallE A B ∧ Γ ⊢ a : A
   lam_inv : Γ ⊢ .lam A e : V → ∃ u B, Γ ⊢ A : .sort u ∧ A::Γ ⊢ e : B
+  /-- No projection is typed: this sketch, like `ChurchRosser.lean`'s `Params.noProj`, does not
+  cover primitive projections. -/
+  proj_untyped : ¬Γ ⊢ .proj s k e : V
+  /-- No type has a single constructor, so the projection rules never apply. -/
+  noProj : env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors ≠ [c]
   uniq : Γ ⊢ e : A₁ → Γ ⊢ e : A₂ → Γ ⊢ A₁ ≡ A₂
   defeq_l : Γ ⊢ e₁ ≡ e₂ → Γ ⊢ e₁ : A → Γ ⊢ e₂ : A
   defeq_r : Γ ⊢ A₁ ≡ A₂ → Γ ⊢ e : A₁ → Γ ⊢ e : A₂
@@ -297,6 +302,7 @@ theorem NormalEq.instN_r (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : Typing.
   | const =>
     let ⟨_, h1, h2, h3⟩ := TY.const_inv H
     exact .refl (TY.const h1 h2 h3)
+  | proj => exact absurd H TY.proj_untyped
   | app fn arg ih1 ih2 =>
     let ⟨_, _, h1, h2⟩ := TY.app_inv H
     specialize ih1 W h1; have hf := h1.instN W h₀
@@ -441,6 +447,7 @@ private def meas : VExpr → Nat
   | .forallE f a => meas f + meas a + 1
   | .bvar _ | .const .. | .sort _ => 0
   | .lam A e => meas A + meas e + 3
+  | .proj _ _ e => meas e
 
 private theorem meas_liftN : meas (e.liftN n k) = meas e := by
   induction e generalizing k <;> simp [*, meas, liftN]

@@ -1298,8 +1298,10 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   rw [← hU] at hT htele
   have hctx := htele.defeqCtx henv .zero trivial hparams
   simp only [List.append_nil] at hctx
-  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, FieldsWF.of_checked henv (by simpa using hparams.onCtx trivial)
-    (hfc.defeqDFC henv.ordered hctx) hfe⟩, hidx.trans hnidx, hmen⟩, by rw [har, hps, hDs]⟩
+  have hFW := FieldsWF.of_checked henv (by simpa using hparams.onCtx trivial)
+    (hfc.defeqDFC henv.ordered hctx) hfe
+  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW⟩, ⟨hidx.trans hnidx, hmen⟩,
+    VInductDecl.FieldsWF.projFields henv hparams hFW⟩, by rw [har, hps, hDs]⟩
   rw [hty, hname, hU, hnp, hDs]
 
 /-- The type `run` gives the `i`th recursor, from the local variables `mkRecInfos` opened. -/

@@ -3,6 +3,7 @@ import Lean4Lean.Verify.Typing.Expr
 import Lean4Lean.Verify.Expr
 import Lean4Lean.Theory.Typing.Strong
 import Lean4Lean.Theory.Typing.UniqueTyping
+import Lean4Lean.Theory.Typing.Recursor
 import Lean4Lean.Instantiate
 
 namespace Lean4Lean
@@ -638,13 +639,6 @@ inductive SortList : VLCtx → List VLevel → Prop
 
 end VLCtx
 
-theorem TrProj.weak' (W : Ctx.Lift' n Γ Γ')
-    (H : TrProj Γ s i e e') : TrProj Γ' s i (e.lift' n) (e'.lift' n) := sorry
-
-theorem TrProj.weakN (W : Ctx.LiftN n k Γ Γ')
-    (H : TrProj Γ s i e e') : TrProj Γ' s i (e.liftN n k) (e'.liftN n k) := by
-  simpa [VExpr.lift'_consN_skipN] using H.weak' <| Ctx.liftN_iff_lift'.1 W
-
 variable! (henv : Ordered env) in
 theorem TrExprS.weakFV' (W : VLCtx.FVLift' Δ Δ' dk n k) (hΔ' : Δ'.WF env Us.length)
     (H : TrExprS env Us Δ e e') : TrExprS env Us Δ' e (e'.lift' (n.consN k)) := by
@@ -667,7 +661,7 @@ theorem TrExprS.weakFV' (W : VLCtx.FVLift' Δ Δ' dk n k) (hΔ' : Δ'.WF env Us.
     exact .letE h1 (ih1 W hΔ') (ih2 W hΔ') (ih3 (W.cons_bvar _) ⟨hΔ', nofun, h1⟩)
   | lit h1 _ ih => exact .lit h1 (ih W hΔ')
   | mdata _ ih => exact .mdata (ih W hΔ')
-  | proj _ h2 ih => exact .proj (ih W hΔ') (h2.weak' W.toCtx)
+  | proj _ h2 ih => exact .proj (ih W hΔ') (IsDefEqU.weak' henv W.toCtx h2)
 
 variable! (henv : WF env) in
 theorem TrExpr.weakFV' (W : VLCtx.FVLift' Δ Δ' dk n k) (hΔ' : Δ'.WF env Us.length)
@@ -706,7 +700,7 @@ theorem TrExprS.weakBV (W : VLCtx.BVLift Δ Δ' dn dk n k)
     refine .lit h1 (Expr.liftLooseBVars_eq_self ?_ ▸ ih W :)
     exact Closed.toConstructor.looseBVarRange_le
   | mdata _ ih => exact .mdata (ih W)
-  | proj _ h2 ih => exact .proj (ih W) (h2.weakN W.toCtx)
+  | proj _ h2 ih => exact .proj (ih W) (IsDefEqU.weakN henv W.toCtx h2)
 
 variable! (henv : WF env) in
 theorem TrExpr.weakBV (W : VLCtx.BVLift Δ Δ' dn dk n k)
@@ -718,13 +712,6 @@ variable! (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U)) in
 theorem HasType.skips (W : Ctx.LiftN n k Γ Γ')
     (h1 : env.HasType U Γ' e A) (h2 : e.Skips n k) : ∃ B, env.HasType U Γ' e B ∧ B.Skips n k :=
   IsDefEq.skips henv hΓ' W h1 h2 h2
-
-theorem TrProj.weak'_inv (henv : VEnv.WF env) (hΓ' : OnCtx Γ' (env.IsType U))
-    (W : Ctx.Lift' l Γ Γ') : TrProj Γ' s i (e.lift' l) e' → ∃ e', TrProj Γ s i e e' := sorry
-
-theorem TrProj.defeqDFC (henv : VEnv.WF env) (hΓ : env.IsDefEqCtx U [] Γ₁ Γ₂)
-    (he : env.IsDefEqU U Γ₁ e₁ e₂) (H : TrProj Γ₁ s i e₁ e') :
-    ∃ e', TrProj Γ₂ s i e₂ e' := sorry
 
 variable! {env env' : VEnv} (henv : env ≤ env') in
 nonrec theorem VEnv.ContainsLits.mono : ∀ {l}, env.ContainsLits l → env'.ContainsLits l
@@ -744,7 +731,7 @@ theorem TrExprS.mono (H : TrExprS env Us Δ e e') : TrExprS env' Us Δ e e' := b
   | letE h1 _ _ _ ih1 ih2 ih3 => exact .letE (h1.mono henv) ih1 ih2 ih3
   | lit h1 _ ih => refine .lit (h1.mono henv) ih
   | mdata _ ih => exact .mdata ih
-  | proj _ h2 ih => exact .proj ih h2
+  | proj _ h2 ih => exact .proj ih (h2.mono henv)
 
 variable! {env env' : VEnv} (henv : env ≤ env') in
 theorem TrExpr.mono (H : TrExpr env Us Δ e e') : TrExpr env' Us Δ e e' :=
@@ -890,8 +877,6 @@ theorem TrExpr.fvarsIn (H : TrExpr env Us Δ e e') : FVarsIn (· ∈ Δ.fvars) e
 theorem TrExpr.fvarsList (H : TrExpr env Us Δ e e') : e.fvarsList ⊆ Δ.fvars :=
   (fvarsIn_iff.1 H.fvarsIn).1
 
-theorem TrProj.wf (H1 : TrProj Δ s i e e') (H2 : VExpr.WF env U Γ e) : VExpr.WF env U Γ e' := sorry
-
 theorem TrExpr.wf (H : TrExpr env Us Δ e e') : VExpr.WF env Us.length Δ.toCtx e' :=
   let ⟨_, _, _, H⟩ := H; ⟨_, H.hasType.2⟩
 
@@ -910,7 +895,7 @@ theorem TrExprS.wf (H : TrExprS env Us Δ e e') : VExpr.WF env Us.length Δ.toCt
   | forallE h1 h2 => have ⟨_, h1'⟩ := h1; have ⟨_, h2'⟩ := h2; exact ⟨_, h1'.forallE h2'⟩
   | letE h1 _ _ _ _ _ ih3 => exact ih3 ⟨hΔ, nofun, h1⟩
   | lit _ _ ih | mdata _ ih => exact ih hΔ
-  | proj _ h2 ih => exact h2.wf (ih hΔ)
+  | proj _ h2 => exact h2
 
 variable! (henv : Ordered env) {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ) in
 theorem TrExprS.trExpr (H : TrExprS env Us Δ e e') : TrExpr env Us Δ e e' :=
@@ -931,11 +916,6 @@ theorem TrExpr.app (henv : VEnv.WF env) (hΔ : OnCtx Δ.toCtx (env.IsType Us.len
   have h3 := h3.of_r henv hΔ h1
   have h4 := h4.of_r henv hΔ h2
   ⟨_, .app h3.hasType.1 h4.hasType.1 s3 s4, _, h3.appDF h4⟩
-
-variable! (henv : VEnv.WF env) (hΓ : IsDefEqCtx env U [] Γ₁ Γ₂) in
-theorem TrProj.uniq (H1 : TrProj Γ₁ s₁ i e₁ e₁') (H2 : TrProj Γ₂ s₂ i e₂ e₂')
-    (H : env.IsDefEqU U Γ₁ e₁ e₂) :
-    env.IsDefEqU U Γ₁ e₁' e₂' := sorry
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
 theorem TrExprS.uniq (H1 : TrExprS env Us Δ₁ e e₁) (H2 : TrExprS env Us Δ₂ e e₂) :
@@ -971,7 +951,8 @@ theorem TrExprS.uniq (H1 : TrExprS env Us Δ₁ e e₁) (H2 : TrExprS env Us Δ�
     exact .vlet (ih3 hΔ r3 |>.of_l henv hΓ l1) (ih2 hΔ r2 |>.of_l henv hΓ hb)
   | lit _ _ ih1 => let .lit _ r2 := H2; exact ih1 hΔ r2
   | mdata _ ih1 => let .mdata r1 := H2; exact ih1 hΔ r1
-  | proj _ l2 ih1 => let .proj r1 r2 := H2; exact l2.uniq henv hΔ.defeqCtx r2 (ih1 hΔ r1)
+  | proj _ l2 ih1 =>
+    let .proj r1 _ := H2; exact l2.proj_congr henv hΔ.wf.toCtx (ih1 hΔ r1)
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
 theorem TrExpr.uniq (H1 : TrExpr env Us Δ₁ e e₁) (H2 : TrExpr env Us Δ₂ e e₂) :
@@ -1036,8 +1017,10 @@ theorem TrExprS.defeqDFC (H : TrExprS env Us Δ₁ e e₁) : ∃ e₂, TrExprS e
   | mdata _ ih1 => let ⟨_, h1⟩ := ih1 hΔ; exact ⟨_, .mdata h1⟩
   | proj h1 h2 ih1 =>
     let ⟨_, h1'⟩ := ih1 hΔ
-    let ⟨_, h2⟩ := h2.defeqDFC henv hΔ.defeqCtx (h1.uniq henv hΔ h1')
-    exact ⟨_, .proj h1' h2⟩
+    have hΔ₂ := (hΔ.symm henv).wf.toCtx
+    have h2 := VExpr.WF.proj_congr henv hΔ₂ (IsDefEqU.defeqDFC henv hΔ.defeqCtx h2)
+      ((h1.uniq henv hΔ h1').defeqDFC henv hΔ.defeqCtx)
+    exact ⟨_, .proj h1' ⟨_, h2.choose_spec.hasType.2⟩⟩
 
 variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂) in
 theorem TrExprS.defeqDFC' (H : TrExprS env Us Δ₁ e e') : TrExpr env Us Δ₂ e e' := by
@@ -1102,12 +1085,12 @@ theorem TrExpr.lit (h1 : env.ContainsLits l)
 theorem TrExpr.mdata (h : TrExpr env Us Δ e e') : TrExpr env Us Δ (.mdata d e) e' :=
   let ⟨_, s2, h2⟩ := h; ⟨_, .mdata s2, h2⟩
 
-theorem TrExpr.proj {env Us Δ e e' s i e''} (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
-    (H : TrExpr env Us Δ e e') (H2 : TrProj Δ.toCtx s i e' e'') :
-    TrExpr env Us Δ (.proj s i e) e'' :=
+theorem TrExpr.proj {env Us Δ e e' s i} (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length Δ)
+    (H : TrExpr env Us Δ e e') (H2 : VExpr.WF env Us.length Δ.toCtx (.proj s i e')) :
+    TrExpr env Us Δ (.proj s i e) (.proj s i e') :=
   let ⟨_, s2, h2⟩ := H
-  have ⟨_, H2'⟩ := H2.defeqDFC henv (.refl hΔ) h2.symm
-  ⟨_, .proj s2 H2', H2'.uniq henv (.refl hΔ) H2 h2⟩
+  have h := H2.proj_congr henv hΔ.toCtx h2.symm
+  ⟨_, .proj s2 ⟨_, h.choose_spec.hasType.2⟩, h.symm⟩
 
 theorem TrExprS.weakFV'_inv (henv : VEnv.WF env)
     (W : VLCtx.FVLift' Δ Δ₂ dk n k) (hΔ : VLCtx.IsDefEq env Us.length Δ₁ Δ₂)
@@ -1181,8 +1164,10 @@ theorem TrExprS.weakFV'_inv (henv : VEnv.WF env)
     have hΔ₂ := (hΔ.symm henv).wf
     let ⟨_, ih⟩ := ih W hΔ hc hv
     have htt := h1.uniq henv hΔ (ih.weakFV' henv W hΔ₂)
-    have ⟨_, h2⟩ := h2.defeqDFC henv hΔ.defeqCtx htt
-    have ⟨_, h2⟩ := h2.weak'_inv henv hΔ₂.toCtx W.toCtx
+    have h := VExpr.WF.proj_congr henv hΔ₂.toCtx (IsDefEqU.defeqDFC henv hΔ.defeqCtx h2)
+      (htt.defeqDFC henv hΔ.defeqCtx)
+    have h2 := (VExpr.WF.weak'_iff henv hΔ₂.toCtx W.toCtx (e := .proj ..)).1
+      ⟨_, h.choose_spec.hasType.2⟩
     exact ⟨_, .proj ih h2⟩
 
 theorem TrExprS.weakFV_inv (henv : VEnv.WF env)
@@ -1236,9 +1221,6 @@ theorem TrExprS.instN_var (W : VLCtx.InstN Δ₀ e₀' A₀ dk k Δ₁ Δ) (H : 
         refine ⟨_, _, h, ?_, rfl⟩
         cases d <;> simp [VLocalDecl.depth, VLocalDecl.inst, VExpr.lift_instN_lo]
 
-theorem TrProj.instN (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ)
-    (H : TrProj Γ₁ s i e e') : TrProj Γ s i (e.inst e₀ k) (e'.inst e₀ k) := sorry
-
 variable! (henv : Ordered env) (h₀ : TrExprS env Us Δ₀ e₀ e₀')
   (t₀ : env.HasType Us.length Δ₀.toCtx e₀' A₀) in
 theorem TrExprS.instN (W : VLCtx.InstN Δ₀ e₀' A₀ dk k Δ₁ Δ) (H : TrExprS env Us Δ₁ e e') :
@@ -1260,7 +1242,7 @@ theorem TrExprS.instN (W : VLCtx.InstN Δ₀ e₀' A₀ dk k Δ₁ Δ) (H : TrEx
     refine .lit h1 (Expr.instantiate1'_eq_self ?_ ▸ ih W :)
     exact Closed.toConstructor.looseBVarRange_le
   | mdata _ ih => exact .mdata (ih W)
-  | proj _ h2 ih => exact .proj (ih W) (h2.instN W.toCtx)
+  | proj _ h2 ih => exact .proj (ih W) (IsDefEqU.instN henv W.toCtx h2 t₀)
 
 theorem TrExprS.inst {Δ : VLCtx} (henv : Ordered env)
     (t₀ : env.HasType Us.length Δ.toCtx e₀' A₀)
@@ -1504,10 +1486,6 @@ theorem ofLevel_mkLevelIMax'
   · simp_all; exact VLevel.imax_self.symm
   simp [VLevel.ofLevel]; exact ⟨_, ⟨_, h1, _, h2, rfl⟩, rfl⟩
 
-variable! {ls : List VLevel} (hls : ∀ l ∈ ls, l.WF U') in
-theorem TrProj.instL (H : TrProj Γ s i e e') :
-    TrProj (Γ.map (VExpr.instL ls)) s i (e.instL ls) (e'.instL ls) := sorry
-
 section
 
 variable (henv : VEnv.WF env) {Us ps : List Name} {ls : List Level} {ls' : List VLevel}
@@ -1670,7 +1648,13 @@ def TrExprS.IsUnique : Expr → Prop
   | .forallE _ t b _ => IsUnique t ∧ IsUnique b
   | .letE _ _ v b _ => IsUnique v ∧ IsUnique b
   | .mdata _ e => IsUnique e
-  | .proj .. => False
+  | .proj _ _ e => IsUnique e
+
+/-- Every expression has at most one translation in a context: a projection's is syntactic too. -/
+theorem TrExprS.IsUnique.all : ∀ e, IsUnique e
+  | .bvar _ | .fvar _ | .sort _ | .const .. | .mvar .. | .lit _ => ⟨⟩
+  | .app f a | .lam _ f a _ | .forallE _ f a _ | .letE _ _ f a _ => ⟨all f, all a⟩
+  | .mdata _ e | .proj _ _ e => all e
 
 theorem TrExprS.IsUnique.natLitToConstructor : ∀ {n : Nat}, IsUnique (.natLitToConstructor n)
   | 0 => ⟨⟩
@@ -1719,7 +1703,7 @@ theorem TrExprS.unique' (hΔ : IsUniqueCtx Δ₁ Δ₂) (H : IsUnique e)
   | letE _ _ _ _ _ ih1 ih2 => cases ih1 hΔ H.1 ‹_›; cases ih2 (hΔ.cons .vlet) H.2 ‹_›; rfl
   | lit _ _ ih => exact ih hΔ .toConstructor ‹_›
   | mdata _ ih => exact ih hΔ H ‹_›
-  | proj => cases H
+  | proj _ _ ih => cases ih hΔ H ‹_›; rfl
 
 theorem TrExprS.unique (H : IsUnique e)
     (H1 : TrExprS env Us Δ e e₁) (H2 : TrExprS env Us Δ e e₂) : e₁ = e₂ := H1.unique' .base H H2

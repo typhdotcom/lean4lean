@@ -1,10 +1,12 @@
 import Lean4Lean.Theory.Inductive
 import Lean4Lean.Theory.Meta
+import Lean4Lean.Theory.Typing.Lemmas
 
 /-!
 The recursors and iota rules `VEnv.addInduct` specifies, compared with the ones the kernel
 generated for the same declarations: the recursor's type, and each rule's right-hand side, which
-is the right-hand side of the spec's iota rule.
+is the right-hand side of the spec's iota rule. Then projections: their types and rules in the
+typing judgment, against what the kernel accepts.
 -/
 
 namespace Lean4Lean.Tests.InductiveSpec
@@ -52,6 +54,7 @@ def _root_.Lean4Lean.VExpr.toExpr' (ns : List Name) : VExpr → Expr
   | .app f a => .app (f.toExpr' ns) (a.toExpr' ns)
   | .lam A b => .lam `x (A.toExpr' ns) (b.toExpr' ns) .default
   | .forallE A b => .forallE `x (A.toExpr' ns) (b.toExpr' ns) .default
+  | .proj s i e => .proj s i (e.toExpr' ns)
 
 /-- Have Lean's kernel check a rule: both sides have the stated type, and are defeq. -/
 def checkDefEq (df : VDefEq) : MetaM Unit := do
@@ -273,7 +276,7 @@ def vecDecl : VInductDecl where
 #guard check vecDecl [] (.param 0) 0 (vrec% Vec.rec) (vrules% Vec.rec)
 run_meta checkIota vecDecl [] (.param 0) 1
 
-/-! Projections, as eta states them, against the recursor applications one would write. -/
+/-! Projections: the type `projDF` gives a field, and the kernel's iota and eta for them. -/
 
 structure P2 where
   a : Nat
@@ -299,13 +302,132 @@ def p2Decl : VInductDecl where
 def p2 : VInductiveType := p2Decl.types[0]!
 def p2mk : VConstructor := p2.ctors[0]!
 
-#guard p2Decl.proj p2 p2mk 1 0 (.bvar 0) ==
-  vexpr(p ⊢ @P2.rec.{1} (fun _ => Nat) (fun a _ => a) p)
-#guard p2Decl.proj p2 p2mk 1 1 (.bvar 0) ==
-  vexpr(p ⊢ @P2.rec.{1} (fun p => Fin (@P2.rec.{1} (fun _ => Nat) (fun a _ => a) p))
-    (fun _ b => b) p)
+#guard p2mk.projType [] ``P2 0 [] (.bvar 0) == vexpr(Nat)
+#guard p2mk.projType [] ``P2 1 [] (.bvar 0) == .app (.const ``Fin []) (.proj ``P2 0 (.bvar 0))
 
 run_meta checkIota p2Decl [] (.param 0) 1
-run_meta checkDefEq (p2Decl.etaRule p2 p2mk)
+
+-- `projIota`, at the second field: `(P2.mk a b).2 ≡ b`, at the field's `projType`
+run_meta do
+  let mk : VExpr := .appN (.const ``P2.mk []) [.bvar 1, .bvar 0]
+  checkDefEq {
+    uvars := 0,
+    lhs := .lam vexpr(Nat) (.lam vexpr(n ⊢ Fin n) (.proj ``P2 1 mk)),
+    rhs := .lam vexpr(Nat) (.lam vexpr(n ⊢ Fin n) (.bvar 0)),
+    type := .forallE vexpr(Nat) (.forallE vexpr(n ⊢ Fin n) (p2mk.projType [] ``P2 1 [] mk)) }
+
+-- `projEta`: `p ≡ P2.mk p.1 p.2`
+run_meta checkDefEq {
+  uvars := 0,
+  lhs := .lam vexpr(P2) (.bvar 0),
+  rhs := .lam vexpr(P2) (.appN (.const ``P2.mk []) (VExpr.projs ``P2 2 (.bvar 0))),
+  type := vexpr(P2 → P2) }
+
+/-- Add a declaration to Lean's kernel, reporting whether it accepts it. -/
+def kernelAccepts (decl : Declaration) : CoreM Bool := do
+  match (← getEnv).addDeclCore 0 512 decl none with
+  | .ok _ => return true
+  | .error _ => return false
+
+/-- Have Lean's kernel check `fun x : T => x.i : F`, reporting whether it accepts it. -/
+def projAccepted (T : Expr) (s : Name) (i : Nat) (F : Expr) : CoreM Bool :=
+  kernelAccepts <| .defnDecl {
+    name := `_proj, levelParams := [], type := .forallE `x T F .default,
+    value := .lam `x T (.proj s i (.bvar 0)) .default, hints := .opaque, safety := .safe }
+
+/-! `Foo.{u} : Sort u` with a field of type `PUnit.{u}`. Its recursor eliminates only into `Prop`,
+but the kernel decides whether a projection is restricted at the instance's sort: `Foo.{1}`'s
+instances are never propositions, so its projection is allowed. -/
+
+run_cmd Command.liftTermElabM do
+  let u := Level.param `u
+  let mk : Constructor :=
+    { name := `Foo.mk, type := .forallE `x (.const ``PUnit [u]) (.const `Foo [u]) .default }
+  addDecl <| .inductDecl [`u] 0 [{ name := `Foo, type := .sort u, ctors := [mk] }] false
+
+-- `Foo.rec` has no motive level of its own: it eliminates only into `Prop`
+#guard_msgs in run_meta do
+  unless (← getConstInfoRec `Foo.rec).levelParams == [`u] do throwError "Foo.rec eliminates large"
+
+#guard_msgs in run_meta do
+  unless ← projAccepted (.const `Foo [(1 : Level)]) `Foo 0 (.const ``PUnit [(1 : Level)]) do
+    throwError "the kernel rejects Foo.\{1}.1"
+
+def fooDecl : VInductDecl where
+  uvars := 1
+  params := []
+  level := .param 0
+  types := [{
+    name := `Foo
+    type := .sort (.param 0)
+    indices := []
+    ctors := [{
+      name := `Foo.mk, type := .forallE (.const ``PUnit [.param 0]) (.const `Foo [.param 0])
+      indices := []
+      fields := [{ type := .const ``PUnit [.param 0], level := .param 0, recArg := none }] }] }]
+  isRec := false
+  largeElim := false
+  isUnsafe := false
+
+/-- The model types `Foo.{1}.1` too, in any environment that records `Foo`'s block. -/
+example {env : VEnv} (hS : env.inducts `Foo = some (fooDecl, 0))
+    (hFoo : env.constants `Foo = some ⟨1, .sort (.param 0)⟩)
+    (hPUnit : env.constants ``PUnit = some ⟨1, .sort (.param 0)⟩) :
+    env.HasType 0 [.const `Foo [.succ .zero]] (.proj `Foo 0 (.bvar 0))
+      (.const ``PUnit [.succ .zero]) := by
+  have hls : ∀ l ∈ [VLevel.succ .zero], l.WF 0 := by simp [VLevel.WF]
+  exact .projDF (As := []) (As' := []) (I := []) (I' := []) (k := 0) (e := .bvar 0) (e' := .bvar 0) hS rfl rfl rfl hls rfl rfl rfl rfl rfl
+    (VEnv.HasType.const hFoo hls rfl) (.bvar (by simpa using .zero))
+    (fun h => (h fun _ => by simp [fooDecl, VLevel.inst, VLevel.eval]).elim)
+    (VEnv.HasType.const hPUnit hls rfl)
+
+/-! A proposition with a data field `n` and proof fields `h : True` and `h' : n = n`. Projecting
+`n`, or `h'`, whose type depends on it, is refused. The kernel refuses `h` too, since a field after
+it depends on `n`; `projDF` allows it, since fields after the projected one do not bear on it. -/
+
+inductive Ex : Prop
+  | mk (n : Nat) (h : True) (h' : n = n)
+
+def exMk : VConstructor where
+  name := ``Ex.mk
+  type := vexpr(type_of% @Ex.mk)
+  indices := []
+  fields := [
+    { type := vexpr(Nat), level := .succ .zero, recArg := none },
+    { type := vexpr(True), level := .zero, recArg := none },
+    { type := .appN (.const ``Eq [.succ .zero]) [vexpr(Nat), .bvar 1, .bvar 1], level := .zero
+      recArg := none }]
+
+def exDecl : VInductDecl where
+  uvars := 0
+  params := []
+  level := .zero
+  types := [{ name := ``Ex, type := vexpr(Prop), indices := [], ctors := [exMk] }]
+  isRec := false
+  largeElim := false
+  isUnsafe := false
+
+#guard_msgs in run_meta do
+  let ex : Expr := .const ``Ex []
+  let ok ← [(0, .const ``Nat []), (1, .const ``True []), (2, mkApp3 (.const ``Eq [1])
+    (.const ``Nat []) (.proj ``Ex 0 (.bvar 0)) (.proj ``Ex 0 (.bvar 0)))].mapM fun (i, F) =>
+    projAccepted ex ``Ex i F
+  unless ok == [false, false, false] do throwError "the kernel accepts {ok}"
+
+example : ¬exDecl.ProjAllowed exMk [] 0 := fun h => by
+  have := (h fun h => h [] rfl).1 _ rfl
+  simp [VLevel.equiv_def, VLevel.inst, VLevel.eval] at this
+
+example : exDecl.ProjAllowed exMk [] 1 := fun _ =>
+  ⟨fun _ h => by cases h; rfl, fun
+    | 0, _, _, _ => .inr fun
+      | 1, _, _, _, h => by cases h; rfl
+      | 0, _, h, _, _ | _+2, _, _, h, _ => by omega⟩
+
+example : ¬exDecl.ProjAllowed exMk [] 2 := fun h => by
+  rcases (h fun h => h [] rfl).2 0 (by omega) _ rfl with h | h
+  · simp [VLevel.equiv_def, VLevel.inst, VLevel.eval] at h
+  · have := h 2 _ (by omega) (Nat.le_refl _) rfl
+    simp [VExpr.Skips, VExpr.unliftN, VExpr.appN, VExpr.inst, VExpr.instVar, VExpr.liftN] at this
 
 end Lean4Lean.Tests.InductiveSpec

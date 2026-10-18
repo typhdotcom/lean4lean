@@ -9,26 +9,10 @@ namespace Lean4Lean
 namespace Meta
 open Lean Meta Elab Term
 
-def expandProj (structName : Name) (idx : Nat) (e : Expr) : MetaM Expr := do
-  let failed {α} : Unit → MetaM α := fun _ => do
-    throwError "invalid projection{indentExpr (mkProj structName idx e)}"
-  let ival ← getConstInfoInduct structName
-  let [ctor] := ival.ctors | failed ()
-  let ctorInfo ← getConstInfoCtor ctor
-  unless idx < ctorInfo.numFields do failed ()
-  let args : Array Term ← (Array.range ctorInfo.numFields).mapM fun _ => do
-    `($(mkIdent (← mkFreshId)):ident)
-  let args' ← args.mapM fun x => `(Lean.Parser.Term.funBinder| $x)
-  let casesOn := mkCIdent (mkCasesOnName structName)
-  TermElabM.run' do
-    let stx ← `($casesOn:ident $(← e.toSyntax) fun $args'* => $(args[idx]!))
-    elabTerm stx (← inferType (.proj structName idx e))
-
 partial def expandExpr (e : Expr) : MetaM Expr :=
   Meta.transform e
     (pre := fun
       | .mdata _ e => return .visit e
-      | .proj s i e => return .continue (← expandProj s i e)
       | e@(.mvar _) => return .continue (← instantiateMVars e)
       | _ => return .continue)
 
@@ -43,7 +27,7 @@ partial def ofExpr : Expr → (k :_:= 0) → MetaM VExpr
   | .mdata _ e, k => ofExpr e k
   | .lit l, k => ofExpr l.toConstructor k
   | .letE _ _ value body _, k => return (← ofExpr body (k+1)).inst (← ofExpr value k)
-  | e@(.proj ..), _ => throwError "invalid expression {e}"
+  | .proj s i e, k => return .proj s i (← ofExpr e k)
   | e@(.mvar ..), _ => throwError "expression contains metavariables {e}"
   | .fvar e, k => do
     if let some i := fvarToIdx.get? e then return .bvar (i+k)

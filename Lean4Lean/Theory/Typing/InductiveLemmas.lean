@@ -31,11 +31,6 @@ end VEnv
 theorem VExpr.bvars_succ (n k : Nat) : VExpr.bvars (n + 1) k = .bvar (n + k) :: VExpr.bvars n k := by
   simp [VExpr.bvars, List.range_succ]
 
-@[simp] theorem VExpr.liftN_appN (e : VExpr) : ∀ as, (e.appN as).liftN n k =
-    (e.liftN n k).appN (as.map (·.liftN n k))
-  | [] => rfl
-  | a :: as => by simp [VExpr.appN, VExpr.liftN_appN _ as, VExpr.liftN]
-
 @[simp] theorem VExpr.length_liftTele : ∀ (As : List VExpr) (k : Nat),
     (VExpr.liftTele n As k).length = As.length
   | [], _ => rfl
@@ -83,7 +78,7 @@ namespace VEnv
 theorem addInduct_WF (henv : Ordered env) (hdecl : decl.WF env) (hgen : decl.GeneratedWF env)
     (henv' : addInduct env decl = some env') : Ordered env' := by
   simp [VEnv.addInduct, Option.bind_eq_some_iff] at henv'
-  obtain ⟨envT, hT, envC, hC, envR, hR, rfl⟩ := henv'
+  obtain ⟨envT, hT, envC, hC, envR, hR, hB⟩ := henv'
   have oT := addConstList_ordered henv (fun p hp => by
     obtain ⟨T, hT, rfl⟩ := List.mem_map.1 hp
     exact hdecl.types T hT) hT
@@ -91,8 +86,8 @@ theorem addInduct_WF (henv : Ordered env) (hdecl : decl.WF env) (hgen : decl.Gen
     obtain ⟨⟨j, c⟩, hc, rfl⟩ := List.mem_map.1 hp
     obtain ⟨T, hT', hc⟩ := VInductDecl.mem_ctors hc
     exact ((hdecl.ctors envT hT T hT').2 c hc).type) hC
-  obtain ⟨hrec, hiota, heta⟩ := hgen envT envC envR hT hC hR
+  obtain ⟨hrec, hiota⟩ := hgen envT envC envR hT hC hR
   have oR := addConstList_ordered oC hrec hR
-  exact addDefEqList_ordered (addDefEqList_ordered oR hiota) heta
+  exact .block (addDefEqList_ordered oR hiota) hB
 
 end VEnv

@@ -1,4 +1,4 @@
-import Lean4Lean.Theory.Typing.Telescope
+import Lean4Lean.Theory.Typing.TelescopeInv
 
 /-!
 # Environments with an inductive block
@@ -77,10 +77,10 @@ theorem VEnv.addDefEqList_mono : ∀ {dfs} {env₁ env₂ : VEnv}, env₁ ≤ en
 theorem VEnv.addInduct_mono {env₁ env₂ a b : VEnv} (H : env₁ ≤ env₂)
     (h₁ : env₁.addInduct decl = some a) (h₂ : env₂.addInduct decl = some b) : a ≤ b := by
   simp [VEnv.addInduct, Option.bind_eq_some_iff] at h₁ h₂
-  obtain ⟨_, t₁, _, c₁, _, r₁, rfl⟩ := h₁
-  obtain ⟨_, t₂, _, c₂, _, r₂, rfl⟩ := h₂
-  exact VEnv.addDefEqList_mono <| VEnv.addDefEqList_mono <| VEnv.addConstList_mono
-    (VEnv.addConstList_mono (VEnv.addConstList_mono H t₁ t₂) c₁ c₂) r₁ r₂
+  obtain ⟨_, t₁, _, c₁, _, r₁, b₁⟩ := h₁
+  obtain ⟨_, t₂, _, c₂, _, r₂, b₂⟩ := h₂
+  exact VEnv.addBlock_mono (VEnv.addDefEqList_mono <| VEnv.addConstList_mono
+    (VEnv.addConstList_mono (VEnv.addConstList_mono H t₁ t₂) c₁ c₂) r₁ r₂) b₁ b₂
 
 /-! ### The specification is monotone in the environment -/
 
@@ -88,11 +88,6 @@ section
 variable {env env' : VEnv} (henv : env ≤ env') {decl : VInductDecl} {T : VInductiveType}
   {c : VConstructor} {f : VField} {Γ As Bs Ds : List VExpr} {fs : List VField} {U k : Nat}
 include henv
-
-theorem VEnv.IsTele.mono (H : env.IsTele U Γ As) : env'.IsTele U Γ As := by
-  induction H with
-  | nil => exact .nil
-  | cons h _ ih => exact .cons (h.mono henv) ih
 
 theorem VEnv.TeleDefEq.mono (H : env.TeleDefEq U Γ As Bs) : env'.TeleDefEq U Γ As Bs := by
   induction H with
@@ -120,7 +115,8 @@ theorem VInductDecl.FieldsWF.mono (H : decl.FieldsWF env Γ k Ds fs) :
 
 theorem VConstructor.WF.mono (H : c.WF env decl T) : c.WF env' decl T :=
   have ⟨ps, Ds, h1, h2, h3⟩ := H.shape
-  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv⟩, H.indices⟩
+  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv⟩, H.indices,
+    fun k f hf => (H.projFields k f hf).imp (·.mono henv) (·.mono henv)⟩
 
 theorem VInductiveType.WF.mono (H : T.WF env decl) : T.WF env' decl :=
   ⟨H.indices.mono henv, H.defeq.mono henv⟩
@@ -147,5 +143,21 @@ theorem VEnv.WF.addConstList : ∀ {env env' : VEnv} {cs : List (Name × VConsta
     have : env₁.WF := ⟨.axiom { ci with name := n } :: ds, .decl (.axiom (H _ (.head _)) h1) h⟩
     exact VEnv.WF.addConstList this
       (fun p hp => (H p (.tail _ hp)).mono (VEnv.addConst_le h1)) h2
+
+end Lean4Lean
+
+namespace Lean4Lean
+
+/-- A type a well-formed environment records a block for is one of its constants. -/
+theorem VEnv.WF.constants_of_inducts {env : VEnv} (henv : env.WF)
+    (h : env.inducts n = some b) : ∃ ci, env.constants n = some ci := by
+  obtain ⟨_, _, _, _, hT, hle, T, hT', rfl⟩ := henv.inducts h
+  exact ⟨_, hle.constants <| VEnv.addConstList_constants_of_mem hT
+    (List.mem_map.2 ⟨T, List.mem_of_getElem? hT', rfl⟩)⟩
+
+/-- A block whose types have no block yet can be recorded. -/
+theorem VEnv.exists_addBlock {env : VEnv} (h : ∀ T ∈ d.types, env.inducts T.name = none) :
+    ∃ env', env.addBlock d = some env' := by
+  unfold VEnv.addBlock; rw [if_pos (List.all_eq_true.2 fun T hT => by simp [h T hT])]; exact ⟨_, rfl⟩
 
 end Lean4Lean

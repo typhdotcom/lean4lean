@@ -2,6 +2,57 @@ import Lean4Lean.Theory.VExpr
 
 namespace Lean4Lean
 
+/-! An inductive declaration as the kernel elaborates it: besides the declared types, it carries
+the telescopes `addInductive` reads off them by weak-head normalizing and consuming type
+annotations, since that is what the recursor is built from. All of it is stated over the block's
+`uvars` level parameters, and telescopes are listed outermost first. -/
+
+/-- The view of a recursive field: its type normalizes to `Π xs, I params indices`, where `I` is
+the `typeIdx`-th type of the block. The `binders` sit under the parameters and the earlier
+fields, and the `indices` under those and the `binders`. -/
+structure VRecArg where
+  binders : List VExpr
+  typeIdx : Nat
+  indices : List VExpr
+
+structure VField where
+  /-- The field's type with annotations consumed, under the parameters and the earlier fields. -/
+  type : VExpr
+  /-- The sort `type` lives in. -/
+  level : VLevel
+  recArg : Option VRecArg
+
+structure VConstructor where
+  name : Name
+  /-- As declared: `Π params fields, I params indices`, syntactically. -/
+  type : VExpr
+  fields : List VField
+  /-- The indices of the constructor's result, under the parameters and the fields. -/
+  indices : List VExpr
+
+structure VInductiveType where
+  name : Name
+  /-- As declared. -/
+  type : VExpr
+  /-- The index telescope, under the parameters. -/
+  indices : List VExpr
+  ctors : List VConstructor
+
+structure VInductDecl where
+  uvars : Nat
+  /-- The parameter telescope, shared by the block. -/
+  params : List VExpr
+  /-- The sort every type of the block lives in. -/
+  level : VLevel
+  types : List VInductiveType
+  /-- Whether some constructor binder mentions a type of the block: the kernel's `isRec`, which
+  decides whether a structure gets eta. -/
+  isRec : Bool
+  /-- Whether the recursor eliminates into every sort, not only `Prop`: the kernel's
+  `isLargeEliminator`, a syntactic test that `VInductDecl.LargeElimOK` justifies. -/
+  largeElim : Bool
+  isUnsafe : Bool
+
 structure VConstant where
   uvars : Nat
   type : VExpr
@@ -15,10 +66,14 @@ structure VDefEq where
 @[ext] structure VEnv where
   constants : Name → Option VConstant
   defeqs : VDefEq → Prop
+  /-- The block each inductive type belongs to, and its position there: primitive projections,
+  their computation rule and structure eta are read off it. -/
+  inducts : Name → Option (VInductDecl × Nat)
 
 def VEnv.empty : VEnv where
   constants _ := none
   defeqs _ := False
+  inducts _ := none
 
 instance : EmptyCollection VEnv := ⟨.empty⟩
 
@@ -32,13 +87,22 @@ def VEnv.addConst (env : VEnv) (name : Name) (ci : VConstant) : Option VEnv :=
 def VEnv.addDefEq (env : VEnv) (df : VDefEq) : VEnv :=
   { env with defeqs := fun x => x = df ∨ env.defeqs x }
 
+/-- Record the block `d` for each of its types, which must not have a block yet. -/
+def VEnv.addBlock (env : VEnv) (d : VInductDecl) : Option VEnv :=
+  if d.types.all fun T => (env.inducts T.name).isNone then
+    some { env with inducts := fun n => match d.types.findIdx? (·.name == n) with
+      | some t => some (d, t)
+      | none => env.inducts n }
+  else none
+
 structure VEnv.LE (env1 env2 : VEnv) : Prop where
   constants : env1.constants n = some a → env2.constants n = some a
   defeqs : env1.defeqs df → env2.defeqs df
+  inducts : env1.inducts n = some b → env2.inducts n = some b
 
 instance : LE VEnv := ⟨VEnv.LE⟩
 
-theorem VEnv.LE.rfl {env : VEnv} : env ≤ env := ⟨id, id⟩
+theorem VEnv.LE.rfl {env : VEnv} : env ≤ env := ⟨id, id, id⟩
 
 theorem VEnv.LE.trans {a b c : VEnv} (h1 : a ≤ b) (h2 : b ≤ c) : a ≤ c :=
-  ⟨h2.1 ∘ h1.1, h2.2 ∘ h1.2⟩
+  ⟨h2.1 ∘ h1.1, h2.2 ∘ h1.2, h2.3 ∘ h1.3⟩

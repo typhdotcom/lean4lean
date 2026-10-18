@@ -182,10 +182,19 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
       rcases ha with ha | ha
       · exact (hfrR ci hci).2.1 (htvn ▸ ha)
       · exact (hfrR ci hci).2.2 (hcvn ▸ ha)
+  obtain ⟨env₂, hBadd⟩ := VEnv.exists_addBlock (env := envR.addDefEqList d.iotaRules) (d := d)
+    fun T hT => by
+      rw [VEnv.addDefEqList_inducts, VEnv.addConstList_inducts hRadd,
+        VEnv.addConstList_inducts hCadd, VEnv.addConstList_inducts hAxd]
+      rcases hb : c.venv.inducts T.name with _ | b; · rfl
+      obtain ⟨_, h⟩ := c.envAt.tr.wf.constants_of_inducts hb
+      have hn : T.name ∈ d.typeConsts.map (·.1) := by simpa [VInductDecl.typeConsts] using ⟨T, hT, rfl⟩
+      obtain ⟨ci, hci, e⟩ := List.mem_map.1 (htvn ▸ hn)
+      have := hvfr _ (hDfr ci hci); rw [e] at this; cases h.symm.trans this
   have hstep : AddInduct (inductSafety isUnsafe) env.constants (ves.venv (inductSafety isUnsafe)) d
-      env'.constants ((envR.addDefEqList d.iotaRules).addDefEqList d.etaRules) := by
+      env'.constants env₂ := by
     refine .mk (lparams := c.lparams) hU.symm htv (hcs ▸ hcv) (hcs ▸ hrecs) hnd hfr ?_
-      (hcvenv ▸ hAxd) hCadd hRadd rfl
+      (hcvenv ▸ hAxd) hCadd hRadd hBadd
     rw [hRc, hDCc, hDc, hcenv, inductConsts, insertConsts_append, insertConsts_append]
   refine ⟨d, _, hR.isUnsafe, hcvenv ▸ hdecl, hstep, hRq, fun _ n hn => ?_, nofun⟩
   rw [← hnames] at hn
@@ -251,7 +260,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
   have hle₀ : c₀.venv ≤ venvAx := hT.base.venv ▸ hleAx
   have hB : AddInductive.BlockFresh c₀.venv venvAx types := by
     refine ⟨henv₀, c₀.envAt.hasPrimitives, wfAx.tr.wf, fun t ht => ?_, fun t ht => ?_,
-      fun n h1 h0 => ?_⟩
+      fun n h1 h0 => ?_, hT.base.venv ▸ VEnv.addConstList_inducts hAxEq⟩
     · obtain ⟨ci, h1, h2⟩ := hmem ht
       have := hDfr ci h1; rw [h2, hT.base.env] at this
       exact c₀.envAt.tr.constants_eq_none

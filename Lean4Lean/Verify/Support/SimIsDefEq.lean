@@ -368,8 +368,8 @@ theorem lazyDeltaReduction.loop.SS {S : Supp} {c₁ c₂ : Context} {s : State} 
 theorem lazyDeltaProjReduction.finish.SS {S : Supp} {c₁ c₂ : Context} {s : State}
     (hA : Agree S c₁ c₂) (hS : S.Closed c₁) (h₁ : Dom c₁ e₁) (h₂ : Dom c₁ e₂)
     (hs₁ : e₁.SuppIn S) (hs₂ : e₂.SuppIn S) :
-    RecM.SS c₁ c₂ s (lazyDeltaProjReduction.finish i e₁ e₂)
-      (lazyDeltaProjReduction.finish i e₁ e₂) fun _ _ => True := by
+    RecM.SS c₁ c₂ s (lazyDeltaProjReduction.finish sn i e₁ e₂)
+      (lazyDeltaProjReduction.finish sn i e₁ e₂) fun _ _ => True := by
   unfold finish
   refine .stateWF fun wf => (reduceProjCore.SS hA hS h₁ hs₁).bind fun _ _ _ ha => ?_
   extract_lets F
@@ -384,8 +384,8 @@ theorem lazyDeltaProjReduction.finish.SS {S : Supp} {c₁ c₂ : Context} {s : S
 theorem lazyDeltaProjReduction.loop.SS {S : Supp} {c₁ c₂ : Context} {s : State}
     (hA : Agree S c₁ c₂) (hS : S.Closed c₁) (h₁ : Dom c₁ e₁) (h₂ : Dom c₁ e₂)
     (hs₁ : e₁.SuppIn S) (hs₂ : e₂.SuppIn S) :
-    RecM.SS c₁ c₂ s (lazyDeltaProjReduction.loop i e₁ e₂ n)
-      (lazyDeltaProjReduction.loop i e₁ e₂ n) fun _ _ => True := by
+    RecM.SS c₁ c₂ s (lazyDeltaProjReduction.loop sn i e₁ e₂ n)
+      (lazyDeltaProjReduction.loop sn i e₁ e₂ n) fun _ _ => True := by
   induction n generalizing s e₁ e₂ with | zero => exact .throw | succ n ih
   unfold loop
   refine (lazyDeltaReductionStep.SS hA hS h₁ h₂ hs₁ hs₂).bind fun _ _ _ h => ?_; split
@@ -474,8 +474,8 @@ theorem isDefEqCore'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree
     · split <;> [exact .pure trivial; exact this]
     · split <;> [exact .pure trivial; exact this]
     · split <;> [skip; exact this]
-      refine (show RecM.SS c₁ c₂ _ (lazyDeltaProjReduction _ _ _)
-          (lazyDeltaProjReduction _ _ _) fun _ _ => True by
+      refine (show RecM.SS c₁ c₂ _ (lazyDeltaProjReduction _ _ _ _)
+          (lazyDeltaProjReduction _ _ _ _) fun _ _ => True by
         unfold lazyDeltaProjReduction; refine .readThe ?_; rw [hA.fuel]
         exact lazyDeltaProjReduction.loop.SS hA hS c1 d1 c2 d2).bind fun _ _ _ _ => ?_
       split <;> [exact .pure trivial; exact this]

@@ -185,13 +185,35 @@ namespace VEnv
 
 theorem addConst_le {env env' : VEnv} (h : env.addConst n ci = some env') : env ≤ env' := by
   unfold addConst at h; split at h <;> cases h
-  exact ⟨fun _ => by simp; split <;> simp_all, by simp [*]⟩
+  exact ⟨fun _ => by simp; split <;> simp_all, by simp [*], id⟩
 
 theorem addConst_self {env env' : VEnv} (h : env.addConst n ci = some env') :
     env'.constants n = some ci := by
   unfold addConst at h; split at h <;> cases h; simp
 
-theorem addDefEq_le {env : VEnv} : env ≤ env.addDefEq df := ⟨id, .inr⟩
+theorem addDefEq_le {env : VEnv} : env ≤ env.addDefEq df := ⟨id, .inr, id⟩
+
+theorem addBlock_constants {env env' : VEnv} (h : env.addBlock d = some env') :
+    env'.constants = env.constants := by
+  unfold addBlock at h; split at h <;> cases h; rfl
+
+theorem addBlock_defeqs {env env' : VEnv} (h : env.addBlock d = some env') :
+    env'.defeqs = env.defeqs := by
+  unfold addBlock at h; split at h <;> cases h; rfl
+
+theorem addBlock_le {env env' : VEnv} (h : env.addBlock d = some env') : env ≤ env' := by
+  unfold addBlock at h; split at h <;> cases h; rename_i hn
+  refine ⟨id, id, fun {n b} h' => ?_⟩
+  simp only
+  split
+  · rename_i t ht
+    obtain ⟨T, hT, rfl⟩ : ∃ T ∈ d.types, T.name = n := by
+      have := List.findIdx?_eq_some_iff_getElem.1 ht
+      obtain ⟨h1, h2, -⟩ := this
+      exact ⟨_, List.getElem_mem h1, by simpa using h2⟩
+    have := List.all_eq_true.1 hn T hT
+    simp [h'] at this
+  · exact h'
 
 theorem addDefEq_self {env : VEnv} : (env.addDefEq df).defeqs df := .inl rfl
 
@@ -256,6 +278,7 @@ inductive Ordered : VEnv → Prop where
     Ordered env → ci.WF env →
     env.addConst n ci = some env' → Ordered env'
   | defeq : Ordered env → df.WF env → Ordered (env.addDefEq df)
+  | block : Ordered env → env.addBlock d = some env' → Ordered env'
 
 def OnTypes (env : VEnv) (P : Nat → VExpr → VExpr → Prop) : Prop :=
   (∀ {n ci}, env.constants n = some ci → ∃ u, P ci.uvars ci.type (.sort u)) ∧
@@ -289,6 +312,10 @@ theorem Ordered.induction (motive : VEnv → Nat → VExpr → VExpr → Prop)
     · let ⟨hl, hr⟩ := h2
       exact ⟨type h1 ih hl, type h1 ih hr⟩
     · exact ih.2 hdf
+  | block _ h ih =>
+    have hle := addBlock_le h
+    unfold addBlock at h; split at h <;> cases h
+    exact OnTypes.mono .rfl (mono hle) ih
 
 variable (env : VEnv) (U : Nat) (Γ₀ : List VExpr) in
 inductive IsDefEqCtx : List VExpr → List VExpr → Prop
@@ -358,6 +385,12 @@ theorem IsDefEq.closedN' (H : env.IsDefEq U Γ e1 e2 A) (hΓ : CtxClosed Γ) :
       hl.instL.mono (Nat.zero_le _),
       hr.instL.mono (Nat.zero_le _),
       hA.instL.mono (Nat.zero_le _)⟩
+  | projDF _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 =>
+    exact ⟨(ih2 hΓ).1, (ih2 hΓ).2.1, (ih3 hΓ).1⟩
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih1 _ ih3 =>
+    exact ⟨(ih1 hΓ).1, (ih3 hΓ).1, (ih3 hΓ).2.2⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ ih1 ih2 =>
+    exact ⟨(ih1 hΓ).1, (ih2 hΓ).1, (ih1 hΓ).2.2⟩
 
 theorem Ordered.closed (H : Ordered env) : env.OnTypes fun _ e A => e.ClosedN ∧ A.ClosedN :=
   H.induction _ (fun _ => id) fun _ ih h => (IsDefEq.closedN' ih h trivial).2
@@ -398,6 +431,12 @@ theorem IsDefEq.mono (H : env.IsDefEq U Γ e1 e2 A) : env'.IsDefEq U Γ e1 e2 A 
   | eta _ ih => exact .eta ih
   | proofIrrel _ _ _ ih1 ih2 ih3 => exact .proofIrrel ih1 ih2 ih3
   | extra h1 h2 h3 => exact .extra (henv.2 h1) h2 h3
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ ih1 ih2 ih3 =>
+    exact .projDF (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 h10 ih1 ih2 h13 ih3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ h12 _ _ ih1 ih2 ih3 =>
+    exact .projIota (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 h10 ih1 h12 ih2 ih3
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ ih1 ih2 =>
+    exact .projEta (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 ih1 ih2
 
 theorem HasType.mono {env env' : VEnv} (henv : env ≤ env') :
     env.HasType U Γ e A → env'.HasType U Γ e A := IsDefEq.mono henv
@@ -434,6 +473,9 @@ theorem Ordered.constWF (H : Ordered env) (h : env.constants n = some ci) : ci.W
     · cases h; exact h2
     · exact ih h
   | defeq _ _ ih => exact .mono addDefEq_le (ih h)
+  | block _ h2 ih =>
+    refine .mono (addBlock_le h2) (ih ?_)
+    unfold addBlock at h2; split at h2 <;> cases h2; exact h
 
 theorem Ordered.defEqWF (H : Ordered env) (h : env.defeqs df) : df.WF env := by
   induction H with
@@ -446,6 +488,9 @@ theorem Ordered.defEqWF (H : Ordered env) (h : env.defeqs df) : df.WF env := by
     obtain rfl | h := h
     · assumption
     · exact ih h
+  | block _ h2 ih =>
+    refine .mono (addBlock_le h2) (ih ?_)
+    unfold addBlock at h2; split at h2 <;> cases h2; exact h
 
 variable! (henv : Ordered env) in
 theorem CtxWF.closed (h : OnCtx Γ (IsType env U)) : CtxClosed Γ :=
@@ -484,6 +529,10 @@ theorem IsDefEq.levelWF (H : env.IsDefEq U Γ e1 e2 A) (W : OnCtx Γ fun _ A => 
     let ⟨hh, _, hp⟩ := ih2 W; let ⟨hh', _, _⟩ := ih3 W
     exact ⟨hh, hh', hp⟩
   | extra _ h2 => exact ⟨.instL h2, .instL h2, .instL h2⟩
+  | projDF _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 => exact ⟨(ih2 W).1, (ih2 W).2.1, (ih3 W).1⟩
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih1 _ ih3 =>
+    exact ⟨(ih1 W).1, (ih3 W).1, (ih3 W).2.2⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ ih1 ih2 => exact ⟨(ih1 W).1, (ih2 W).1, (ih1 W).2.2⟩
 
 theorem HasType.const0 (H : env.constants c = some ci) (wf : ci.WF env) :
     HasType env ci.uvars [] (.const c (VLevel.params ci.uvars)) ci.type := by
@@ -525,6 +574,20 @@ theorem IsDefEq.weakN (W : Ctx.LiftN n k Γ Γ') (H : env.IsDefEq U Γ e1 e2 A) 
       hA2.instL.liftN_eq (Nat.zero_le _),
       hA3.instL.liftN_eq (Nat.zero_le _)]
     exact .extra h1 h2 h3
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ ih1 ih2 ih3 =>
+    have a1 := ih1 W; have a2 := ih2 W; have a3 := ih3 W
+    simp only [VConstructor.projType_liftN, liftN, liftN_appN, List.map_append] at a1 a2 a3 ⊢
+    exact .projDF h1 h2 h3 h4 h5 h6 (by simpa using h7) (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) a1 a2 h13 a3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ h12 _ _ ih1 ih2 ih3 =>
+    have h11 := ih1 W; have h13 := ih2 W; have h14 := ih3 W
+    simp only [VConstructor.projType_liftN, liftN, liftN_appN, List.map_append] at h11 h13 h14 ⊢
+    exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) h11 h12 h13 h14
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ ih1 ih2 =>
+    have h9 := ih1 W; have h10 := ih2 W
+    simp only [liftN, liftN_appN, List.map_append, VExpr.projs_liftN] at h9 h10 ⊢
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) h9 h10
 
 variable! (henv : Ordered env) in
 theorem HasType.weakN (W : Ctx.LiftN n k Γ Γ') (H : env.HasType U Γ e A) :
@@ -614,6 +677,20 @@ theorem IsDefEq.instL (H : env.IsDefEq U Γ e1 e2 A) :
   | extra h1 h2 h3 =>
     simp [VExpr.instL_instL]
     exact .extra h1 (by simp [VLevel.WF.inst hls]) (by simp [h3])
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ ih1 ih2 ih3 =>
+    simp only [VConstructor.projType_instL, VExpr.instL, instL_appN, List.map_append,
+      VLevel.inst_inst] at ih1 ih2 ih3 ⊢
+    exact .projDF h1 h2 h3 h4 (by simp [VLevel.WF.inst hls]) (by simp [h6]) (by simpa using h7)
+      (by simpa using h8) (by simpa using h9) (by simpa using h10) ih1 ih2 (h13.instL _) ih3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ h12 _ _ ih1 ih2 ih3 =>
+    simp only [VConstructor.projType_instL, VExpr.instL, instL_appN, List.map_append,
+      VLevel.inst_inst] at ih1 ih2 ih3 ⊢
+    exact .projIota h1 h2 h3 h4 (by simp [h5]) (by simp [VLevel.WF.inst hls]) (by simp [h7])
+      (by simpa using h8) (by simpa using h9) (by simpa using h10) ih1 (h12.instL _) ih2 ih3
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ ih1 ih2 =>
+    simp only [VExpr.instL, instL_appN, List.map_append, VExpr.projs_instL] at ih1 ih2 ⊢
+    exact .projEta h1 h2 h3 h4 h5 (by simp [VLevel.WF.inst hls]) (by simp [h7])
+      (by simpa using h8) ih1 ih2
 
 theorem HasType.instL {env : VEnv} (hls : ∀ l ∈ ls, l.WF U') (H : env.HasType U Γ e A) :
     env.HasType U' (Γ.map (VExpr.instL ls)) (e.instL ls) (A.instL ls) := IsDefEq.instL hls H
@@ -669,6 +746,20 @@ theorem IsDefEq.instN (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : env.IsDefE
       hA2.instL.instN_eq (Nat.zero_le _),
       hA3.instL.instN_eq (Nat.zero_le _)]
     exact .extra h1 h2 h3
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ ih1 ih2 ih3 =>
+    have a1 := ih1 W; have a2 := ih2 W; have a3 := ih3 W
+    simp only [VConstructor.projType_inst, inst, inst_appN, List.map_append] at a1 a2 a3 ⊢
+    exact .projDF h1 h2 h3 h4 h5 h6 (by simpa using h7) (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) a1 a2 h13 a3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ h12 _ _ ih1 ih2 ih3 =>
+    have h11 := ih1 W; have h13 := ih2 W; have h14 := ih3 W
+    simp only [VConstructor.projType_inst, inst, inst_appN, List.map_append] at h11 h13 h14 ⊢
+    exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) h11 h12 h13 h14
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ ih1 ih2 =>
+    have h9 := ih1 W; have h10 := ih2 W
+    simp only [inst, inst_appN, List.map_append, VExpr.projs_inst] at h9 h10 ⊢
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) h9 h10
 
 theorem HasType.instN {env : VEnv} (henv : env.Ordered) (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ)
     (H : env.HasType U Γ₁ e A) (h₀ : env.HasType U Γ₀ e₀ A₀) :
@@ -782,6 +873,13 @@ theorem IsDefEq.forallE_inv'
     have C2 := (A2.instL h2).closedN henv ⟨⟨⟩, C1⟩
     rw [C1.liftN_eq (Nat.zero_le _), C2.liftN_eq (by exact Nat.le_refl _)] at this
     simpa [liftN]
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih3 =>
+    obtain ⟨⟨⟩⟩ | eq := eq
+    exact ih3 (.inl eq)
+  | projEta _ _ _ _ _ _ _ _ _ _ ih1 =>
+    obtain eq | eq := eq
+    · exact ih1 (.inl eq)
+    · exact absurd eq appN_const_ne_forallE
   | _ => nomatch eq
 
 theorem HasType.forallE_inv (henv : Ordered env) (H : env.HasType U Γ (A.forallE B) V) :
@@ -822,6 +920,13 @@ theorem IsDefEq.sort_inv'
     intro e eq IH
     cases e <;> cases eq; rename_i u
     exact VLevel.WF.inst h2
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih3 =>
+    obtain ⟨⟨⟩⟩ | eq := eq
+    exact ih3 (.inl eq)
+  | projEta _ _ _ _ _ _ _ _ _ _ ih1 =>
+    obtain eq | eq := eq
+    · exact ih1 (.inl eq)
+    · exact absurd eq appN_const_ne_sort
   | _ => nomatch eq
 
 theorem IsDefEq.sort_inv_l (henv : Ordered env) (H : env.IsDefEq U Γ (.sort u) e2 V) : u.WF U :=
@@ -863,6 +968,9 @@ theorem IsDefEq.isType' (hΓ : OnCtx Γ (env.IsType U)) (H : env.IsDefEq U Γ e1
     have ⟨_, h⟩ := ih2 hΓ
     exact (ih1 ⟨hΓ, _, h.hasType.2⟩).instN henv .zero h2
   | eta _ ih => exact ih hΓ
+  | projDF _ _ _ _ _ _ _ _ _ _ _ _ _ h14 => exact ⟨_, h14.hasType.1⟩
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ h13 => exact ⟨_, h13⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ ih1 => exact ih1 hΓ
 
 theorem Ordered.isType (H : Ordered env) :
     env.OnTypes fun U e A => env.HasType U [] e A ∧ env.IsType U [] A :=

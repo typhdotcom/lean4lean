@@ -301,9 +301,8 @@ def Condition.WF.DecT {cnd : Condition} (w : Condition.WF c cnd) : Prop :=
     List.Forall₂ (E.venv.HasType c.lparams.length Γ) args' cnd.impl.domain →
     VExpr.WF E.venv c.lparams.length Γ (w.dec'.appN args')
 
-/-- No projections, which is what `TrExprS.IsUnique` amounts to and what makes the above usable.
-Decidable, so every `Condition` in the checker discharges it by computation like the rest of
-`CondOK`. -/
+/-- No projections, which `TrExprS.weakR` asks for. Decidable, so every `Condition` in the
+checker discharges it by computation like the rest of `CondOK`. -/
 def noProj : Expr → Bool
   | .app f a => noProj f && noProj a
   | .lam _ t b _ => noProj t && noProj b
@@ -480,8 +479,8 @@ theorem noProj_toConstructor : ∀ {l : Literal}, noProj l.toConstructor
     induction s.toList <;> simp [noProj, *]
 
 /-- A translation survives binders appended on the right. `noProj` only to sidestep `proj`, whose
-`TrProj` side condition would have to be transported too; every closed piece a `Condition` carries
-is projection-free by `CondOK`. -/
+well-formedness side condition would have to be transported too; every closed piece a `Condition`
+carries is projection-free by `CondOK`. -/
 theorem TrExprS.weakR {env : VEnv} {Us : List Name} (henv : env.Ordered) {Δ' : VLCtx} :
     ∀ {Δ : VLCtx} {e : Expr} {e' : VExpr}, TrExprS env Us Δ e e' →
       OnCtx Δ.toCtx (env.IsType Us.length) → noProj e →

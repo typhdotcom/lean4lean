@@ -18,6 +18,7 @@ theorem VExpr.mentions_liftN {ns : List Name} {n : Nat} :
   | .app f a, k => by simp [VExpr.liftN, VExpr.mentions, mentions_liftN f, mentions_liftN a]
   | .lam A b, k | .forallE A b, k => by
     simp [VExpr.liftN, VExpr.mentions, mentions_liftN A, mentions_liftN b]
+  | .proj _ _ e, k => by simp [VExpr.liftN, VExpr.mentions, mentions_liftN e]
 
 theorem VLCtx.find?_not_mentions {ns : List Name} : ∀ {Δ : VLCtx} {v e A},
     (∀ x ∈ Δ, x.2.value.mentions ns = false) → Δ.find? v = some (e, A) → e.mentions ns = false
@@ -63,25 +64,16 @@ theorem _root_.Lean.Literal.toConstructor_anySub {p : Expr → Bool} (l : Litera
     | nil => simp [Expr.anySub, happ, h3, h4]
     | cons a as ih => simp [Expr.anySub, happ, hl, h2, h3, h5, ih]
 
-/-- A projection's translation mentions no constant that a block adds, if its argument does not.
-`TrProj` is left unspecified, like the rest of its properties (`TrProj.wf`, `TrProj.uniq`, ...): a
-projection translates to the structure's recursor at a motive and minor premise built from the
-structure's declaration, which predates the block, so it mentions none of the block's names. -/
-theorem TrProj.not_mentions {venv₀ venv : VEnv} {ns : List Name}
-    (hfresh : ∀ n ∈ ns, venv₀.constants n = none)
-    (hnew : ∀ n, venv.constants n ≠ none → venv₀.constants n = none → n ∈ ns)
-    {U Γ s i e e'} (hwf : VExpr.WF venv U Γ e) (H : TrProj Γ s i e e')
-    (he : e.mentions ns = false) : e'.mentions ns = false :=
-  sorry
-
 /-- A translation mentions a constant only if the expression does, or through a literal or a
-projection. For the names a block adds, neither brings them in. -/
+projection's type, which is a type a block was recorded for. For the names a block adds, neither
+brings them in. -/
 theorem TrExprS.not_mentions {venv₀ venv : VEnv} {Us : List Name} {p : Expr → Bool}
     {ns : List Name} (henv : venv.WF)
     (hfresh : ∀ n ∈ ns, venv₀.constants n = none)
     (hnew : ∀ n, venv.constants n ≠ none → venv₀.constants n = none → n ∈ ns)
     (hns : ∀ c us, p (.const c us) = false → c ∉ ns)
     (hlit : ∀ l, venv.ContainsLits l → l.toConstructor.anySub p = false)
+    (hind : ∀ n b, venv.inducts n = some b → n ∉ ns)
     {Δ e e'} (H : TrExprS venv Us Δ e e') (hΔ : Δ.WF venv Us.length)
     (hΔv : ∀ x ∈ Δ, x.2.value.mentions ns = false)
     (he : e.anySub p = false) : e'.mentions ns = false := by
@@ -115,7 +107,8 @@ theorem TrExprS.not_mentions {venv₀ venv : VEnv} {Us : List Name} {p : Expr �
     exact ih hΔ hΔv he.2
   | proj h1 h2 ih =>
     simp only [Expr.anySub, Bool.or_eq_false_iff] at he
-    exact TrProj.not_mentions hfresh hnew (h1.wf henv.ordered hΔ) h2 (ih hΔ hΔv he.2)
+    obtain ⟨_, _, _, _, _, _, _, _, hs, -⟩ := h2.proj_inv henv.ordered hΔ.toCtx
+    simp [VExpr.mentions, ih hΔ hΔv he.2, hind _ _ hs]
 
 /-- The constants literals translate through come from before a block of fresh, non-primitive
 names: the primitive ones by name, and `Char`, `List.nil` and `List.cons` because `String.ofList`'s
@@ -525,6 +518,7 @@ structure BlockFresh (venv₀ venv : VEnv) (types : List InductiveType) : Prop w
   fresh : ∀ t ∈ types, venv₀.constants t.name = none
   nonPrim : ∀ t ∈ types, Environment.primitives.contains t.name = false
   new : ∀ n, venv.constants n ≠ none → venv₀.constants n = none → n ∈ types.map (·.name)
+  inducts : venv.inducts = venv₀.inducts
 
 theorem BlockFresh.not_mentions {venv₀ venv : VEnv} {types : List InductiveType}
     (H : BlockFresh venv₀ venv types) {stats : InductiveStats}
@@ -539,8 +533,10 @@ theorem BlockFresh.not_mentions {venv₀ venv : VEnv} {types : List InductiveTyp
   have hnp' : ∀ n ∈ types.map (·.name), Environment.primitives.contains n = false := by
     intro n hn; obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn; exact H.nonPrim t ht
   refine TrExprS.not_mentions H.wf hfresh' H.new hns
-    (Literal.toConstructor_anySub_of_fresh H.wf₀ H.prim₀ hfresh' H.new hnp' hp) ha hΔ
-    (fun x hx => ?_) (hasIndOcc_eq _ _ ▸ hocc)
+    (Literal.toConstructor_anySub_of_fresh H.wf₀ H.prim₀ hfresh' H.new hnp' hp)
+    (fun n b hb hn => ?_) ha hΔ (fun x hx => ?_) (hasIndOcc_eq _ _ ▸ hocc)
+  · obtain ⟨_, h⟩ := H.wf₀.constants_of_inducts (H.inducts ▸ hb)
+    cases h.symm.trans (hfresh' n hn)
   obtain ⟨-, A, hA⟩ := hvl x hx
   rw [hA]; rfl
 

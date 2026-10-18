@@ -341,7 +341,7 @@ def whnfFVar (e : Expr) (cheapProj : Bool) : RecM Expr := do
   return e
 
 /-- `reduceProj` on a structure that has already been reduced (C++ `reduce_proj_core`). -/
-def reduceProjCore (idx : Nat) (struct : Expr) : RecM (Option Expr) := do
+def reduceProjCore (typeName : Name) (idx : Nat) (struct : Expr) : RecM (Option Expr) := do
   let mut c := struct
   if let .lit (.strVal s) := c then
     c ← whnf (.strLitToConstructor s)
@@ -349,14 +349,16 @@ def reduceProjCore (idx : Nat) (struct : Expr) : RecM (Option Expr) := do
   let .const mkC _ := mk | return none
   let env ← getEnv
   let .ctorInfo mkInfo ← env.get mkC | return none
+  if mkInfo.induct != typeName then return none
   return args[mkInfo.numParams + idx]?
 
 /-- Reduces a projection of `struct` at index `idx` (when `struct` is reducible to a constructor
 application). -/
-def reduceProj (idx : Nat) (struct : Expr) (cheapProj : Bool) : RecM (Option Expr) :=
+def reduceProj (typeName : Name) (idx : Nat) (struct : Expr) (cheapProj : Bool) :
+    RecM (Option Expr) :=
   -- an explicit `>>=`: with the new `do` elaborator, `reduceProjCore idx (← if ..)` lifts the
   -- bind into both branches, which `reduceProj.WF` cannot see through
-  (if cheapProj then whnfCore struct cheapProj else whnf struct) >>= reduceProjCore idx
+  (if cheapProj then whnfCore struct cheapProj else whnf struct) >>= reduceProjCore typeName idx
 
 def isLetFVar (lctx : LocalContext) (fvar : FVarId) : Bool :=
   lctx.find? fvar matches some (.ldecl ..)
@@ -408,8 +410,8 @@ def whnfCore' (e : Expr) (cheapProj := false) : RecM Expr := do
       save <|← whnfCore r cheapProj
   | .letE _ _ val body _ =>
     save <|← whnfCore (body.instantiate1 val) cheapProj
-  | .proj _ idx s =>
-    if let some m ← reduceProj idx s cheapProj then
+  | .proj n idx s =>
+    if let some m ← reduceProj n idx s cheapProj then
       save <|← whnfCore m cheapProj
     else
       save e
@@ -796,12 +798,12 @@ where
 
 /-- C++ `lazy_delta_proj_reduction`: for `t.idx =?= s.idx`, lazily delta-unfold the two
 structures, and once that stalls compare the projected *fields* rather than the structures. -/
-def lazyDeltaProjReduction (t s : Expr) (idx : Nat) : RecM Bool := do
+def lazyDeltaProjReduction (typeName : Name) (t s : Expr) (idx : Nat) : RecM Bool := do
   loop t s (← readThe Context).fuel.lazyDelta
 where
   finish tn sn := do
-    if let some tf ← reduceProjCore idx tn then
-      if let some sf ← reduceProjCore idx sn then
+    if let some tf ← reduceProjCore typeName idx tn then
+      if let some sf ← reduceProjCore typeName idx sn then
         return ← isDefEqCore tf sf
     isDefEqCore tn sn
   loop tn sn
@@ -866,9 +868,9 @@ def isDefEqCore' (t s : Expr) : RecM Bool := do
   | .const tf tl, .const sf sl =>
     if tf == sf && Level.isEquivList tl sl then return true
   | .fvar tv, .fvar sv => if tv == sv then return true
-  | .proj _ ti te, .proj _ si se =>
+  | .proj ts ti te, .proj ss si se =>
     -- optimized by the previous reduction functions using `cheapProj := true`
-    if ti == si then if ← lazyDeltaProjReduction te se ti then return true
+    if ts == ss && ti == si then if ← lazyDeltaProjReduction ts te se ti then return true
   | _, _ => pure ()
 
   -- the previous reduction functions used `cheapProj := true`, so we may not have a complete WHNF

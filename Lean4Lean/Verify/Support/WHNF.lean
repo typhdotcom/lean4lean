@@ -62,7 +62,7 @@ theorem whnfFVar.SWF {c : Context} {s : State} :
   · exact .pure .rfl
 
 theorem reduceProjCore.SWF {c : Context} {s : State} (he : Dom c struct) :
-    (reduceProjCore idx struct).SWF c s fun oe _ =>
+    (reduceProjCore n idx struct).SWF c s fun oe _ =>
       ∀ e₁, oe = some e₁ → SuppBelow c struct e₁ := by
   unfold reduceProjCore
   extract_lets c0 jp
@@ -72,7 +72,8 @@ theorem reduceProjCore.SWF {c : Context} {s : State} (he : Dom c struct) :
     split
     · refine .getEnv <| (M.SWF.liftExcept envGet.SWF).lift.bind fun _ _ _ _ => ?_
       split
-      · refine .pure fun e₁ he₁ S hS hs => ?_
+      · split; · exact .pure nofun
+        refine .pure fun e₁ he₁ S hS hs => ?_
         exact Expr.SuppIn.getAppArgs (h S hS hs) _ (Array.mem_of_getElem? he₁)
       · exact .pure nofun
     · exact .pure nofun
@@ -85,7 +86,7 @@ theorem reduceProjCore.SWF {c : Context} {s : State} (he : Dom c struct) :
   · exact hjp .rfl
 
 theorem reduceProj.SWF {c : Context} {s : State} (he : Dom c struct) :
-    (reduceProj idx struct cheapProj).SWF c s fun oe _ =>
+    (reduceProj n idx struct cheapProj).SWF c s fun oe _ =>
       ∀ e₁, oe = some e₁ → SuppBelow c struct e₁ := by
   unfold reduceProj
   refine .bind (Q := fun e₁ _ => SuppBelow c struct e₁) ?_ fun _ _ _ h => .stateWF fun wf => ?_

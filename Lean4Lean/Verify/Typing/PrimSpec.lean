@@ -66,6 +66,30 @@ theorem PrimSpec.Holds.addDefEq {env : VEnv} {s : PrimSpec} {n : Name}
   | reflectsBitwise => exact fun h => ⟨(H h).1, fun env'' hle => (H h).2 env'' (le.trans hle)⟩
   | stringOfList => intro _ h; obtain ⟨h1, h2, h3⟩ := H _ h; exact ⟨h1, h2.mono le, h3.mono le⟩
 
+/-- Recording a block preserves every spec: it adds no constant and no equation. -/
+theorem PrimSpec.Holds.addBlock {env env' : VEnv} {s : PrimSpec} {n : Name}
+    (h : env.addBlock d = some env') (H : s.Holds env n) : s.Holds env' n := by
+  have le := VEnv.addBlock_le h
+  have hc := VEnv.addBlock_constants h
+  cases s with
+  | containsImplies => simpa [PrimSpec.Holds, VEnv.contains, hc] using H
+  | typeEq => simpa [PrimSpec.Holds, hc] using H
+  | reflectsNatNat => exact fun h => ⟨(H (by simpa [VEnv.contains, hc] using h)).1.mono le,
+      fun a => ((H (by simpa [VEnv.contains, hc] using h)).2 a).mono le⟩
+  | reflectsNatNatNat => exact fun h => ⟨(H (by simpa [VEnv.contains, hc] using h)).1.mono le,
+      fun a b => ((H (by simpa [VEnv.contains, hc] using h)).2 a b).mono le⟩
+  | reflectsNatNatBool => exact fun h => ⟨(H (by simpa [VEnv.contains, hc] using h)).1.mono le,
+      fun a b => ((H (by simpa [VEnv.contains, hc] using h)).2 a b).mono le⟩
+  | reflectsBitwise => exact fun h => ⟨hc ▸ (H (by simpa [VEnv.contains, hc] using h)).1,
+      fun env'' hle => (H (by simpa [VEnv.contains, hc] using h)).2 env'' (le.trans hle)⟩
+  | stringOfList =>
+    intro _ h'
+    obtain ⟨h1, h2, h3⟩ := H _ (hc ▸ h')
+    exact ⟨h1, h2.mono le, h3.mono le⟩
+
+theorem VEnv.HasPrimitives.addBlock {env env' : VEnv} (h : env.addBlock d = some env')
+    (H : env.HasPrimitives) : env'.HasPrimitives := fun p hp => (H p hp).addBlock h
+
 /-- The single environment-extension theorem for `HasPrimitives`. Every spec whose name differs
 from the one being added transfers by monotonicity; the one that matches -- at most one, since
 `primSpecs` is keyed by name -- is the caller's obligation. Adding a non-primitive discharges it

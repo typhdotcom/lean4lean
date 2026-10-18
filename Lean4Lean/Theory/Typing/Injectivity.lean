@@ -30,5 +30,23 @@ theorem IsDefEqU.forallE_inv (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U)
   let ⟨⟨_, a1, _⟩, _, a2, _⟩ := IsDefEqU.forallE_inv_stratified henv hΓ h1 h2 h3
   ⟨⟨_, a1⟩, _, a2⟩
 
+/-- Injectivity of inductive type formers: two applications of a type of a block that are
+definitionally equal have equivalent levels and definitionally equal arguments. Uniqueness of
+typing needs it for projections, whose type depends on the parameters of the projected term's
+type. -/
+theorem IsDefEqU.indApp_inv (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
+    (hs : env.inducts s = some (d, t)) (ht : d.types[t]? = some T)
+    (hls₁ : ∀ l ∈ ls₁, l.WF U) (hlen₁ : ls₁.length = d.uvars)
+    (hls₂ : ∀ l ∈ ls₂, l.WF U) (hlen₂ : ls₂.length = d.uvars)
+    (hA₁ : As₁.length = d.params.length) (hI₁ : I₁.length = T.indices.length)
+    (hA₂ : As₂.length = d.params.length) (hI₂ : I₂.length = T.indices.length)
+    (h1 : env.IsType U Γ (.appN (.const s ls₁) (As₁ ++ I₁)))
+    (h2 : env.IsType U Γ (.appN (.const s ls₂) (As₂ ++ I₂)))
+    (H : env.IsDefEqU U Γ (.appN (.const s ls₁) (As₁ ++ I₁)) (.appN (.const s ls₂) (As₂ ++ I₂))) :
+    List.Forall₂ (· ≈ ·) ls₁ ls₂ ∧
+    Ctx.SubstEq env U Γ (VExpr.Subst.dflt.consList (As₁ ++ I₁))
+      (VExpr.Subst.dflt.consList (As₂ ++ I₂))
+      (d.params.map (·.instL ls₁) ++ T.indices.map (·.instL ls₁)).reverse := sorry
+
 theorem IsDefEqU.sort_forallE_inv (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U)) :
     ¬env.IsDefEqU U Γ (.sort u) (.forallE A B) := sorry

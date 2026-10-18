@@ -337,7 +337,7 @@ theorem lazyDeltaReduction.loop.SWF {c : Context} {s : State} (h₁ : Dom c e₁
 
 theorem lazyDeltaProjReduction.finish.SWF {c : Context} {s : State}
     (h₁ : Dom c e₁) (h₂ : Dom c e₂) :
-    (lazyDeltaProjReduction.finish i e₁ e₂).SWF c s fun _ _ => True := by
+    (lazyDeltaProjReduction.finish sn i e₁ e₂).SWF c s fun _ _ => True := by
   unfold finish
   refine .stateWF fun wf => (reduceProjCore.SWF h₁).bind fun _ _ _ ha => ?_; extract_lets F
   have hF {s} : (F ⟨⟩).SWF c s fun _ _ => True := isDefEqCore.SWF h₁ h₂
@@ -348,7 +348,7 @@ theorem lazyDeltaProjReduction.finish.SWF {c : Context} {s : State}
 
 theorem lazyDeltaProjReduction.loop.SWF {c : Context} {s : State}
     (h₁ : Dom c e₁) (h₂ : Dom c e₂) :
-    (lazyDeltaProjReduction.loop i e₁ e₂ n).SWF c s fun _ _ => True := by
+    (lazyDeltaProjReduction.loop sn i e₁ e₂ n).SWF c s fun _ _ => True := by
   induction n generalizing s e₁ e₂ with | zero => exact .throw | succ n ih
   unfold loop
   refine (lazyDeltaReductionStep.SWF h₁ h₂).bind fun _ _ _ h => ?_; split
@@ -419,7 +419,7 @@ theorem isDefEqCore'.SWF {c : Context} {s : State} (h₁ : Dom c e₁) (h₂ : D
     · split <;> [exact .pure trivial; exact this]
     · split <;> [exact .pure trivial; exact this]
     · split <;> [skip; exact this]
-      refine (show (lazyDeltaProjReduction _ _ _).SWF c _ fun _ _ => True by
+      refine (show (lazyDeltaProjReduction _ _ _ _).SWF c _ fun _ _ => True by
         unfold lazyDeltaProjReduction
         exact .readThe (lazyDeltaProjReduction.loop.SWF c1 d1)).bind fun _ _ _ _ => ?_
       split <;> [exact .pure trivial; exact this]

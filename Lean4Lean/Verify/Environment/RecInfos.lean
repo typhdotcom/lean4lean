@@ -37,6 +37,7 @@ theorem VExpr.inst_liftN_bvar' : ∀ (F : VExpr) (n j : Nat),
   | .sort .., _, _ | .const .., _, _ => rfl
   | .app .., n, j => by simp only [VExpr.liftN, VExpr.inst, inst_liftN_bvar']
   | .lam .., n, j | .forallE .., n, j => by simp only [VExpr.liftN, VExpr.inst, inst_liftN_bvar']
+  | .proj .., n, j => by simp only [VExpr.liftN, VExpr.inst, inst_liftN_bvar']
 
 theorem VEnv.TeleDefEq.snoc {env : VEnv} {U : Nat} {A B : VExpr} :
     ∀ {Γ As Bs}, env.TeleDefEq U Γ As Bs → env.IsDefEqU U (Bs.reverse ++ Γ) A B →

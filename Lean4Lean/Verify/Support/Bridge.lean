@@ -124,7 +124,7 @@ theorem TrEnv'.recRules {safety : DefinitionSafety} {C Q venv} (H : TrEnv' safet
     · cases h
   | induct _ h1 H ih =>
     have hle := h1.le
-    obtain ⟨-, -, -, hrecs, hnd, hfr, rfl, -, -, hR, rfl⟩ := h1
+    obtain ⟨-, -, -, hrecs, hnd, hfr, rfl, -, -, hR, hB⟩ := h1
     rcases insertConsts_find? H.map_wf hfr hnd h with h' | ⟨hm, -⟩
     · exact fun r hr => let ⟨e, he⟩ := ih h' r hr; ⟨e, he.mono hle⟩
     · simp only [inductConsts, List.mem_append, List.mem_map] at hm
@@ -136,7 +136,7 @@ theorem TrEnv'.recRules {safety : DefinitionSafety} {C Q venv} (H : TrEnv' safet
       intro r hr
       obtain ⟨⟨T', j⟩, -, ⟨-, -, -, h3⟩⟩ :=
         Lean4Lean.List.Forall₂.forall_exists_l htr.2.2.2.2.2.2.2.2.2.2.2 r hr
-      exact ⟨_, h3.mono ((VEnv.addDefEqList_le).trans VEnv.addDefEqList_le)⟩
+      exact ⟨_, h3.mono ((VEnv.addDefEqList_le).trans (VEnv.addBlock_le hB))⟩
 
 theorem VInductDecl.mem_ctors_of_mem {d : VInductDecl} {T : VInductiveType} {c : VConstructor}
     (hT : T ∈ d.types) (hc : c ∈ T.ctors) : ∃ j, (j, c) ∈ d.ctors := by

@@ -83,6 +83,35 @@ inductive IsDefEqStrong : List VExpr → VExpr → VExpr → VExpr → Prop wher
     Γ ⊢ df.lhs.instL ls : df.type.instL ls →
     Γ ⊢ df.rhs.instL ls : df.type.instL ls →
     Γ ⊢ df.lhs.instL ls ≡ df.rhs.instL ls : df.type.instL ls
+  | projDF :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] →
+    c.fields[k]? = some f → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
+    As.length = d.params.length → I.length = T.indices.length →
+    As'.length = d.params.length → I'.length = T.indices.length →
+    u.WF uvars → (f.level.inst ls).WF uvars → d.ProjAllowed c ls k →
+    Γ ⊢ .appN (.const s ls) (As ++ I) ≡ .appN (.const s ls) (As' ++ I') : .sort u →
+    Γ ⊢ e ≡ e' : .appN (.const s ls) (As ++ I) →
+    Γ ⊢ c.projType ls s k As e ≡ c.projType ls s k As' e' : .sort (f.level.inst ls) →
+    Γ ⊢ .proj s k e ≡ .proj s k e' : c.projType ls s k As e
+  | projIota :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] →
+    c.fields[k]? = some f → fs[k]? = some a → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
+    As.length = d.params.length → fs.length = c.fields.length → I.length = T.indices.length →
+    u.WF uvars → (f.level.inst ls).WF uvars → d.ProjAllowed c ls k →
+    Γ ⊢ .appN (.const s ls) (As ++ I) : .sort u →
+    Γ ⊢ .appN (.const c.name ls) (As ++ fs) : .appN (.const s ls) (As ++ I) →
+    Γ ⊢ c.projType ls s k As (.appN (.const c.name ls) (As ++ fs)) : .sort (f.level.inst ls) →
+    Γ ⊢ a : c.projType ls s k As (.appN (.const c.name ls) (As ++ fs)) →
+    Γ ⊢ .proj s k (.appN (.const c.name ls) (As ++ fs)) ≡ a :
+      c.projType ls s k As (.appN (.const c.name ls) (As ++ fs))
+  | projEta :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] → T.indices = [] →
+    d.isRec = false → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
+    As.length = d.params.length → u.WF uvars →
+    Γ ⊢ .appN (.const s ls) As : .sort u →
+    Γ ⊢ e : .appN (.const s ls) As →
+    Γ ⊢ .appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e) : .appN (.const s ls) As →
+    Γ ⊢ e ≡ .appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e) : .appN (.const s ls) As
 
 end
 
@@ -128,6 +157,15 @@ inductive HasTypeStrong : List VExpr → VExpr → VExpr → Bool → Prop where
     Γ ⊢ A : .sort u →
     A::Γ ⊢ body : .sort v →
     Γ ⊢ .forallE A body :! .sort (.imax u v)
+  | proj :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] →
+    c.fields[k]? = some f → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
+    As.length = d.params.length → I.length = T.indices.length →
+    u.WF uvars → (f.level.inst ls).WF uvars → d.ProjAllowed c ls k →
+    Γ ⊢ .appN (.const s ls) (As ++ I) : .sort u →
+    Γ ⊢ e : .appN (.const s ls) (As ++ I) →
+    Γ ⊢ c.projType ls s k As e : .sort (f.level.inst ls) →
+    Γ ⊢ .proj s k e :! c.projType ls s k As e
   | base : Γ ⊢ e :! A → Γ ⊢ e : A
   | defeq : u.WF uvars → Γ ⊢ A ≡ B : .sort u →
     Γ ⊢ A : .sort u → Γ ⊢ B : .sort u → Γ ⊢ e : A → Γ ⊢ e : B
@@ -181,6 +219,20 @@ theorem IsDefEqStrong.weakN (W : Ctx.LiftN n k Γ Γ') (H : env.IsDefEqStrong U 
       hA2.instL.liftN_eq (Nat.zero_le _),
       hA3.instL.liftN_eq (Nat.zero_le _)] at ih4 ih5 ⊢
     exact IsDefEqStrong.extra h1 h2 h3 h4 h5 h6 h7 (ih4 W) (ih5 W)
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ ih1 ih2 ih3 =>
+    have a1 := ih1 W; have a2 := ih2 W; have a3 := ih3 W
+    simp only [VConstructor.projType_liftN, liftN, liftN_appN, List.map_append] at a1 a2 a3 ⊢
+    exact .projDF h1 h2 h3 h4 h5 h6 (by simpa using h7) (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) h11 h12 h13 a1 a2 a3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
+    have a1 := ih1 W; have a2 := ih2 W; have a3 := ih3 W; have a4 := ih4 W
+    simp only [VConstructor.projType_liftN, liftN, liftN_appN, List.map_append] at a1 a2 a3 a4 ⊢
+    exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) h11 h12 h13 a1 a2 a3 a4
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
+    have a1 := ih1 W; have a2 := ih2 W; have a3 := ih3 W
+    simp only [liftN, liftN_appN, List.map_append, VExpr.projs_liftN] at a1 a2 a3 ⊢
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) h9 a1 a2 a3
 
 theorem IsDefEqStrong.defeq (H : IsDefEqStrong env U Γ e1 e2 A) : env.IsDefEq U Γ e1 e2 A := by
   induction H with
@@ -197,6 +249,12 @@ theorem IsDefEqStrong.defeq (H : IsDefEqStrong env U Γ e1 e2 A) : env.IsDefEq U
   | eta _ _ _ _ _ _ _ _ _ _ _ ih => exact .eta ih
   | proofIrrel _ _ _ ih1 ih2 ih3 => exact .proofIrrel ih1 ih2 ih3
   | extra h1 h2 h3 => exact .extra h1 h2 h3
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ _ _ ih1 ih2 ih3 =>
+    exact .projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 ih1 ih2 h13 ih3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ _ _ _ _ ih2 ih3 ih4 =>
+    exact .projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 ih2 h13 ih3 ih4
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ _ _ _ ih2 ih3 =>
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 h8 ih2 ih3
 
 variable! {env env' : VEnv} (henv : env ≤ env') in
 theorem IsDefEqStrong.mono
@@ -217,6 +275,12 @@ theorem IsDefEqStrong.mono
   | proofIrrel _ _ _ ih1 ih2 ih3 => exact .proofIrrel ih1 ih2 ih3
   | extra h1 h2 h3 h4 _ _ _ _ _ ih1 ih2 ih3 ih4 ih5 =>
     exact .extra (henv.2 h1) h2 h3 h4 ih1 ih2 ih3 ih4 ih5
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ ih1 ih2 ih3 =>
+    exact .projDF (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 ih1 ih2 ih3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
+    exact .projIota (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 ih1 ih2 ih3 ih4
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
+    exact .projEta (henv.3 h1) h2 h3 h4 h5 h6 h7 h8 h9 ih1 ih2 ih3
 
 variable! (henv : Ordered env) in
 theorem IsDefEqStrong.weak0 (H : env.IsDefEqStrong U [] e1 e2 A) :
@@ -233,6 +297,7 @@ inductive EqUpToLevels (U : Nat) : VExpr → VExpr → Prop
   | app : EqUpToLevels U f f' → EqUpToLevels U a a' → EqUpToLevels U (.app f a) (.app f' a')
   | lam : EqUpToLevels U A A' → EqUpToLevels U e e' → EqUpToLevels U (.lam A e) (.lam A' e')
   | forallE : EqUpToLevels U A A' → EqUpToLevels U B B' → EqUpToLevels U (.forallE A B) (.forallE A' B')
+  | proj : EqUpToLevels U e e' → EqUpToLevels U (.proj s k e) (.proj s k e')
 
 variable! {env : VEnv} {ls ls' : List VLevel}
     (hls : ∀ l ∈ ls, l.WF U) (hls' : ∀ l ∈ ls', l.WF U) (heq : List.Forall₂ (· ≈ ·) ls ls') in
@@ -257,6 +322,9 @@ theorem EqUpToLevels.instL (H : env.IsDefEqStrong U' Γ e1 e2 A) :
   | defeqDF _ _ _ _ ih => exact ih
   | beta _ _ _ _ _ _ _ _ ih1 _ ih3 ih4 _ ih6 => exact ⟨.app (.lam ih1.1 ih3.1) ih4.1, ih6.2⟩
   | eta _ _ _ _ _ _ _ _ ih1 _ _ ih4 ih5 => exact ⟨.lam ih1.1 (.app ih5.1 .bvar), ih4.1⟩
+  | projDF _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 => exact ⟨.proj ih2.1, .proj ih2.2⟩
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 _ ih4 => exact ⟨.proj ih2.1, ih4.2⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 => exact ⟨ih2.1, ih3.2⟩
 
 
 variable! {env : VEnv} (W : OnCtx Γ fun _ A => A.LevelWF U) in
@@ -275,6 +343,7 @@ theorem EqUpToLevels.weakN (H : EqUpToLevels U e e') :
   | app _ _ ih1 ih2 => exact .app ih1 ih2
   | lam _ _ ih1 ih2 => exact .lam ih1 ih2
   | forallE _ _ ih1 ih2 => exact .forallE ih1 ih2
+  | proj _ ih => exact .proj ih
 
 variable! (h₀ : EqUpToLevels U e₀ e₀') in
 theorem EqUpToLevels.instN (H : EqUpToLevels U e e') :
@@ -286,6 +355,78 @@ theorem EqUpToLevels.instN (H : EqUpToLevels U e e') :
   | app _ _ ih1 ih2 => exact .app ih1 ih2
   | lam _ _ ih1 ih2 => exact .lam ih1 ih2
   | forallE _ _ ih1 ih2 => exact .forallE ih1 ih2
+  | proj _ ih => exact .proj ih
+
+theorem EqUpToLevels.of_levelWF : ∀ {e : VExpr}, e.LevelWF U → EqUpToLevels U e e
+  | .bvar _, _ => .bvar
+  | .sort _, h => .sort h h (by rfl)
+  | .const .., h => .const h h (.rfl fun _ _ => by rfl)
+  | .app .., h => .app (of_levelWF h.1) (of_levelWF h.2)
+  | .lam .., h => .lam (of_levelWF h.1) (of_levelWF h.2)
+  | .forallE .., h => .forallE (of_levelWF h.1) (of_levelWF h.2)
+  | .proj .., h => .proj (of_levelWF h)
+
+variable! {ls ls' : List VLevel}
+    (hls : ∀ l ∈ ls, l.WF U) (hls' : ∀ l ∈ ls', l.WF U) (heq : List.Forall₂ (· ≈ ·) ls ls') in
+theorem EqUpToLevels.instL_expr : ∀ e : VExpr, EqUpToLevels U (e.instL ls) (e.instL ls')
+  | .bvar _ => .bvar
+  | .sort _ => .sort (.inst hls) (.inst hls') (VLevel.inst_congr (by rfl) heq)
+  | .const .. => .const
+      (List.forall_mem_map.2 fun _ _ => .inst hls)
+      (List.forall_mem_map.2 fun _ _ => .inst hls')
+      (List.forall₂_map_left_iff.2 <| List.forall₂_map_right_iff.2 <|
+        .rfl fun _ _ => VLevel.inst_congr (by rfl) heq)
+  | .app f a => .app (instL_expr f) (instL_expr a)
+  | .lam A b => .lam (instL_expr A) (instL_expr b)
+  | .forallE A b => .forallE (instL_expr A) (instL_expr b)
+  | .proj _ _ e => .proj (instL_expr e)
+
+theorem EqUpToLevels.subst {σ σ' : Subst} (H : EqUpToLevels U e e')
+    (hσ : ∀ i, EqUpToLevels U (σ i) (σ' i)) : EqUpToLevels U (e.subst σ) (e'.subst σ') := by
+  induction H generalizing σ σ' with
+  | bvar => exact hσ _
+  | const h1 h2 h3 => exact .const h1 h2 h3
+  | sort h1 h2 h3 => exact .sort h1 h2 h3
+  | app _ _ ih1 ih2 => exact .app (ih1 hσ) (ih2 hσ)
+  | lam _ _ ih1 ih2 =>
+    refine .lam (ih1 hσ) (ih2 fun i => ?_); cases i
+    · exact .bvar
+    · exact (hσ _).weakN
+  | forallE _ _ ih1 ih2 =>
+    refine .forallE (ih1 hσ) (ih2 fun i => ?_); cases i
+    · exact .bvar
+    · exact (hσ _).weakN
+  | proj _ ih => exact .proj (ih hσ)
+
+theorem EqUpToLevels.consList {σ σ' : Subst} (hσ : ∀ i, EqUpToLevels U (σ i) (σ' i)) :
+    ∀ {L L'}, List.Forall₂ (EqUpToLevels U) L L' →
+      ∀ i, EqUpToLevels U (σ.consList L i) (σ'.consList L' i)
+  | [], [], .nil => hσ
+  | _ :: _, _ :: _, .cons h hL => by
+    refine EqUpToLevels.consList (σ := σ.cons _) (σ' := σ'.cons _) (fun i => ?_) hL
+    cases i <;> [exact h; exact hσ _]
+
+theorem EqUpToLevels.appN : ∀ {f f' : VExpr} {as as' : List VExpr}, EqUpToLevels U f f' →
+    List.Forall₂ (EqUpToLevels U) as as' → EqUpToLevels U (f.appN as) (f'.appN as')
+  | _, _, [], [], h, .nil => h
+  | _, _, _ :: _, _ :: _, h, .cons a ha => by
+    simp only [VExpr.appN]; exact EqUpToLevels.appN (.app h a) ha
+
+theorem _root_.Lean4Lean.forall₂_append {R : α → β → Prop} :
+    ∀ {L₁ L₃ : List α} {L₂ L₄ : List β}, List.Forall₂ R L₁ L₂ → List.Forall₂ R L₃ L₄ →
+      List.Forall₂ R (L₁ ++ L₃) (L₂ ++ L₄)
+  | _, _, _, _, .nil, h => h
+  | _, _, _, _, .cons a h, h' => .cons a (forall₂_append h h')
+
+theorem EqUpToLevels.projType (c : VConstructor) {ls ls' : List VLevel}
+    (hls : ∀ l ∈ ls, l.WF U) (hls' : ∀ l ∈ ls', l.WF U) (heq : List.Forall₂ (· ≈ ·) ls ls')
+    {As As' : List VExpr} (hAs : List.Forall₂ (EqUpToLevels U) As As') (he : EqUpToLevels U e e') :
+    EqUpToLevels U (c.projType ls s k As e) (c.projType ls' s k As' e') := by
+  refine (instL_expr hls hls' heq _).subst
+    (consList (fun _ => .sort (l := .zero) (l' := .zero) trivial trivial (by rfl)) ?_)
+  refine forall₂_append hAs ?_
+  simp only [VExpr.projs]
+  exact List.forall₂_map_left_iff.2 <| List.forall₂_map_right_iff.2 <| .rfl fun _ _ => .proj he
 
 def EnvStrong (env : VEnv) (U : Nat) (e A : VExpr) : Prop :=
   env.IsDefEqStrong U [] e e A ∧
@@ -333,6 +474,22 @@ theorem IsDefEqStrong.instL (H : env.IsDefEqStrong U Γ e1 e2 A) :
     simp [VExpr.instL, VExpr.instL_instL] at ih1 ih2 ih3 ih4 ih5 ⊢
     exact .extra h1 (by simp [VLevel.WF.inst hls]) (by simp [h3])
       (.inst hls) ih1 ih2 ih3 ih4 ih5
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ _ _ ih1 ih2 ih3 =>
+    simp only [VConstructor.projType_instL, VExpr.instL, instL_appN, List.map_append,
+      VLevel.inst_inst] at ih1 ih2 ih3 ⊢
+    exact .projDF h1 h2 h3 h4 (by simp [VLevel.WF.inst hls]) (by simp [h6]) (by simpa using h7)
+      (by simpa using h8) (by simpa using h9) (by simpa using h10) (.inst hls)
+      (by rw [← VLevel.inst_inst]; exact .inst hls) (h13.instL _) ih1 ih2 ih3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
+    simp only [VConstructor.projType_instL, VExpr.instL, instL_appN, List.map_append,
+      VLevel.inst_inst] at ih1 ih2 ih3 ih4 ⊢
+    exact .projIota h1 h2 h3 h4 (by simp [h5]) (by simp [VLevel.WF.inst hls]) (by simp [h7])
+      (by simpa using h8) (by simpa using h9) (by simpa using h10) (.inst hls)
+      (by rw [← VLevel.inst_inst]; exact .inst hls) (h13.instL _) ih1 ih2 ih3 ih4
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ _ _ ih1 ih2 ih3 =>
+    simp only [VExpr.instL, instL_appN, List.map_append, VExpr.projs_instL] at ih1 ih2 ih3 ⊢
+    exact .projEta h1 h2 h3 h4 h5 (by simp [VLevel.WF.inst hls]) (by simp [h7])
+      (by simpa using h8) (.inst hls) ih1 ih2 ih3
 
 def CtxStrong (env : VEnv) (U Γ) :=
   OnCtx Γ fun Γ A => ∃ u, env.IsDefEqStrong U Γ A A (.sort u)
@@ -418,6 +575,20 @@ theorem IsDefEqStrong.instN (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : env.
       hA2.instL.instN_eq (Nat.zero_le _),
       hA3.instL.instN_eq (Nat.zero_le _)] at ih4 ih5 ⊢
     exact .extra h1 h2 h3 h4 h5 h6 h7 (ih4 W hΓ) (ih5 W hΓ)
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ ih1 ih2 ih3 =>
+    have a1 := ih1 W hΓ; have a2 := ih2 W hΓ; have a3 := ih3 W hΓ
+    simp only [VConstructor.projType_inst, inst, inst_appN, List.map_append] at a1 a2 a3 ⊢
+    exact .projDF h1 h2 h3 h4 h5 h6 (by simpa using h7) (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) h11 h12 h13 a1 a2 a3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
+    have a1 := ih1 W hΓ; have a2 := ih2 W hΓ; have a3 := ih3 W hΓ; have a4 := ih4 W hΓ
+    simp only [VConstructor.projType_inst, inst, inst_appN, List.map_append] at a1 a2 a3 a4 ⊢
+    exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 (by simpa using h8) (by simpa using h9)
+      (by simpa using h10) h11 h12 h13 a1 a2 a3 a4
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
+    have a1 := ih1 W hΓ; have a2 := ih2 W hΓ; have a3 := ih3 W hΓ
+    simp only [inst, inst_appN, List.map_append, VExpr.projs_inst] at a1 a2 a3 ⊢
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 (by simpa using h8) h9 a1 a2 a3
 
 theorem IsDefEqStrong.defeqDF_l (henv : Ordered env) (hΓ : CtxStrong env U Γ)
     (h1 : env.IsDefEqStrong U Γ A A' (.sort u))
@@ -476,6 +647,13 @@ theorem IsDefEqStrong.forallE_inv' (hΓ : CtxStrong env U Γ)
     have C2 := (A2.instL h2).defeq.closedN henv ⟨⟨⟩, C1⟩
     rw [C1.liftN_eq (Nat.zero_le _), C2.liftN_eq (by exact Nat.le_refl _)] at this
     simpa [liftN]
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ih4 =>
+    obtain ⟨⟨⟩⟩ | eq := eq
+    exact ih4 hΓ (.inl eq)
+  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 =>
+    obtain eq | eq := eq
+    · exact ih2 hΓ (.inl eq)
+    · exact absurd eq appN_const_ne_forallE
   | _ => nomatch eq
 
 variable! (henv : Ordered env) (envIH : env.OnTypes (EnvStrong env)) in
@@ -502,6 +680,9 @@ theorem IsDefEqStrong.isType' (hΓ : CtxStrong env U Γ) (H : env.IsDefEqStrong 
   | extra h1 h2 =>
     have ⟨_, h⟩ := (envIH.2 h1).2.2.1
     exact ⟨_, (h.instL h2).weak0 henv⟩
+  | projDF _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h16 => exact ⟨_, h16.hasType.1⟩
+  | projIota _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ h16 => exact ⟨_, h16⟩
+  | projEta _ _ _ _ _ _ _ _ _ h10 => exact ⟨_, h10⟩
 
 theorem IsDefEqStrong.instDF
     (henv : Ordered env) (hΓ : CtxStrong env U Γ) (hu : u.WF U) (hv : v.WF U)
@@ -607,6 +788,43 @@ theorem EqUpToLevels.defeq (H : env.IsDefEqStrong U Γ e1 e2 A)
     have c2 := ih2 trivial H2 (EqUpToLevels.refl (by trivial) h7).2
     refine .weak0 henv <| c1.trans <| .trans ?_ c2.symm
     exact .extra h1 h2 h3 h4 h5 h6 h7 h6 h7
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 _ ih2 ih3 =>
+    let .proj Hx := H1
+    let .proj Hy := H2
+    have hlv := h14.defeq.levelWF W.levelWF
+    have hAs := List.Forall₂.rfl (R := EqUpToLevels U) fun a ha => .of_levelWF
+      ((levelWF_appN.1 hlv.1).2 a (List.mem_append_left _ ha))
+    have hAs' := List.Forall₂.rfl (R := EqUpToLevels U) fun a ha => .of_levelWF
+      ((levelWF_appN.1 hlv.2.1).2 a (List.mem_append_left _ ha))
+    have rl := EqUpToLevels.refl W.levelWF h15
+    have rt := EqUpToLevels.refl W.levelWF h16
+    have ex := (ih2 W rl.1 rl.2).trans (ih2 W Hx rl.2).symm
+    have tx := (ih3 W rt.1 rt.2).trans
+      (ih3 W (EqUpToLevels.projType _ h5 h5 (.rfl fun _ _ => by rfl) hAs Hx) rt.2).symm
+    have ey := (ih2 W rl.1 rl.2).symm.trans (ih2 W rl.1 Hy)
+    have ty := (ih3 W rt.1 rt.2).symm.trans
+      (ih3 W rt.1 (EqUpToLevels.projType _ h5 h5 (.rfl fun _ _ => by rfl) hAs' Hy))
+    have L := IsDefEqStrong.projDF h1 h2 h3 h4 h5 h6 h7 h8 h7 h8 h11 h12 h13 h14.hasType.1 ex tx
+    have M := IsDefEqStrong.projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16
+    have R := IsDefEqStrong.projDF h1 h2 h3 h4 h5 h6 h9 h10 h9 h10 h11 h12 h13 h14.hasType.2
+      (.defeqDF h11 h14 ey) ty
+    exact L.symm.trans (M.trans (.defeqDF h12 h16.symm R))
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 h17 _ ih2 ih3 ih4 =>
+    let .proj Hm := H1
+    have hAs := List.Forall₂.rfl (R := EqUpToLevels U) fun a ha => .of_levelWF
+      ((levelWF_appN.1 (h14.defeq.levelWF W.levelWF).1).2 a (List.mem_append_left _ ha))
+    have rm := EqUpToLevels.refl W.levelWF h15
+    have rt := EqUpToLevels.refl W.levelWF h16
+    have ra := EqUpToLevels.refl W.levelWF h17
+    have L := IsDefEqStrong.projDF h1 h2 h3 h4 h6 h7 h8 h10 h8 h10 h11 h12 h13 h14
+      (ih2 W rm.1 Hm) (ih3 W rt.1 (EqUpToLevels.projType _ h6 h6 (.rfl fun _ _ => by rfl) hAs Hm))
+    have M := IsDefEqStrong.projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 h17
+    exact L.symm.trans (M.trans (ih4 W ra.1 H2))
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 _ ih2 ih3 =>
+    have re := EqUpToLevels.refl W.levelWF h11
+    have rm := EqUpToLevels.refl W.levelWF h12
+    exact (ih2 W H1 re.1).trans
+      ((IsDefEqStrong.projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12).trans (ih3 W rm.1 H2))
 
 variable! (henv : Ordered env) (envIH : env.OnTypes (EnvStrong env)) in
 theorem IsDefEq.strong' (hΓ : CtxStrong env U Γ)
@@ -665,6 +883,19 @@ theorem IsDefEq.strong' (hΓ : CtxStrong env U Γ)
     let ⟨⟨hl, ⟨_, ht⟩, _⟩, hr, _, _⟩ := envIH.2 h1
     exact .extra h1 h2 h3 (.inst h2) (ht.instL h2)
       (hl.instL h2) (hr.instL h2) ((hl.instL h2).weak0 henv) ((hr.instL h2).weak0 henv)
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ _ h13 _ ih1 ih2 ih3 =>
+    have a1 := ih1 hΓ; have a3 := ih3 hΓ
+    exact .projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 (a1.defeq.sort_r henv hΓ.defeq)
+      (a3.defeq.sort_r henv hΓ.defeq) h13 a1 (ih2 hΓ) a3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 _ h12 _ _ ih1 ih2 ih3 =>
+    have a1 := ih1 hΓ; have a2 := ih2 hΓ; have a3 := ih3 hΓ
+    have ⟨_, hS⟩ := a1.isType' henv envIH hΓ
+    exact .projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 (hS.defeq.sort_r henv hΓ.defeq)
+      (a2.defeq.sort_r henv hΓ.defeq) h12 hS a1 a2 a3
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 _ _ ih1 ih2 =>
+    have a1 := ih1 hΓ
+    have ⟨_, hS⟩ := a1.isType' henv envIH hΓ
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 h8 (hS.defeq.sort_r henv hΓ.defeq) hS a1 (ih2 hΓ)
 
 theorem CtxStrong.strong' (henv : Ordered env) (envIH : env.OnTypes (EnvStrong env))
     (hΓ : OnCtx Γ (env.IsType U)) : CtxStrong env U Γ := by
@@ -744,6 +975,14 @@ theorem IsDefEqStrong.hasType' {env : VEnv}
     refine ⟨.base <| .lam h1 h2 ih1.1 ih2.1 (.base this) ?_, ih4.1⟩
     exact .base <| .forallE h1 h2 ih1.1 ih2.1
   | extra h1 h2 h3 h4 h5 h6 h7 _ _ _ _ _ ih4 ih5 => exact ⟨ih4.1, ih5.1⟩
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 _ h16 ih1 ih2 ih3 =>
+    exact ⟨.base <| .proj h1 h2 h3 h4 h5 h6 h7 h8 h11 h12 h13 ih1.1 ih2.1 ih3.1,
+      .defeq h12 h16.symm ih3.2 ih3.1 <| .base <|
+        .proj h1 h2 h3 h4 h5 h6 h9 h10 h11 h12 h13 ih1.2
+          (.defeq h11 h14 ih1.1 ih1.2 ih2.2) ih3.2⟩
+  | projIota h1 h2 h3 h4 _ h6 h7 h8 _ h10 h11 h12 h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
+    exact ⟨.base <| .proj h1 h2 h3 h4 h6 h7 h8 h10 h11 h12 h13 ih1.1 ih2.1 ih3.1, ih4.1⟩
+  | projEta _ _ _ _ _ _ _ _ _ _ _ _ _ ih2 ih3 => exact ⟨ih2.1, ih3.1⟩
 
 theorem HasTypeStrong.refl {env : VEnv}
     (H : env.HasTypeStrong U Γ e A b) : env.IsDefEqStrong U Γ e e A := by
@@ -759,6 +998,8 @@ theorem HasTypeStrong.refl {env : VEnv}
     exact .lamDF h1 h2 ih1 ih2 ih2 ih3 ih3
   | forallE h1 h2 h3 h4 ih1 ih2 =>
     exact .forallEDF h1 h2 ih1 ih2 ih2
+  | proj h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 _ _ _ ih1 ih2 ih3 =>
+    exact .projDF h1 h2 h3 h4 h5 h6 h7 h8 h7 h8 h9 h10 h11 ih1 ih2 ih3
   | base _ ih => exact ih
   | defeq h1 h2 h3 h4 h5 ih1 ih2 ih3 => exact .defeqDF h1 h2 ih3
 
@@ -809,6 +1050,31 @@ theorem _root_.Lean4Lean.VExpr.WF.const_inv (H : VExpr.WF env U Γ (.const c ls)
   let ⟨_, H⟩ := H; HasType.const_inv henv hΓ H
 
 variable! (henv : Ordered env) (hΓ : OnCtx Γ (env.IsType U)) in
+theorem HasType.proj_inv (H : env.HasType U Γ (.proj s k e) V) :
+    ∃ d t T c f ls As I, env.inducts s = some (d, t) ∧ d.types[t]? = some T ∧ T.ctors = [c] ∧
+      c.fields[k]? = some f ∧ (∀ l ∈ ls, l.WF U) ∧ ls.length = d.uvars ∧
+      As.length = d.params.length ∧ I.length = T.indices.length ∧ d.ProjAllowed c ls k ∧
+      env.HasType U Γ e (.appN (.const s ls) (As ++ I)) ∧
+      env.HasType U Γ (c.projType ls s k As e) (.sort (f.level.inst ls)) := by
+  replace H := (H.strong henv hΓ).hasType'.1
+  generalize eq : true = b, eq' : VExpr.proj s k e = e' at H
+  induction H with cases eq
+  | defeq _ _ _ _ _ _ _ ih => exact ih hΓ rfl eq'
+  | base H =>
+    subst eq'
+    let .proj h1 h2 h3 h4 h5 h6 h7 h8 _ _ h11 _ h13 h14 := H
+    exact ⟨_, _, _, _, _, _, _, _, h1, h2, h3, h4, h5, h6, h7, h8, h11, h13.hasType, h14.hasType⟩
+
+variable! (henv : Ordered env) (hΓ : OnCtx Γ (env.IsType U)) in
+theorem _root_.Lean4Lean.VExpr.WF.proj_inv (H : VExpr.WF env U Γ (.proj s k e)) :
+    ∃ d t T c f ls As I, env.inducts s = some (d, t) ∧ d.types[t]? = some T ∧ T.ctors = [c] ∧
+      c.fields[k]? = some f ∧ (∀ l ∈ ls, l.WF U) ∧ ls.length = d.uvars ∧
+      As.length = d.params.length ∧ I.length = T.indices.length ∧ d.ProjAllowed c ls k ∧
+      env.HasType U Γ e (.appN (.const s ls) (As ++ I)) ∧
+      env.HasType U Γ (c.projType ls s k As e) (.sort (f.level.inst ls)) :=
+  let ⟨_, H⟩ := H; HasType.proj_inv henv hΓ H
+
+variable! (henv : Ordered env) (hΓ : OnCtx Γ (env.IsType U)) in
 theorem HasType.bvar_inv (H : env.HasType U Γ (.bvar i) V) : ∃ A, Lookup Γ i A := by
   replace H := (H.strong henv hΓ).hasType'.1
   generalize eq : true = b, eq' : VExpr.bvar i = e' at H
@@ -852,6 +1118,15 @@ inductive HasTypeStratified : List VExpr → VExpr → VExpr → Bool → Nat �
     Γ ⊢ A : .sort u !! n →
     A::Γ ⊢ body : .sort v !! n →
     Γ ⊢ .forallE A body :! .sort (.imax u v) !! n+1
+  | proj :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] →
+    c.fields[k]? = some f → (∀ l ∈ ls, l.WF U) → ls.length = d.uvars →
+    As.length = d.params.length → I.length = T.indices.length →
+    u.WF U → (f.level.inst ls).WF U → d.ProjAllowed c ls k →
+    Γ ⊢ .appN (.const s ls) (As ++ I) : .sort u !! n →
+    Γ ⊢ e : .appN (.const s ls) (As ++ I) !! n →
+    Γ ⊢ c.projType ls s k As e : .sort (f.level.inst ls) !! n →
+    Γ ⊢ .proj s k e :! c.projType ls s k As e !! n+1
   | base : Γ ⊢ e :! A !! n → Γ ⊢ e : A !! n
   | defeq : u.WF U → Γ ⊢ A ≡ B : .sort u →
     Γ ⊢ A : .sort u !! n → Γ ⊢ B : .sort u !! n → Γ ⊢ e : A !! n → Γ ⊢ e : B !! n+1
@@ -866,6 +1141,8 @@ theorem HasTypeStratified.hasType (H : env.HasTypeStratified U Γ e A b n) : Γ 
   | app _ _ _ _ _ _ _ _ _ ih3 ih4 => exact .app ih3 ih4
   | lam _ _ _ _ ih1 _ ih3 => exact .lam ih1 ih3
   | forallE _ _ _ _ ih1 ih2 => exact .forallE ih1 ih2
+  | proj h1 h2 h3 h4 h5 h6 h7 h8 _ _ h11 _ _ _ ih1 ih2 ih3 =>
+    exact .projDF h1 h2 h3 h4 h5 h6 h7 h8 h7 h8 ih1 ih2 h11 ih3
   | base _ ih => exact ih
   | defeq _ h2 _ _ _ _ _ ih3 => exact h2.defeq ih3
 
@@ -879,6 +1156,8 @@ theorem HasTypeStratified.mono (le : m ≤ n) (H : HasTypeStratified env U Γ e 
     exact .app h1 h2 (ih1 le) (ih2 le) (ih3 le) (ih4 le) (ih5 le)
   | lam _ _ _ _ ih1 ih2 ih3 ih4 => exact .lam (ih1 le) (ih2 le) (ih3 le) (ih4 le)
   | forallE h1 h2 _ _ ih1 ih2 => exact .forallE h1 h2 (ih1 le) (ih2 le)
+  | proj h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 _ _ _ ih1 ih2 ih3 =>
+    exact .proj h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 (ih1 le) (ih2 le) (ih3 le)
   | base _ ih => exact .base (ih le)
   | defeq h1 h2 _ _ _ ih1 ih2 ih3 => exact .defeq h1 h2 (ih1 le) (ih2 le) (ih3 le)
 
@@ -901,6 +1180,10 @@ theorem HasTypeStrong.stratify (H : HasTypeStrong env U Γ e A b) :
   | forallE h1 h2 _ _ ih1 ih2 =>
     let ⟨n₁, ih1⟩ := ih1; let ⟨n₂, ih2⟩ := ih2
     refine ⟨max n₁ n₂ + 1, .forallE h1 h2 (ih1.mono ?_) (ih2.mono ?_)⟩ <;> omega
+  | proj h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 _ _ _ ih1 ih2 ih3 =>
+    let ⟨n₁, ih1⟩ := ih1; let ⟨n₂, ih2⟩ := ih2; let ⟨n₃, ih3⟩ := ih3
+    refine ⟨max n₁ (max n₂ n₃) + 1, .proj h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11
+      (ih1.mono ?_) (ih2.mono ?_) (ih3.mono ?_)⟩ <;> omega
   | base _ ih => let ⟨_, ih⟩ := ih; exact ⟨_, .base ih⟩
   | defeq h1 h2 _ _ _ ih1 ih2 ih3 =>
     let ⟨n₁, ih1⟩ := ih1; let ⟨n₂, ih2⟩ := ih2; let ⟨n₃, ih3⟩ := ih3
@@ -918,7 +1201,8 @@ theorem HasTypeStratified.isType (H : HasTypeStratified env U Γ e A b n) :
     ∃ u, HasTypeStratified env U Γ A (.sort u) true (n - 1) := by
   induction H with
   | base _ ih => exact ih
-  | bvar _ h | const _ _ _ h | app _ _ _ _ _ _ h | lam _ _ _ h | defeq _ _ _ h => exact ⟨_, h⟩
+  | bvar _ h | const _ _ _ h | app _ _ _ _ _ _ h | lam _ _ _ h | defeq _ _ _ h
+  | proj _ _ _ _ _ _ _ _ _ _ _ _ _ h => exact ⟨_, h⟩
   | @sort' _ l _ _ _ h _ => exact ⟨_, .base (.sort' (l := l.succ) (l' := l.succ) h h rfl)⟩
   | @forallE _ _ u _ _ v h1 h2 =>
     exact ⟨_, .base (.sort' (l := .imax u v) (l' := .imax u v) ⟨h1, h2⟩ ⟨h1, h2⟩ rfl)⟩
@@ -1139,6 +1423,46 @@ theorem IsDefEqStrong.substEq' (henv : Ordered env)
         (VExpr.instL ls df.type) :=
       .extra h1 hWls hlen hu htype hlhs hrhs (hlhs.weak0 henv) (hrhs.weak0 henv)
     exact ⟨C.hasType.1, C.hasType.2, C⟩
+  | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ ih1 ih2 ih3 =>
+    have ⟨l1, r1, c1⟩ := ih1 hΓ hΓ₀ W
+    have ⟨l2, r2, c2⟩ := ih2 hΓ hΓ₀ W
+    have ⟨l3, r3, c3⟩ := ih3 hΓ hΓ₀ W
+    simp only [VConstructor.projType_subst, subst_appN, subst_const, subst_sort,
+      List.map_append, subst_proj] at l1 r1 c1 l2 r2 c2 l3 r3 c3 ⊢
+    have hl : ∀ L : List VExpr, (L.map fun x => x.subst σ).length = L.length := fun _ => List.length_map ..
+    have hl' : ∀ L : List VExpr, (L.map fun x => x.subst σ').length = L.length := fun _ => List.length_map ..
+    refine ⟨.projDF h1 h2 h3 h4 h5 h6 ((hl _).trans h7) ((hl _).trans h8) ((hl' _).trans h7) ((hl' _).trans h8)
+      h11 h12 h13 l1 l2 l3, ?_, .projDF h1 h2 h3 h4 h5 h6 ((hl _).trans h7) ((hl _).trans h8)
+      ((hl' _).trans h9) ((hl' _).trans h10) h11 h12 h13 c1 c2 c3⟩
+    exact .defeqDF h12 (c3.trans r3.symm).symm <|
+      .projDF h1 h2 h3 h4 h5 h6 ((hl _).trans h9) ((hl _).trans h10) ((hl' _).trans h9) ((hl' _).trans h10)
+        h11 h12 h13 r1 (.defeqDF h11 (c1.trans r1.symm) r2) r3
+  | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 _ _ _ _ ih1 ih2 ih3 ih4 =>
+    have l1 := (ih1 hΓ hΓ₀ W).1
+    have l2 := (ih2 hΓ hΓ₀ W).1
+    have l3 := (ih3 hΓ hΓ₀ W).1
+    have l4 := (ih4 hΓ hΓ₀ W).1
+    have d1 := (ih1 hΓ hΓ₀ W.left).1
+    have d2 := (ih2 hΓ hΓ₀ W.left).1
+    have d3 := (ih3 hΓ hΓ₀ W.left).1
+    have d4 := (ih4 hΓ hΓ₀ W.left).1
+    simp only [VConstructor.projType_subst, subst_appN, subst_const, subst_sort,
+      List.map_append, subst_proj] at l1 l2 l3 l4 d1 d2 d3 d4 ⊢
+    have hl : ∀ L : List VExpr, (L.map fun x => x.subst σ).length = L.length := fun _ => List.length_map ..
+    have hl' : ∀ L : List VExpr, (L.map fun x => x.subst σ').length = L.length := fun _ => List.length_map ..
+    refine ⟨.projDF h1 h2 h3 h4 h6 h7 ((hl _).trans h8) ((hl _).trans h10) ((hl' _).trans h8) ((hl' _).trans h10)
+      h11 h12 h13 l1 l2 l3, l4, .trans ?_ l4⟩
+    exact .projIota h1 h2 h3 h4 (by simp [h5]) h6 h7 ((hl _).trans h8) ((hl _).trans h9) ((hl _).trans h10)
+      h11 h12 h13 d1 d2 d3 d4
+  | projEta h1 h2 h3 h4 h5 h6 h7 h8 h9 _ _ _ ih1 ih2 ih3 =>
+    have l2 := (ih2 hΓ hΓ₀ W).1
+    have l3 := (ih3 hΓ hΓ₀ W).1
+    have d1 := (ih1 hΓ hΓ₀ W.left).1
+    have d2 := (ih2 hΓ hΓ₀ W.left).1
+    have d3 := (ih3 hΓ hΓ₀ W.left).1
+    simp only [subst_appN, subst_const, List.map_append, VExpr.projs_subst] at l2 l3 d1 d2 d3 ⊢
+    refine ⟨l2, l3, .trans ?_ l3⟩
+    exact .projEta h1 h2 h3 h4 h5 h6 h7 ((List.length_map ..).trans h8) h9 d1 d2 d3
 
 /-- Simultaneous substitution of a related pair `σ ≡ σ'` into a strong defeq: the cross
 projection of `substEq'`. -/

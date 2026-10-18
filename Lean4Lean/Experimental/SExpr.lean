@@ -149,6 +149,9 @@ theorem ClosedN.instL : ∀ {e}, ClosedN e k → ClosedN (e.instL ls) k
   | .bvar .., h | .sort .., h | .const .., h => h
   | .app .., h | .lam .., h | .forallE .., h => ⟨h.1.instL, h.2.instL⟩
 
+/-- `SExpr` has no projections yet: `mk` is faithful only on projection-free terms. A projection
+maps to an application of a sort, which is closed but never typed, so nothing about `SExpr`
+relates it to the projection. -/
 def mk : VExpr → SExpr
   | .bvar i => .bvar i
   | .sort u => .sort (.mk u)
@@ -156,10 +159,12 @@ def mk : VExpr → SExpr
   | .app fn arg => .app (.mk fn) (.mk arg)
   | .lam ty body => .lam (.mk ty) (.mk body)
   | .forallE ty body => .forallE (.mk ty) (.mk body)
+  | .proj _ _ e => .app (.sort (.mk .zero)) (.mk e)
 
 theorem _root_.Lean4Lean.VExpr.ClosedN.mkS : ∀ {e : VExpr}, e.ClosedN k → ClosedN (.mk e) k
   | .bvar .., h | .sort .., h | .const .., h => h
   | .app .., h | .lam .., h | .forallE .., h => ⟨h.1.mkS, h.2.mkS⟩
+  | .proj _ _ e, h => ⟨trivial, VExpr.ClosedN.mkS (e := e) h⟩
 
 @[reducible] def Subst := Nat → SExpr
 

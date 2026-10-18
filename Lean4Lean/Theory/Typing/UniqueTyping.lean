@@ -1,9 +1,11 @@
 import Lean4Lean.Theory.Typing.Injectivity
 import Lean4Lean.Theory.Typing.Pattern
+import Lean4Lean.Theory.Typing.Projection
 
 /-! # Unique typing and its consequences. -/
 
 namespace Lean4Lean
+open Lean4Lean
 namespace VEnv
 
 variable {env : VEnv} {U : Nat}
@@ -84,6 +86,25 @@ theorem IsDefEq.uniq (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
     have := VLevel.imax_congr e1 e2
     exact ⟨_, .sortDF ⟨a1, a2⟩ ⟨b1, b2⟩ this, _, rfl,
       .base <| .sort' ⟨a1, a2⟩ ⟨a1, a2⟩ rfl, .base <| .sort' ⟨b1, b2⟩ ⟨a1, a2⟩ this.symm⟩
+  | proj a1 a2 a3 a4 a5 a6 a7 a8 _ _ a11 a12 a13 a14 _ ih2 =>
+    intro (.proj b1 b2 b3 b4 b5 b6 b7 b8 _ _ _ b12 b13 b14)
+    cases a1.symm.trans b1; cases a2.symm.trans b2
+    cases (List.cons.inj (a3.symm.trans b3)).1; cases a4.symm.trans b4
+    have ⟨_, c1, _⟩ := ih2 n IH hΓ (Nat.le_of_succ_le le₁) (Nat.le_of_succ_le le₂) b13
+    replace le₁ := Nat.sub_le_sub_right le₁ 1
+    replace le₂ := Nat.sub_le_sub_right le₂ 1
+    have hS₁ := a12.hasType; have hS₂ := b12.hasType
+    obtain ⟨heq, W⟩ := IsDefEqU.indApp_inv henv hΓ a1 a2 a5 a6 b5 b6 a7 a8 b7 b8
+      ⟨_, hS₁⟩ ⟨_, hS₂⟩ ⟨_, c1⟩
+    rw [List.reverse_append, VExpr.Subst.consList_append, VExpr.Subst.consList_append] at W
+    have W := Ctx.SubstEq.dropList (by simp [a8]) (by simp [b8]) W
+    have hlv := (hS₂.levelWF (CtxStrong.strong henv hΓ).levelWF).1
+    have hS := IsDefEq.eqUpToLevels henv hΓ c1 <|
+        .appN (.const b5 a5 (List.Forall₂.flip (heq.imp fun _ _ h => h.symm)))
+        (List.Forall₂.rfl fun x hx => .of_levelWF ((VExpr.levelWF_appN.1 hlv).2 x hx))
+    have H := projType_congr henv hΓ a1 a2 a3 (henv.projFacts a1 a2 a3) a5 a6 b5 heq a7 a8 b7 b8
+      W hS a13.hasType a4 a11
+    exact ⟨_, H, _, VLevel.inst_congr (by rfl) heq, a14.mono (by omega), b14.mono (by omega)⟩
   | @base Γ e A n₁ a1 ih =>
     intro H2
     replace ih {n'} le := @ih n' (fun y h1 => IH y (Nat.lt_of_lt_of_le h1 le)) hΓ

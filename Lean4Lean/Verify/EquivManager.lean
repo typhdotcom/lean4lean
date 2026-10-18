@@ -21,7 +21,7 @@ inductive RelevantEq : Expr → Expr → Prop
     RelevantEq (.letE _ t₁ v₁ b₁ _) (.letE _ t₂ v₂ b₂ _)
   | lit : RelevantEq (.lit l) (.lit l)
   | mdata : RelevantEq e₁ e₂ → RelevantEq (.mdata _ e₁) (.mdata _ e₂)
-  | proj : RelevantEq e₁ e₂ → RelevantEq (.proj _ i e₁) (.proj _ i e₂)
+  | proj : RelevantEq e₁ e₂ → RelevantEq (.proj s i e₁) (.proj s i e₂)
 
 theorem RelevantEq.rfl : RelevantEq e e := by
   induction e with
@@ -113,8 +113,8 @@ theorem RelevantEq.uniq (eq : RelevantEq e₁ e₂)
   | lit _ _ ih1 => cases eq; let .lit _ r2 := H2; exact ih1 hΔ .rfl r2
   | mdata _ ih1 => let .mdata eq := eq; let .mdata r1 := H2; exact ih1 hΔ eq r1
   | proj _ l2 ih1 =>
-    let .proj eq := eq; let .proj r1 r2 := H2
-    exact l2.uniq henv hΔ.defeqCtx r2 (ih1 hΔ eq r1)
+    let .proj eq := eq; let .proj r1 _ := H2
+    exact l2.proj_congr henv hΔ.wf.toCtx (ih1 hΔ eq r1)
 
 theorem IsDefEqE.trExpr
     (henv : env.WF) (noBV : Δ.NoBV) (H1 : IsDefEqE env Us Δ r₁ r₂) (hΔ : Δ'.WF env Us.length)
@@ -300,7 +300,9 @@ theorem isEquiv.WF :
   · exact .bind (.andM isEquiv.WF isEquiv.WF) fun _ _ le H =>
       this le fun hb => .forallE (H hb).1 (H hb).2
   · exact .bind (.andM (.pure id) isEquiv.WF) fun _ _ le H =>
-      this le fun hb => (by simpa using (H hb).1) ▸ .proj (H hb).2
+      this le fun hb => by
+        obtain ⟨⟨rfl, rfl⟩, h⟩ : (_ ∧ _) ∧ _ := by simpa using H hb
+        exact .proj h
   · exact .bind (.andM isEquiv.WF <| .andM isEquiv.WF isEquiv.WF) fun _ _ le H =>
       this le fun hb => .letE (H hb).1 (H hb).2.1 (H hb).2.2
   · exact .pure nofun

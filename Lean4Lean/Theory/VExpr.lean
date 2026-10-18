@@ -11,6 +11,8 @@ inductive VExpr where
   | app (fn arg : VExpr)
   | lam (binderType body : VExpr)
   | forallE (binderType body : VExpr)
+  /-- The `idx`th field of `struct`, a term of the single-constructor type `typeName`. -/
+  | proj (typeName : Name) (idx : Nat) (struct : VExpr)
 
 instance : Inhabited VExpr := ⟨.sort .zero⟩
 
@@ -42,6 +44,7 @@ def liftN : VExpr → (k :_:= 0) → VExpr
   | .app fn arg, k => .app (fn.liftN k) (arg.liftN k)
   | .lam ty body, k => .lam (ty.liftN k) (body.liftN (k+1))
   | .forallE ty body, k => .forallE (ty.liftN k) (body.liftN (k+1))
+  | .proj s i e, k => .proj s i (e.liftN k)
 
 abbrev lift := liftN 1
 
@@ -91,6 +94,7 @@ theorem lift_liftN' (e : VExpr) (k : Nat) : lift (liftN n e k) = liftN n (lift e
 theorem sizeOf_liftN (e : VExpr) (k : Nat) : sizeOf e ≤ sizeOf (liftN n e k) := by
   induction e generalizing k with simp [liftN, Nat.add_assoc, Nat.add_le_add_iff_left]
   | bvar => simp [liftVar]; split <;> simp [Nat.le_add_left]
+  | proj _ _ _ ih => exact ih _
   | _ => rename_i ih1 ih2; exact Nat.add_le_add (ih1 _) (ih2 _)
 
 @[simp] theorem liftN_default (n k : Nat) : liftN n default k = default := rfl
@@ -102,6 +106,7 @@ def ClosedN : VExpr → (k :_:= 0) → Prop
   | .app fn arg, k => fn.ClosedN k ∧ arg.ClosedN k
   | .lam ty body, k => ty.ClosedN k ∧ body.ClosedN (k+1)
   | .forallE ty body, k => ty.ClosedN k ∧ body.ClosedN (k+1)
+  | .proj _ _ e, k => e.ClosedN k
 
 abbrev Closed := ClosedN
 
@@ -113,6 +118,7 @@ theorem ClosedN.mono (h : k ≤ k') (self : ClosedN e k) : ClosedN e k' := by
   | app _ _ ih1 ih2 => exact ⟨ih1 h self.1, ih2 h self.2⟩
   | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 =>
     exact ⟨ih1 h self.1, ih2 (Nat.succ_le_succ h) self.2⟩
+  | proj _ _ _ ih => exact ih h self
 
 theorem ClosedN.liftN_eq (self : ClosedN e k) (h : k ≤ j) : liftN n e j = e := by
   induction e generalizing k j with
@@ -121,6 +127,7 @@ theorem ClosedN.liftN_eq (self : ClosedN e k) (h : k ≤ j) : liftN n e j = e :=
   | app _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h⟩
   | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 =>
     exact ⟨ih1 self.1 h, ih2 self.2 (Nat.succ_le_succ h)⟩
+  | proj _ _ _ ih => exact ih self h
 
 theorem ClosedN.lift_eq (self : ClosedN e) : lift e = e := self.liftN_eq (Nat.zero_le _)
 
@@ -140,6 +147,7 @@ theorem ClosedN.liftN_eq_rev (self : ClosedN (liftN n e j) k) (h : k ≤ j) : li
   | app _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h⟩
   | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 =>
     exact ⟨ih1 self.1 h, ih2 self.2 (Nat.succ_le_succ h)⟩
+  | proj _ _ _ ih => exact ih self h
 
 variable (ls : List VLevel) in
 def instL : VExpr → VExpr
@@ -149,14 +157,17 @@ def instL : VExpr → VExpr
   | .app fn arg => .app fn.instL arg.instL
   | .lam ty body => .lam ty.instL body.instL
   | .forallE ty body => .forallE ty.instL body.instL
+  | .proj s i e => .proj s i e.instL
 
 theorem ClosedN.instL : ∀ {e}, ClosedN e k → ClosedN (e.instL ls) k
   | .bvar .., h | .sort .., h | .const .., h => h
   | .app .., h | .lam .., h | .forallE .., h => ⟨h.1.instL, h.2.instL⟩
+  | .proj _ _ e, h => ClosedN.instL (e := e) h
 
 theorem ClosedN.instL_rev : ∀ {e}, ClosedN (e.instL ls) k → ClosedN e k
   | .bvar .., h | .sort .., h | .const .., h => h
   | .app .., h | .lam .., h | .forallE .., h => ⟨h.1.instL_rev, h.2.instL_rev⟩
+  | .proj _ _ e, h => ClosedN.instL_rev (e := e) h
 
 @[simp] theorem instL_default : instL ls default = default := rfl
 
@@ -171,6 +182,7 @@ def LevelWF (U : Nat) : VExpr → Prop
   | .sort l => l.WF U
   | .const _ ls => ∀ l ∈ ls, l.WF U
   | .app e1 e2 | .lam e1 e2 | .forallE e1 e2 => e1.LevelWF U ∧ e2.LevelWF U
+  | .proj _ _ e => e.LevelWF U
 
 theorem LevelWF.instL_id {e : VExpr} (h : e.LevelWF U) : e.instL (VLevel.params U) = e := by
   induction e <;> simp_all [instL, LevelWF, VLevel.inst_id]
@@ -244,6 +256,7 @@ def inst : VExpr → VExpr → (k :_:= 0) → VExpr
   | .app fn arg, e, k => .app (fn.inst e k) (arg.inst e k)
   | .lam ty body, e, k => .lam (ty.inst e k) (body.inst e (k+1))
   | .forallE ty body, e, k => .forallE (ty.inst e k) (body.inst e (k+1))
+  | .proj s i b, e, k => .proj s i (b.inst e k)
 
 @[simp] theorem inst_default : inst default e k = default := rfl
 
@@ -313,6 +326,7 @@ theorem inst_liftN_bvar : ∀ (e : VExpr) (k : Nat), (liftN 1 e (k+1)).inst (.bv
   | .sort .., _ | .const .., _ => rfl
   | .app .., k => by simp only [liftN, inst, inst_liftN_bvar]
   | .lam .., k | .forallE .., k => by simp only [liftN, inst, inst_liftN_bvar]
+  | .proj .., k => by simp only [liftN, inst, inst_liftN_bvar]
 
 /-- Substitute a value for each of a telescope of binders, `inst` at index 0 once per binder.
 The list is in telescope order -- leftmost is the *outermost* binder, the same order `appN`
@@ -339,6 +353,39 @@ def appN (e : VExpr) : List VExpr → VExpr
 theorem appN_append : ∀ (e : VExpr) (as bs : List VExpr), e.appN (as ++ bs) = (e.appN as).appN bs
   | _, [], _ => rfl
   | e, a :: as, bs => appN_append (e.app a) as bs
+
+theorem appN_ne_of_ne {P : VExpr → Prop} (hP : ∀ f a, P (.app f a)) :
+    ∀ {f : VExpr} (as : List VExpr), P f → P (f.appN as)
+  | _, [], h => h
+  | _, _ :: as, _ => appN_ne_of_ne hP as (hP _ _)
+
+theorem appN_const_ne_forallE : (VExpr.const c ls).appN as ≠ .forallE A B :=
+  appN_ne_of_ne (P := (· ≠ .forallE A B)) (fun _ _ => nofun) as nofun
+
+theorem appN_const_ne_sort : (VExpr.const c ls).appN as ≠ .sort u :=
+  appN_ne_of_ne (P := (· ≠ .sort u)) (fun _ _ => nofun) as nofun
+
+theorem levelWF_appN : ∀ {f : VExpr} {as : List VExpr},
+    (f.appN as).LevelWF U ↔ f.LevelWF U ∧ ∀ a ∈ as, a.LevelWF U
+  | _, [] => by simp
+  | f, a :: as => by
+    rw [appN, levelWF_appN (f := f.app a)]
+    simp [LevelWF, and_assoc]
+
+@[simp] theorem liftN_appN (e : VExpr) : ∀ as, (e.appN as).liftN n k =
+    (e.liftN n k).appN (as.map (·.liftN n k))
+  | [] => rfl
+  | a :: as => by simp [appN, liftN_appN _ as, liftN]
+
+@[simp] theorem inst_appN (e a : VExpr) : ∀ as, (e.appN as).inst a k =
+    (e.inst a k).appN (as.map (·.inst a k))
+  | [] => rfl
+  | b :: as => by simp [appN, inst_appN _ _ as, inst]
+
+theorem instL_appN (ls : List VLevel) : ∀ (f : VExpr) (as : List VExpr),
+    (f.appN as).instL ls = (f.instL ls).appN (as.map (·.instL ls))
+  | _, [] => rfl
+  | f, a :: as => by simp only [appN, instL_appN ls (.app f a) as, instL, List.map_cons]
 
 /-- A lambda telescope over a list of domains, outermost first: the order `appN` applies its
 arguments in and `insts` substitutes them. -/
@@ -438,6 +485,7 @@ def Skips' (n : Nat) : VExpr → (k :_:= 0) → Prop
   | .app fn arg, k => fn.Skips' n k ∧ arg.Skips' n k
   | .lam ty body, k => ty.Skips' n k ∧ body.Skips' n (k+1)
   | .forallE ty body, k => ty.Skips' n k ∧ body.Skips' n (k+1)
+  | .proj _ _ e, k => e.Skips' n k
 
 theorem skips_iff : Skips e n k ↔ Skips' n e k := by
   induction n generalizing e with
@@ -478,6 +526,10 @@ theorem skips_iff : Skips e n k ↔ Skips' n e k := by
       simp [Skips', ← fIH, ← aIH]; refine ⟨fun ⟨e', h1, h2⟩ => ?_, ?_⟩
       · cases e' <;> cases h2; exact ⟨⟨_, h1.1, rfl⟩, ⟨_, h1.2, rfl⟩⟩
       · rintro ⟨⟨e1, h1, rfl⟩, ⟨e2, h2, rfl⟩⟩; exact ⟨.lam .., ⟨h1, h2⟩, rfl⟩
+    | proj s i e eIH =>
+      simp [Skips', ← eIH]; refine ⟨fun ⟨e', h1, h2⟩ => ?_, ?_⟩
+      · cases e' <;> cases h2; rename_i e₀ _; exact ⟨e₀, h1, rfl⟩
+      · rintro ⟨e1, h1, rfl⟩; exact ⟨.proj s i e1, h1, rfl⟩
 
 theorem of_liftN_eq_liftN (h : liftN n1 e1 (k1+n2+k2) = liftN n2 e2 k2) :
     ∃ e', e1 = liftN n2 e' k2 ∧ e2 = liftN n1 e' (k1+k2) := by
@@ -524,6 +576,7 @@ theorem ClosedN.instN (h1 : ClosedN e (k+j+1)) (h2 : ClosedN e2 k) : ClosedN (e.
   | .sort .., h | .const .., h => h
   | .app .., h => ⟨h.1.instN h2, h.2.instN h2⟩
   | .lam .., h | .forallE .., h => ⟨h.1.instN h2, h.2.instN (j := j+1) h2⟩
+  | .proj _ _ e, h => ClosedN.instN (e := e) h h2
 
 theorem ClosedN.inst (h1 : ClosedN e (k+1)) (h2 : ClosedN e2 k) : ClosedN (e.inst e2) k :=
   h1.instN (j := 0) h2
@@ -773,6 +826,12 @@ namespace VExpr
   | .app fn arg, k => .app (fn.lift' k) (arg.lift' k)
   | .lam ty body, k => .lam (ty.lift' k) (body.lift' k.cons)
   | .forallE ty body, k => .forallE (ty.lift' k) (body.lift' k.cons)
+  | .proj s i e, k => .proj s i (e.lift' k)
+
+@[simp] theorem lift'_appN (e : VExpr) (ρ : Lift) : ∀ as, (e.appN as).lift' ρ =
+    (e.lift' ρ).appN (as.map (·.lift' ρ))
+  | [] => rfl
+  | a :: as => by simp [appN, lift'_appN _ _ as]
 
 theorem lift'_consN_skipN : e.lift' (.consN (.skipN .refl n) k) = liftN n e k := Eq.symm <| by
   induction e generalizing k <;> simp [liftN, Lift.liftVar_consN_skipN, *]
@@ -796,6 +855,7 @@ theorem ClosedN.lift'_eq (self : ClosedN e k) (h : ρ.Fixes k) : lift' e ρ = e 
   | bvar i => exact h.liftVar_eq self
   | app _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h⟩
   | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h⟩
+  | proj _ _ _ ih => exact ih self h
 
 def Subst := Nat → VExpr
 
@@ -816,12 +876,15 @@ def subst : VExpr → Subst → VExpr
   | .app fn arg, σ => .app (fn.subst σ) (arg.subst σ)
   | .lam ty body, σ => .lam (ty.subst σ) (body.subst σ.lift)
   | .forallE ty body, σ => .forallE (ty.subst σ) (body.subst σ.lift)
+  | .proj s i e, σ => .proj s i (e.subst σ)
 
 @[simp] theorem subst_bvar (i) (σ : Subst) : (VExpr.bvar i).subst σ = σ i := rfl
 @[simp] theorem subst_sort (u) (σ : Subst) : (VExpr.sort u).subst σ = .sort u := rfl
 @[simp] theorem subst_const (c us) (σ : Subst) : (VExpr.const c us).subst σ = .const c us := rfl
 @[simp] theorem subst_app (e1 e2 : VExpr) (σ : Subst) :
     (e1.app e2).subst σ = (e1.subst σ).app (e2.subst σ) := rfl
+@[simp] theorem subst_proj (s i) (e : VExpr) (σ : Subst) :
+    (VExpr.proj s i e).subst σ = .proj s i (e.subst σ) := rfl
 
 def Subst.lift_r (σ : Subst) (ρ : Lift) : Subst := fun x => (σ x).lift' ρ
 def Subst.lift_l (ρ : Lift) (σ : Subst) : Subst := fun x => σ (ρ.liftVar x)
@@ -959,6 +1022,12 @@ theorem ClosedN.subst_eq {e : VExpr} (self : ClosedN e k) (h : σ.Fixes k) : e.s
   | bvar i => exact h _ self
   | app _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h⟩
   | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 => exact ⟨ih1 self.1 h, ih2 self.2 h.lift⟩
+  | proj _ _ _ ih => exact ih self h
+
+theorem subst_appN (σ : Subst) : ∀ (e : VExpr) (as : List VExpr),
+    (e.appN as).subst σ = (e.subst σ).appN (as.map (·.subst σ))
+  | _, [] => rfl
+  | e, a :: as => by simp only [appN, subst_appN σ (e.app a) as, subst_app, List.map_cons]
 
 theorem lift_subst_cons {e : VExpr} : e.lift.subst (σ.cons t) = e.subst σ := by
   rw [lift_subst, Subst.cons_tail]

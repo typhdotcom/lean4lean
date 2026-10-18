@@ -22,6 +22,7 @@ inductive ParRed : List VExpr → VExpr → VExpr → Prop where
   | app : Γ ⊢ f ≫ f' → Γ ⊢ a ≫ a' → Γ ⊢ .app f a ≫ .app f' a'
   | lam : Γ ⊢ A ≫ A' → A::Γ ⊢ body ≫ body' → Γ ⊢ .lam A body ≫ .lam A' body'
   | forallE : Γ ⊢ A ≫ A' → A::Γ ⊢ B ≫ B' → Γ ⊢ .forallE A B ≫ .forallE A' B'
+  | proj : Γ ⊢ e ≫ e' → Γ ⊢ .proj s k e ≫ .proj s k e'
   | beta : A::Γ ⊢ e₁ ≫ e₁' → Γ ⊢ e₂ ≫ e₂' → Γ ⊢ .app (.lam A e₁) e₂ ≫ e₁'.inst e₂'
   | extra : TY.Pat p r → p.Matches e m1 m2 → r.2.OK (TY.IsDefEqU Γ) m1 m2 →
     (∀ a, Γ ⊢ m2 a ≫ m2' a) → Γ ⊢ e ≫ r.1.apply m1 m2'
@@ -37,6 +38,7 @@ inductive CParRed : List VExpr → VExpr → VExpr → Prop where
   | app : ¬NonNeutral TY Γ (.app f a) → Γ ⊢ f ⋙ f' → Γ ⊢ a ⋙ a' → Γ ⊢ .app f a ⋙ .app f' a'
   | lam : Γ ⊢ A ⋙ A' → A::Γ ⊢ body ⋙ body' → Γ ⊢ .lam A body ⋙ .lam A' body'
   | forallE : Γ ⊢ A ⋙ A' → A::Γ ⊢ B ⋙ B' → Γ ⊢ .forallE A B ⋙ .forallE A' B'
+  | proj : Γ ⊢ e ⋙ e' → Γ ⊢ .proj s k e ⋙ .proj s k e'
   | beta : A::Γ ⊢ e₁ ⋙ e₁' → Γ ⊢ e₂ ⋙ e₂' → Γ ⊢ .app (.lam A e₁) e₂ ⋙ e₁'.inst e₂'
   | extra : TY.Pat p r → p.Matches e m1 m2 → r.2.OK (TY.IsDefEqU Γ) m1 m2 →
     (∀ a, Γ ⊢ m2 a ⋙ m2' a) → Γ ⊢ e ⋙ r.1.apply m1 m2'
@@ -52,10 +54,12 @@ protected theorem ParRed.rfl : ∀ {e}, ParRed TY Γ e e
   | .app .. => .app ParRed.rfl ParRed.rfl
   | .lam .. => .lam ParRed.rfl ParRed.rfl
   | .forallE .. => .forallE ParRed.rfl ParRed.rfl
+  | .proj .. => .proj ParRed.rfl
 
 theorem ParRed.weakN (W : Ctx.LiftN n k Γ Γ') (H : ParRed TY Γ e1 e2) :
     ParRed TY Γ' (e1.liftN n k) (e2.liftN n k) := by
   induction H generalizing k Γ' with
+  | proj _ ih => exact .proj (ih W)
   | bvar | sort | const => exact .rfl
   | app _ _ ih1 ih2 => exact .app (ih1 W) (ih2 W)
   | lam _ _ ih1 ih2 => exact .lam (ih1 W) (ih2 W.succ)
@@ -72,6 +76,7 @@ variable! (H₀ : ParRed TY Γ₀ a1 a2) (H₀' : TY.HasType Γ₀ a1 A₀) in
 theorem ParRed.instN (W : Ctx.InstN Γ₀ a1 A₀ k Γ₁ Γ)
     (H : ParRed TY Γ₁ e1 e2) : ParRed TY Γ (e1.inst a1 k) (e2.inst a2 k) := by
   induction H generalizing Γ k with
+  | proj _ ih => exact .proj (ih W)
   | @bvar _ i =>
     dsimp [inst]
     induction W generalizing i with
@@ -96,6 +101,7 @@ theorem ParRed.instN (W : Ctx.InstN Γ₀ a1 A₀ k Γ₁ Γ)
 
 theorem ParRed.defeq (H : ParRed TY Γ e e') (he : TY.HasType Γ e A) : TY.IsDefEqU Γ e e' := by
   induction H generalizing A with
+  | proj => exact absurd he TY.proj_untyped
   | bvar | sort | const => exact TY.refl he
   | app _ _ ih1 ih2 =>
     have ⟨_, _, h1, h2⟩ := TY.app_inv he
@@ -123,6 +129,7 @@ theorem ParRed.hasType (H : ParRed TY Γ e e') (he : TY.HasType Γ e A) : TY.Has
 theorem ParRed.defeqDFC (W : IsDefEqCtx TY.IsDefEqU Γ₀ Γ₁ Γ₂)
     (h : TY.HasType Γ₁ e1 A) (H : ParRed TY Γ₁ e1 e2) : ParRed TY Γ₂ e1 e2 := by
   induction H generalizing Γ₂ A with
+  | proj => exact absurd h TY.proj_untyped
   | bvar => exact .bvar
   | sort => exact .sort
   | const => exact .const
@@ -171,6 +178,10 @@ theorem ParRed.weakN_inv (W : Ctx.LiftN n k Γ Γ')
     ∃ e2, ParRed TY Γ e1 e2 ∧ e2' = e2.liftN n k := by
   generalize eq : e1.liftN n k = e1' at H
   induction H generalizing e1 Γ k with
+  | proj _ ih =>
+    cases e1 <;> cases eq
+    have ⟨_, a1, a2⟩ := ih W rfl
+    exact ⟨_, .proj a1, a2 ▸ rfl⟩
   | bvar => cases e1 <;> cases eq; exact ⟨_, .bvar, rfl⟩
   | sort => cases e1 <;> cases eq; exact ⟨_, .sort, rfl⟩
   | const => cases e1 <;> cases eq; exact ⟨_, .const, rfl⟩
@@ -222,6 +233,7 @@ theorem ParRed.weakN_inv (W : Ctx.LiftN n k Γ Γ')
 
 theorem CParRed.toParRed (H : CParRed TY Γ e e') : ParRed TY Γ e e' := by
   induction H with
+  | proj _ ih => exact .proj ih
   | bvar => exact .bvar
   | sort => exact .sort
   | const => exact .const
@@ -260,6 +272,7 @@ theorem CParRed.exists (H : TY.HasType Γ e A) : ∃ e', CParRed TY Γ e e' := b
         have ⟨e', hs⟩ := e_ih.2.1 H2
         exact ⟨Option.rec e' m2l, Option.rec hs hl⟩
   cases e with
+  | proj => exact absurd H TY.proj_untyped
   | bvar i => exact ⟨_, .bvar⟩
   | sort => exact ⟨_, .sort⟩
   | const n ls => exact Classical.byCases (neut H e_ih) fun hn => ⟨_, .const hn⟩
@@ -284,6 +297,7 @@ theorem ParRed.triangle (H1 : TY.HasType Γ e A) (H : ParRed TY Γ e e') (H2 : C
   induction e using VExpr.brecOn generalizing Γ A e' o with | _ e e_ih => ?_
   revert e_ih; change let motive := ?_; ∀ _: e.below (motive := motive), _; intro motive e_ih
   induction H2 generalizing A e' with
+  | proj => exact absurd H1 TY.proj_untyped
   | bvar =>
     cases H with
     | bvar => exact ⟨_, .rfl, .refl H1⟩
@@ -839,6 +853,7 @@ theorem Typing.CRDefEq.trans : TY.CRDefEq Γ e₁ e₂ → TY.CRDefEq Γ e₂ e�
 theorem VEnv.IsDefEq.toTyping (H : TY.env.IsDefEq TY.univs Γ e₁ e₂ A) :
     TY.IsDefEqU Γ e₁ e₂ ∧ TY.HasType Γ e₁ A := by
   induction H with
+  | projDF h1 h2 h3 | projIota h1 h2 h3 | projEta h1 h2 h3 => exact absurd h3 (TY.noProj h1 h2)
   | bvar h => exact ⟨TY.refl (TY.bvar h), TY.bvar h⟩
   | symm _ ih => exact ⟨TY.symm ih.1, TY.defeq_l ih.1 ih.2⟩
   | trans _ _ ih1 ih2 => exact ⟨TY.trans ih1.1 ih2.1, ih1.2⟩
@@ -862,6 +877,7 @@ theorem VEnv.IsDefEqU.church_rosser
       TY.CRDefEq Γ e₁ e₂ :=
     ⟨⟨_, H.toTyping.2⟩, ⟨_, H.symm.toTyping.2⟩, _, _, h1, h2, h3⟩
   induction H with
+  | projDF h1 h2 h3 | projIota h1 h2 h3 | projEta h1 h2 h3 => exact absurd h3 (TY.noProj h1 h2)
   | bvar h => exact .refl (TY.bvar h)
   | symm _ ih => exact ih.symm
   | trans _ _ ih1 ih2 => exact ih1.trans ih2

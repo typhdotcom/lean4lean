@@ -64,7 +64,8 @@ theorem AddInduct.names {decl : VInductDecl} (H : AddInduct safety C₁ env₁ d
 
 /-- The step at a lower safety level, from a bigger environment that has room for the block. -/
 theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ decl C₂ env₂) (hsf : sf' ≤ sf)
-    (hle : env₁ ≤ env₁') (hfr' : ∀ n, C₁.find? n = none → env₁'.constants n = none) :
+    (hle : env₁ ≤ env₁') (hfr' : ∀ n, C₁.find? n = none → env₁'.constants n = none)
+    (hfi' : ∀ n, C₁.find? n = none → env₁'.inducts n = none) :
     ∃ env₂', AddInduct sf' C₁ env₁' decl C₂ env₂' ∧ env₂ ≤ env₂' := by
   obtain ⟨cis, -, hnd, hfr, -, hnames⟩ := H.names
   rw [hnames, List.map_append, List.map_append] at hnd
@@ -75,8 +76,16 @@ theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ d
     exact hfr' _ (hfr ci hci)
   simp only [List.map_append, List.mem_append] at hfresh
   obtain ⟨⟨hndT, hndC, hdTC⟩, hndR, hdR⟩ := List.nodup_append.1 hnd |>.imp_left List.nodup_append.1
+  have hfreshI : ∀ T ∈ decl.types, env₁'.inducts T.name = none := by
+    intro T hT
+    have : T.name ∈ cis.map (·.name) := by
+      rw [hnames]; simp only [List.map_append, List.mem_append, VInductDecl.typeConsts,
+        List.map_map, Function.comp_def]
+      exact .inl (.inl (List.mem_map_of_mem hT))
+    obtain ⟨ci, hci, hn⟩ := List.mem_map.1 this
+    exact hn ▸ hfi' _ (hfr ci hci)
   obtain @⟨lparams, envT, envC, envR, types, ctors, recs, hl, hty, hct, hrc, hnd₀, hfr₀, hm, hT, hC,
-    hR, rfl⟩ := H
+    hR, hB⟩ := H
   obtain ⟨_, hT'⟩ := VEnv.exists_addConstList
     (fun p hp => hfresh _ (.inl (.inl (List.mem_map_of_mem hp)))) hndT
   obtain ⟨_, hC'⟩ := VEnv.exists_addConstList (fun p hp => VEnv.addConstList_constants_none hT'
@@ -90,8 +99,12 @@ theorem AddInduct.transport {decl : VInductDecl} (H : AddInduct sf C₁ env₁ d
   have leT := VEnv.addConstList_mono hle hT hT'
   have leC := VEnv.addConstList_mono leT hC hC'
   have leR := VEnv.addConstList_mono leC hR hR'
-  refine ⟨_, .mk hl ?_ ?_ ?_ hnd₀ hfr₀ hm hT' hC' hR' rfl,
-    VEnv.addDefEqList_mono (VEnv.addDefEqList_mono leR)⟩
+  obtain ⟨_, hB'⟩ := VEnv.exists_addBlock (env := VEnv.addDefEqList _ decl.iotaRules) fun T hT => by
+    rw [VEnv.addDefEqList_inducts, VEnv.addConstList_inducts hR', VEnv.addConstList_inducts hC',
+      VEnv.addConstList_inducts hT']
+    exact hfreshI T hT
+  refine ⟨_, .mk hl ?_ ?_ ?_ hnd₀ hfr₀ hm hT' hC' hR' hB',
+    VEnv.addBlock_mono (VEnv.addDefEqList_mono leR) hB hB'⟩
   · exact Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1, (h.2.sf_mono hsf).mono hle⟩) hty
   · exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => ⟨h.1, (h.2.sf_mono hsf).mono leT⟩) hct
   · exact Lean4Lean.List.Forall₂.imp
@@ -128,11 +141,11 @@ theorem AddInduct.hasPrimitives {decl : VInductDecl}
     (hnp : ∀ n ∈ (decl.typeConsts ++ decl.ctorConsts ++ decl.recConsts).map (·.1),
       Environment.primitives.contains n = false)
     (H : AddInduct safety C₁ env₁ decl C₂ env₂) (h : env₁.HasPrimitives) : env₂.HasPrimitives := by
-  obtain ⟨-, -, -, -, -, -, -, hT, hC, hR, rfl⟩ := H
+  obtain ⟨-, -, -, -, -, -, -, hT, hC, hR, hB⟩ := H
   have hnp' (cs : List (Name × VConstant)) (hcs : ∀ p ∈ cs, p ∈ decl.typeConsts ++ decl.ctorConsts ++ decl.recConsts) :
       ∀ p ∈ cs, Environment.primitives.contains p.1 = false :=
     fun p hp => hnp _ (List.mem_map_of_mem (hcs p hp))
-  refine VEnv.HasPrimitives.addDefEqList <| VEnv.HasPrimitives.addDefEqList <|
+  refine VEnv.HasPrimitives.addBlock hB <| VEnv.HasPrimitives.addDefEqList <|
     .addConstList (hnp' _ fun _ h => List.mem_append_right _ h) hR <|
     .addConstList (hnp' _ fun _ h => List.mem_append_left _ (List.mem_append_right _ h)) hC <|
     .addConstList (hnp' _ fun _ h => List.mem_append_left _ (List.mem_append_left _ h)) hT h
@@ -160,7 +173,12 @@ theorem addInductBlock.WF {env env' : Environment} {ves : VEnvs} (wf : ves.WF en
       AddInduct s env.constants (ves.venv s) decl env'.constants x) ∧
       (¬s ≤ inductSafety decl.isUnsafe → x = ves.venv s) := by
     by_cases hs : s ≤ inductSafety decl.isUnsafe
-    · obtain ⟨x, h, -⟩ := H.transport hs (wf.mono hs) (hfr' s)
+    · obtain ⟨x, h, -⟩ := H.transport hs (wf.mono hs) (hfr' s) fun n hn => by
+        cases h : (ves.venv s).inducts n with
+        | none => rfl
+        | some b =>
+          obtain ⟨_, hc⟩ := (wf.tr (safety := s)).wf.constants_of_inducts h
+          cases (hfr' s n hn).symm.trans hc
       exact ⟨x, fun _ => h, fun h => (h hs).elim⟩
     · exact ⟨_, fun h => (hs h).elim, fun _ => rfl⟩
   obtain ⟨ves', hves'⟩ := VEnvs.axiom_of_choice hstep

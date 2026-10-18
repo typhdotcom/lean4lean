@@ -7,6 +7,155 @@ inductive Lookup : List VExpr → Nat → VExpr → Prop where
   | zero : Lookup (ty::Γ) 0 ty.lift
   | succ : Lookup Γ n ty → Lookup (A::Γ) (n+1) ty.lift
 
+/-- The substitution sending every variable to a closed term. -/
+def VExpr.Subst.dflt : VExpr.Subst := fun _ => default
+
+@[simp] theorem VExpr.Subst.dflt_comp (σ : VExpr.Subst) : VExpr.Subst.dflt.comp σ = .dflt := rfl
+
+/-- The first `k` projections of `e`, a term of the type `s`. -/
+def VExpr.projs (s : Name) (k : Nat) (e : VExpr) : List VExpr := (List.range k).map (.proj s · e)
+
+namespace VConstructor
+variable (c : VConstructor)
+
+/-- The type of the `k`th projection of `e : s As I`, where `c` is `s`'s constructor, at universe
+levels `ls`: the field's type at the parameters `As` and the earlier projections of `e`. The field's
+type mentions nothing else, so the variables beyond them can go anywhere; sending them to a closed
+term makes the type commute with substitutions syntactically. -/
+def projType (ls : List VLevel) (s : Name) (k : Nat) (As : List VExpr) (e : VExpr) : VExpr :=
+  (((c.fields[k]?.map VField.type).getD default).instL ls).subst
+    (VExpr.Subst.dflt.consList (As ++ VExpr.projs s k e))
+
+theorem _root_.Lean4Lean.VExpr.Subst.consList_comp (σ σ' : VExpr.Subst) :
+    ∀ L : List VExpr, (σ.consList L).comp σ' = (σ.comp σ').consList (L.map (·.subst σ'))
+  | [] => rfl
+  | a :: L => by
+    show ((σ.cons a).consList L).comp σ' = ((σ.comp σ').cons (a.subst σ')).consList _
+    rw [VExpr.Subst.consList_comp _ _ L]
+    have : (σ.cons a).comp σ' = (σ.comp σ').cons (a.subst σ') := by
+      funext i; cases i <;> rfl
+    rw [this]
+
+theorem _root_.Lean4Lean.VExpr.projs_map (f : VExpr → VExpr)
+    (hf : ∀ i e, f (.proj s i e) = .proj s i (f e)) :
+    (VExpr.projs s k e).map f = VExpr.projs s k (f e) := by
+  simp [VExpr.projs, hf]
+
+@[simp] theorem _root_.Lean4Lean.VExpr.projs_liftN :
+    (VExpr.projs s k e).map (·.liftN n j) = VExpr.projs s k (e.liftN n j) :=
+  VExpr.projs_map _ fun _ _ => rfl
+
+@[simp] theorem _root_.Lean4Lean.VExpr.projs_lift' :
+    (VExpr.projs s k e).map (·.lift' ρ) = VExpr.projs s k (e.lift' ρ) :=
+  VExpr.projs_map _ fun _ _ => rfl
+
+@[simp] theorem _root_.Lean4Lean.VExpr.projs_inst :
+    (VExpr.projs s k e).map (·.inst a j) = VExpr.projs s k (e.inst a j) :=
+  VExpr.projs_map _ fun _ _ => rfl
+
+@[simp] theorem _root_.Lean4Lean.VExpr.projs_instL :
+    (VExpr.projs s k e).map (·.instL ls) = VExpr.projs s k (e.instL ls) :=
+  VExpr.projs_map _ fun _ _ => rfl
+
+@[simp] theorem _root_.Lean4Lean.VExpr.projs_subst :
+    (VExpr.projs s k e).map (·.subst σ) = VExpr.projs s k (e.subst σ) :=
+  VExpr.projs_map _ fun _ _ => rfl
+
+@[simp] theorem _root_.Lean4Lean.VExpr.length_projs : (VExpr.projs s k e).length = k := by
+  simp [VExpr.projs]
+
+theorem projType_subst (ls : List VLevel) (s : Name) (k : Nat) (As : List VExpr) (e : VExpr)
+    (σ : VExpr.Subst) :
+    (c.projType ls s k As e).subst σ = c.projType ls s k (As.map (·.subst σ)) (e.subst σ) := by
+  simp only [projType, VExpr.subst_subst, VExpr.Subst.consList_comp, List.map_append,
+    VExpr.Subst.dflt_comp]
+  rw [VExpr.projs_subst]
+
+theorem projType_lift' (ls : List VLevel) (s : Name) (k : Nat) (As : List VExpr) (e : VExpr)
+    (ρ : Lift) :
+    (c.projType ls s k As e).lift' ρ = c.projType ls s k (As.map (·.lift' ρ)) (e.lift' ρ) := by
+  have h : ∀ x : VExpr, x.lift' ρ = x.subst (.lift_l ρ .id) := by
+    intro x; have := VExpr.subst_lift' (e := x) (ρ := ρ) (σ := .id); simpa using this
+  simp only [h]; rw [projType_subst]
+
+theorem projType_liftN (ls : List VLevel) (s : Name) (k : Nat) (As : List VExpr) (e : VExpr)
+    (n j : Nat) :
+    (c.projType ls s k As e).liftN n j =
+      c.projType ls s k (As.map (·.liftN n j)) (e.liftN n j) := by
+  simp only [← VExpr.lift'_consN_skipN, projType_lift']
+
+theorem projType_inst (ls : List VLevel) (s : Name) (k : Nat) (As : List VExpr) (e a : VExpr)
+    (j : Nat) :
+    (c.projType ls s k As e).inst a j = c.projType ls s k (As.map (·.inst a j)) (e.inst a j) := by
+  simp only [VExpr.instN_eq, projType_subst]
+
+theorem _root_.Lean4Lean.VExpr.instL_subst (ls : List VLevel) :
+    ∀ (e : VExpr) (σ : VExpr.Subst),
+      (e.subst σ).instL ls = (e.instL ls).subst fun i => (σ i).instL ls
+  | .bvar _, _ | .sort _, _ | .const .., _ => rfl
+  | .app f a, σ => by simp only [VExpr.subst, VExpr.instL, VExpr.instL_subst ls f, VExpr.instL_subst ls a]
+  | .lam A b, σ | .forallE A b, σ => by
+    simp only [VExpr.subst, VExpr.instL, VExpr.instL_subst ls A, VExpr.instL_subst ls b]
+    congr 2; funext i; cases i <;> simp [VExpr.Subst.lift, VExpr.lift, VExpr.instL]
+  | .proj _ _ e, σ => by simp only [VExpr.subst, VExpr.instL, VExpr.instL_subst ls e]
+
+theorem _root_.Lean4Lean.VExpr.Subst.consList_instL (ls : List VLevel) (σ : VExpr.Subst) :
+    ∀ L : List VExpr, (fun i => (σ.consList L i).instL ls) =
+      VExpr.Subst.consList (fun i => (σ i).instL ls) (L.map (·.instL ls))
+  | [] => rfl
+  | a :: L => by
+    show (fun i => ((σ.cons a).consList L i).instL ls) = _
+    rw [VExpr.Subst.consList_instL ls _ L]
+    have : (fun i => (σ.cons a i).instL ls) = VExpr.Subst.cons (fun i => (σ i).instL ls) (a.instL ls) := by
+      funext i; cases i <;> rfl
+    rw [this]; rfl
+
+theorem projType_instL (ls ls' : List VLevel) (s : Name) (k : Nat) (As : List VExpr) (e : VExpr) :
+    (c.projType ls s k As e).instL ls' =
+      c.projType (ls.map (VLevel.inst ls')) s k (As.map (·.instL ls')) (e.instL ls') := by
+  simp only [projType, VExpr.instL_subst, VExpr.Subst.consList_instL, VExpr.instL_instL,
+    List.map_append, VExpr.projs_instL]
+  rfl
+
+/-- No field from the `j`th to the `k`th mentions the `j`th: the `k`th projection's type does not
+depend on it, directly or through the fields in between. -/
+def Unused (k j : Nat) : Prop :=
+  ∀ i (f : VField), j < i → i ≤ k → c.fields[i]? = some f → f.type.Skips 1 (i - 1 - j)
+
+end VConstructor
+
+/-- `inferProj`'s condition on projecting the `k`th field of a type of the block `d` with
+constructor `c` at levels `ls`: when that instance of the block may be a proposition, the field
+is a proof, and so is each earlier field its type depends on. The kernel tests the sort with
+`isNeverZero`, which decides `VLevel.IsNeverZero`, and dependence by looking for the field's
+variable in everything after it, which implies `VConstructor.Unused`.
+
+This is what keeps projections out of a proposition sound under proof irrelevance, which makes
+any two proofs of it definitionally equal. The projection is then a proof, and its type depends
+on the projected term only through earlier fields that are proofs too, so two proofs of the same
+proposition have projections of definitionally equal types, themselves equal by proof
+irrelevance. Fields after the `k`th, and earlier ones its type does not reach, enter neither the
+projection nor its type, so they may be anything: the kernel's check, which also covers them, is
+stricter than soundness needs. -/
+def VInductDecl.ProjAllowed (d : VInductDecl) (c : VConstructor) (ls : List VLevel)
+    (k : Nat) : Prop :=
+  ¬(d.level.inst ls).IsNeverZero →
+    (∀ f, c.fields[k]? = some f → f.level.inst ls ≈ .zero) ∧
+    ∀ j < k, ∀ f, c.fields[j]? = some f → f.level.inst ls ≈ .zero ∨ c.Unused k j
+
+theorem VInductDecl.ProjAllowed.instL {d : VInductDecl} {c : VConstructor} {ls : List VLevel}
+    {k : Nat} (H : d.ProjAllowed c ls k) (ls' : List VLevel) :
+    d.ProjAllowed c (ls.map (VLevel.inst ls')) k := by
+  intro hz
+  have hz' : ¬(d.level.inst ls).IsNeverZero := fun h => hz fun ns => by
+    rw [← VLevel.inst_inst, VLevel.eval_inst]; exact h _
+  obtain ⟨h1, h2⟩ := H hz'
+  refine ⟨fun f hf => ?_, fun j hj f hf => ?_⟩
+  · rw [← VLevel.inst_inst]; exact (VLevel.inst_congr_l (h1 f hf)).trans (by rfl)
+  · rcases h2 j hj f hf with h | h
+    · left; rw [← VLevel.inst_inst]; exact (VLevel.inst_congr_l h).trans (by rfl)
+    · exact .inr h
+
 namespace VEnv
 
 section
@@ -54,6 +203,43 @@ inductive IsDefEq : List VExpr → VExpr → VExpr → VExpr → Prop where
   | extra :
     env.defeqs df → (∀ l ∈ ls, l.WF uvars) → ls.length = df.uvars →
     Γ ⊢ df.lhs.instL ls ≡ df.rhs.instL ls : df.type.instL ls
+  /-- The `k`th projection of a term of a type `s` with a single constructor, as `inferProj`
+  types it, at parameters `As` and indices `I` of `e`'s type. That the projection's type is a
+  type, and agrees with its type at `e'` and other parameters `As'` of the same type, are
+  premises: when an earlier field is a term the projection may not take, its projection is
+  substituted where the field's type does not mention it, and these only follow by
+  strengthening that variable away. `VInductDecl.ProjAllowed` says why the rule is sound when the
+  instance may be a proposition, and why the fields after the `k`th do not matter for that. -/
+  | projDF :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] →
+    c.fields[k]? = some f → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
+    As.length = d.params.length → I.length = T.indices.length →
+    As'.length = d.params.length → I'.length = T.indices.length →
+    Γ ⊢ .appN (.const s ls) (As ++ I) ≡ .appN (.const s ls) (As' ++ I') : .sort u →
+    Γ ⊢ e ≡ e' : .appN (.const s ls) (As ++ I) →
+    d.ProjAllowed c ls k →
+    Γ ⊢ c.projType ls s k As e ≡ c.projType ls s k As' e' : .sort (f.level.inst ls) →
+    Γ ⊢ .proj s k e ≡ .proj s k e' : c.projType ls s k As e
+  /-- A projection of the constructor applied to fields is the field (`reduceProj`). -/
+  | projIota :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] →
+    c.fields[k]? = some f → fs[k]? = some a → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
+    As.length = d.params.length → fs.length = c.fields.length → I.length = T.indices.length →
+    Γ ⊢ .appN (.const c.name ls) (As ++ fs) : .appN (.const s ls) (As ++ I) →
+    d.ProjAllowed c ls k →
+    Γ ⊢ c.projType ls s k As (.appN (.const c.name ls) (As ++ fs)) : .sort (f.level.inst ls) →
+    Γ ⊢ a : c.projType ls s k As (.appN (.const c.name ls) (As ++ fs)) →
+    Γ ⊢ .proj s k (.appN (.const c.name ls) (As ++ fs)) ≡ a :
+      c.projType ls s k As (.appN (.const c.name ls) (As ++ fs))
+  /-- Structure eta: a term of a non-recursive single-constructor type without indices is the
+  constructor applied to its projections (`tryEtaStruct`). -/
+  | projEta :
+    env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors = [c] → T.indices = [] →
+    d.isRec = false → (∀ l ∈ ls, l.WF uvars) → ls.length = d.uvars →
+    As.length = d.params.length →
+    Γ ⊢ e : .appN (.const s ls) As →
+    Γ ⊢ .appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e) : .appN (.const s ls) As →
+    Γ ⊢ e ≡ .appN (.const c.name ls) (As ++ VExpr.projs s c.fields.length e) : .appN (.const s ls) As
 
 end
 

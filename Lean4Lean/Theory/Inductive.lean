@@ -4,11 +4,13 @@ import Lean4Lean.Theory.Typing.Basic
 /-!
 # Inductive types
 
-An inductive block adds, in order, its type formers, its constructors, one recursor per type, an
-iota rule per constructor, and, for a non-recursive structure, an eta rule. This mirrors
-`Lean4Lean.Environment.addInductive` (`Lean4Lean/Inductive/Add.lean`): the recursor's type and the
-right-hand side of each iota rule are built from the same pieces, in the same binder order, as
-`AddInductive.run` builds them.
+An inductive block adds, in order, its type formers, its constructors, one recursor per type and an
+iota rule per constructor, and records itself for each of its types (`VEnv.addBlock`). This
+mirrors `Lean4Lean.Environment.addInductive` (`Lean4Lean/Inductive/Add.lean`): the recursor's type
+and the right-hand side of each iota rule are built from the same pieces, in the same binder
+order, as `AddInductive.run` builds them. Primitive projections, their computation on a
+constructor and structure eta are rules of the type theory (`VEnv.IsDefEq.projDF`, `projIota` and
+`projEta`), read off the recorded block.
 
 The rules are closed equations over the recursor's binders, the way `VDefEq` states every rule:
 `rec ps Ms ms (idx_c) (c ps fs) ≡ m_c fs ihs`, abstracted over `ps Ms ms fs`.
@@ -21,19 +23,11 @@ Two of the kernel's inductive reductions need no rule of their own here:
 * K-like reduction (`toCtorWhenK`) replaces a proof of a subsingleton by its constructor; proof
   irrelevance makes the two defeq, and then the iota rule applies.
 * Unit-like defeq (`isDefEqUnitLike`) relates any two inhabitants of a fieldless non-recursive
-  structure; eta makes each defeq to the constructor (proof irrelevance, in `Prop`).
+  structure; eta makes each defeq to the constructor.
 
-Not covered:
-* Nested inductives. A declaration here is a mutual block whose constructors mention its types
-  only directly; the kernel turns a nested block into such a block plus auxiliary types, and then
-  restores the nested occurrences, which this spec does not model.
-* Eta for a structure in a mutual block. The kernel's `isNonRecStructure` does not ask for the
-  block to have one type, but a projection out of such a structure cannot be written with its
-  recursor alone (the other motives need inhabitants), so the rule is only stated for blocks of
-  one type.
-* Eta for a structure whose recursor eliminates only into `Prop` but which may not itself be a
-  proposition. Lean4lean's `inferProj` rejects every projection that eta would need there.
-* Primitive projections. `Expr.proj` is translated to a recursor application by `TrProj`.
+Not covered: nested inductives. A declaration here is a mutual block whose constructors mention
+its types only directly; the kernel turns a nested block into such a block plus auxiliary types,
+and then restores the nested occurrences, which this spec does not model.
 -/
 
 namespace Lean4Lean
@@ -61,6 +55,7 @@ def mentions (ns : List Name) : VExpr → Bool
   | .const c _ => ns.contains c
   | .app f a => f.mentions ns || a.mentions ns
   | .lam A b | .forallE A b => A.mentions ns || b.mentions ns
+  | .proj s _ e => ns.contains s || e.mentions ns
 
 end VExpr
 
@@ -87,10 +82,33 @@ def addDefEqList (env : VEnv) (dfs : List VDefEq) : VEnv := dfs.foldl addDefEq e
 end VEnv
 
 namespace VConstructor
+variable (c : VConstructor)
 
 /-- The recursive fields, each with its position among the fields. -/
-def recFields (c : VConstructor) : List (Nat × VRecArg) :=
+def recFields : List (Nat × VRecArg) :=
   c.fields.zipIdx.filterMap fun (f, k) => f.recArg.map (k, ·)
+
+/-- The fields before the `k`th that its projection skips: no field from one of them to the `k`th
+mentions it (`VConstructor.Unused`). -/
+def Skipped (k j : Nat) : Prop := j < k ∧ c.Unused k j
+
+open Classical in
+/-- The lift from the parameters and the fields before the `i`th that the `k`th projection does not
+skip, to the parameters and all the fields before the `i`th. -/
+noncomputable def keptLift (k : Nat) : Nat → Lift
+  | 0 => .refl
+  | i + 1 => if c.Skipped k i then .skip (keptLift k i) else .cons (keptLift k i)
+
+/-- A type under the parameters and the fields before the `i`th, with the fields the `k`th
+projection skips removed. -/
+noncomputable def strippedType (k i : Nat) (A : VExpr) : VExpr := A.subst (c.keptLift k i).inv
+
+open Classical in
+/-- The types of the fields before the `k`th that its projection does not skip, each with the
+skipped fields before it removed. -/
+noncomputable def keptFields (k : Nat) : List VExpr :=
+  ((List.range k).filter fun j => ¬c.Skipped k j).map fun j =>
+    c.strippedType k j ((c.fields[j]?.map VField.type).getD default)
 
 end VConstructor
 
@@ -124,14 +142,6 @@ kernel reduces its recursor on any major premise whose indices match the constru
 follows from proof irrelevance and the iota rule, so it adds no rule. -/
 def IsKTarget : Prop :=
   d.level ≈ .zero ∧ ∃ T c, d.types = [T] ∧ T.ctors = [c] ∧ c.fields = []
-
-/-- The block is a single structure: one type, no indices, one constructor. -/
-def structCtor? : Option (VInductiveType × VConstructor) :=
-  match d.types with
-  | [S] => match S.indices, S.ctors with
-    | [], [c] => some (S, c)
-    | _, _ => none
-  | _ => none
 
 open Classical in
 noncomputable def recUVars : Nat := if d.LargeElim then d.uvars + 1 else d.uvars
@@ -226,38 +236,6 @@ def iotaRule (recLs : List VLevel) (q j : Nat) (c : VConstructor) : VDefEq :=
 
 end
 
-/-- The `k`th projection of `y`, a term of structure type `S` (with constructor `c`) under the
-parameters and `depth` further binders: the recursor into the `k`th field's type, whose motive
-substitutes the earlier projections for the earlier fields. Only well-typed when the recursor
-eliminates into that field's sort. -/
-def proj (S : VInductiveType) (c : VConstructor) (depth k : Nat) (y : VExpr) : VExpr :=
-  match c.fields[k]? with
-  | none => default
-  | some f =>
-    let n := d.params.length
-    let ls := VLevel.params d.uvars
-    let ps := bvars n depth
-    let earlier := (List.range k).attach.map fun ⟨i, _⟩ => proj S c (depth + 1) i (.bvar 0)
-    let motive := VExpr.lam (.appN (.const S.name ls) ps)
-      (f.type.subst ((VExpr.Subst.ofLift (.skipN .refl (depth + 1))).consList earlier))
-    let minor := VExpr.lams (liftTele depth (c.fields.map (·.type)))
-      (.bvar (c.fields.length - 1 - k))
-    .appN (.const (Lean.mkRecName S.name) (f.level :: ls)) (ps ++ [motive, minor, y])
-termination_by k
-decreasing_by exact List.mem_range.1 ‹_›
-
-/-- Structure eta: over the parameters, a term of the structure type is the constructor applied
-to its projections. -/
-def etaRule (S : VInductiveType) (c : VConstructor) : VDefEq :=
-  let n := d.params.length
-  let ls := VLevel.params d.uvars
-  let binders := d.params ++ [.appN (.const S.name ls) (bvars n 0)]
-  { uvars := d.uvars
-    lhs := .lams binders (.bvar 0)
-    rhs := .lams binders <| .appN (.const c.name ls) <|
-      bvars n 1 ++ (List.range c.fields.length).map fun k => d.proj S c 1 k (.bvar 0)
-    type := .foralls binders (.appN (.const S.name ls) (bvars n 1)) }
-
 def typeConsts : List (Name × VConstant) :=
   d.types.map fun T => (T.name, ⟨d.uvars, T.type⟩)
 
@@ -271,14 +249,6 @@ noncomputable def recConsts : List (Name × VConstant) :=
 noncomputable def iotaRules : List VDefEq :=
   d.ctors.zipIdx.map fun ((j, c), q) =>
     d.iotaRule d.recLevels d.motiveLevel (VLevel.params d.recUVars) q j c
-
-open Classical in
-noncomputable def etaRules : List VDefEq :=
-  if d.isRec = false ∧ d.LargeElim then
-    match d.structCtor? with
-    | some (S, c) => [d.etaRule S c]
-    | none => []
-  else []
 
 /-- The view of a recursive field the kernel's `isRecArg` takes, which the recursor's inductive
 hypothesis is built from. `k` fields precede it, under the parameters. A field the kernel does not
@@ -338,6 +308,13 @@ structure VConstructor.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType)
       (VExpr.bvars d.params.length c.fields.length ++ c.indices)) ∧
     env.TeleDefEq d.uvars [] ps d.params ∧ d.FieldsWF env d.params.reverse 0 Ds c.fields
   indices : c.indices.length = T.indices.length ∧ c.indices.all (!·.mentions d.names)
+  /-- With the earlier fields its projection skips removed, each field's type is still a type of
+  its sort. This is the strengthening `inferProj` relies on when it lets a projection past an
+  earlier field that is not a proof but that nothing after it mentions. -/
+  projFields : ∀ k (f : VField), c.fields[k]? = some f →
+    env.IsTele d.uvars d.params.reverse (c.keptFields k) ∧
+    env.HasType d.uvars ((c.keptFields k).reverse ++ d.params.reverse)
+      (c.strippedType k k f.type) (.sort f.level)
 
 /-- An inductive block as `addInductive` checks it, for a block without nested occurrences. -/
 structure VInductDecl.WF (env : VEnv) (d : VInductDecl) : Prop where
@@ -350,19 +327,17 @@ structure VInductDecl.WF (env : VEnv) (d : VInductDecl) : Prop where
   isRec : d.isRec = false → ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ f ∈ c.fields, f.recArg = none
   largeElim : d.LargeElim → d.LargeElimOK
 
-/-- What `VEnv.addInduct` adds is well typed: the recursors given the types and constructors, the
-iota rules given the recursors, and the eta rule given the iota rules. For a well-formed
-declaration this is a theorem (`VInductDecl.generatedWF`); `VDecl.WF` asks for it alongside, so
-that a well-formed environment is ordered without that theorem, which needs uniqueness of typing
-in well-formed environments. -/
+/-- What `VEnv.addInduct` adds is well typed: the recursors given the types and constructors, and
+the iota rules given the recursors. For a well-formed declaration this is a theorem
+(`VInductDecl.generatedWF`); `VDecl.WF` asks for it alongside, so that a well-formed environment
+is ordered without that theorem, which needs uniqueness of typing in well-formed environments. -/
 def VInductDecl.GeneratedWF (env : VEnv) (d : VInductDecl) : Prop :=
   ∀ envT envC envR, env.addConstList d.typeConsts = some envT →
     envT.addConstList d.ctorConsts = some envC → envC.addConstList d.recConsts = some envR →
-    (∀ p ∈ d.recConsts, p.2.WF envC) ∧ (∀ df ∈ d.iotaRules, df.WF envR) ∧
-    ∀ df ∈ d.etaRules, df.WF (envR.addDefEqList d.iotaRules)
+    (∀ p ∈ d.recConsts, p.2.WF envC) ∧ ∀ df ∈ d.iotaRules, df.WF envR
 
 noncomputable def VEnv.addInduct (env : VEnv) (d : VInductDecl) : Option VEnv := do
   let env ← env.addConstList d.typeConsts
   let env ← env.addConstList d.ctorConsts
   let env ← env.addConstList d.recConsts
-  return (env.addDefEqList d.iotaRules).addDefEqList d.etaRules
+  (env.addDefEqList d.iotaRules).addBlock d

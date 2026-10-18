@@ -27,11 +27,19 @@ class Params where
   extra_pat : env.defeqs df → (∀ l ∈ ls, l.WF uvars) → ls.length = df.uvars →
     ∃ p r m1 m2, Pat p r ∧ p.Matches (df.lhs.instL ls) m1 m2 ∧ r.2.OK (IsDefEqU env univs Γ) m1 m2 ∧
     df.rhs.instL ls = r.1.apply m1 m2
+  /-- No type has a single constructor, so primitive projections, their computation rule and
+  structure eta never apply: this development does not reduce projections yet. -/
+  noProj : env.inducts s = some (d, t) → d.types[t]? = some T → T.ctors ≠ [c]
 
 variable [Params]
 open Params
 
 theorem Params.pat_not_var : ¬Pat (.var p) r := (nomatch pat_simple ·)
+
+theorem Params.proj_untyped (hΓ : OnCtx Γ (env.IsType univs)) :
+    ¬HasType env univs Γ (.proj s k e) A := fun H =>
+  let ⟨_, _, _, _, _, _, _, _, h1, h2, h3, _⟩ := H.proj_inv henv.ordered hΓ
+  noProj h1 h2 h3
 
 local notation:65 Γ " ⊢ " e " : " A:36 => HasType env univs Γ e A
 local notation:65 Γ " ⊢ " e1 " ≡ " e2:36 " : " A:36 => IsDefEq env univs Γ e1 e2 A
@@ -243,6 +251,7 @@ theorem NormalEq.instN_r (W : Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ) (H : Γ₁ �
     have hA := h1.instN henv W h₀
     exact .forallEDF hA (ih1 hΓ₁ W h1) (h2.instN henv W.succ h₀)
       (ih2 (by exact ⟨hΓ₁, _, h1⟩) W.succ h2)
+  | proj => exact absurd H (Params.proj_untyped hΓ₁)
 
 variable! (H₀ : OnCtx Γ₀ (IsType env univs)) in
 theorem NormalEq.defeqDFC (W : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
@@ -388,6 +397,7 @@ private def meas : VExpr → Nat
   | .forallE f a => meas f + meas a + 1
   | .bvar _ | .const .. | .sort _ => 0
   | .lam A e => meas A + meas e + 3
+  | .proj _ _ e => meas e
 
 omit [Params] in private theorem meas_liftN : meas (e.liftN n k) = meas e := by
   induction e generalizing k <;> simp [*, meas, liftN]
@@ -474,6 +484,7 @@ inductive ParRed : List VExpr → VExpr → VExpr → Prop where
   | app : Γ ⊢ f ≫ f' → Γ ⊢ a ≫ a' → Γ ⊢ .app f a ≫ .app f' a'
   | lam : Γ ⊢ A ≫ A' → A::Γ ⊢ body ≫ body' → Γ ⊢ .lam A body ≫ .lam A' body'
   | forallE : Γ ⊢ A ≫ A' → A::Γ ⊢ B ≫ B' → Γ ⊢ .forallE A B ≫ .forallE A' B'
+  | proj : Γ ⊢ e ≫ e' → Γ ⊢ .proj s k e ≫ .proj s k e'
   | beta : A::Γ ⊢ e₁ ≫ e₁' → Γ ⊢ e₂ ≫ e₂' → Γ ⊢ .app (.lam A e₁) e₂ ≫ e₁'.inst e₂'
   | extra : Pat p r → p.Matches e m1 m2 → r.2.OK (IsDefEqU env univs Γ) m1 m2 →
     (∀ a, Γ ⊢ m2 a ≫ m2' a) → Γ ⊢ e ≫ r.1.apply m1 m2'
@@ -500,6 +511,7 @@ protected theorem ParRed.rfl : ∀ {e}, Γ ⊢ e ≫ e
   | .app .. => .app ParRed.rfl ParRed.rfl
   | .lam .. => .lam ParRed.rfl ParRed.rfl
   | .forallE .. => .forallE ParRed.rfl ParRed.rfl
+  | .proj .. => .proj ParRed.rfl
 
 theorem ParRed.weakN (W : Ctx.LiftN n k Γ Γ') (H : Γ ⊢ e1 ≫ e2) :
     Γ' ⊢ e1.liftN n k ≫ e2.liftN n k := by
@@ -508,6 +520,7 @@ theorem ParRed.weakN (W : Ctx.LiftN n k Γ Γ') (H : Γ ⊢ e1 ≫ e2) :
   | app _ _ ih1 ih2 => exact .app (ih1 W) (ih2 W)
   | lam _ _ ih1 ih2 => exact .lam (ih1 W) (ih2 W.succ)
   | forallE _ _ ih1 ih2 => exact .forallE (ih1 W) (ih2 W.succ)
+  | proj _ ih => exact .proj (ih W)
   | beta _ _ ih1 ih2 =>
     simp [liftN, liftN_inst_hi]
     exact .beta (ih1 W.succ) (ih2 W)
@@ -535,6 +548,7 @@ theorem ParRed.instN (W : Ctx.InstN Γ₀ a1 A₀ k Γ₁ Γ)
   | app _ _ ih1 ih2 => exact .app (ih1 W) (ih2 W)
   | lam _ _ ih1 ih2 => exact .lam (ih1 W) (ih2 W.succ)
   | forallE _ _ ih1 ih2 => exact .forallE (ih1 W) (ih2 W.succ)
+  | proj _ ih => exact .proj (ih W)
   | beta _ _ ih1 ih2 =>
     simp [inst, inst0_inst_hi]
     exact .beta (ih1 W.succ) (ih2 W)
@@ -555,6 +569,7 @@ theorem ParRed.defeq (H : Γ ⊢ e ≫ e') (he : Γ ⊢ e : A) : Γ ⊢ e ≡ e'
   | forallE _ _ ih1 ih2 =>
     have ⟨⟨_, h1⟩, _, h2⟩ := he.forallE_inv henv
     exact .trans_l henv hΓ he <| .forallEDF (ih1 hΓ h1) (ih2 ⟨hΓ, _, h1⟩ h2)
+  | proj => exact absurd he (Params.proj_untyped hΓ)
   | beta _ _ ih1 ih2 =>
     have ⟨_, _, hf, ha⟩ := he.app_inv henv hΓ
     have ⟨⟨_, hA⟩, _, hb⟩ := hf.lam_inv henv hΓ
@@ -588,6 +603,7 @@ theorem ParRed.defeqDFC (W : IsDefEqCtx env univs Γ₀ Γ₁ Γ₂)
   | forallE _ _ ih1 ih2 =>
     have ⟨⟨_, hA⟩, _, hB⟩ := h.forallE_inv henv
     exact .forallE (ih1 W hA) (ih2 (W.succ hA) hB)
+  | proj => exact absurd h (Params.proj_untyped (W.isType' hΓ₀))
   | beta _ _ ih1 ih2 =>
     have ⟨_, _, hf, ha⟩ := h.app_inv henv (W.isType' hΓ₀)
     have ⟨⟨_, hA⟩, _, hb⟩ := hf.lam_inv henv (W.isType' hΓ₀)
@@ -664,6 +680,9 @@ theorem ParRed.weakN_inv (W : Ctx.LiftN n k Γ Γ')
     obtain ⟨_, a1, rfl⟩ := ih1 hΓ W hA rfl
     obtain ⟨_, b1, rfl⟩ := ih2 (by exact ⟨hΓ, _, hA⟩) W.succ hB rfl
     exact ⟨_, .forallE a1 b1, rfl⟩
+  | proj =>
+    cases e1 <;> cases eq
+    exact absurd h (Params.proj_untyped hΓ)
   | beta h1 h2 ih1 ih2 =>
     cases e1 <;> injection eq
     rename_i f a eq eq2; cases eq2
@@ -758,6 +777,7 @@ theorem CParRed.exists (H : Γ ⊢ e : A) : ∃ e', Γ ⊢ e ⋙ e' := by
     have ⟨_, h1⟩ := e_ih.1.1 hΓ hA
     have ⟨_, h2⟩ := e_ih.2.1 (by exact ⟨hΓ, _, hA⟩) hB
     exact ⟨_, .forallE h1 h2⟩
+  | proj => exact absurd H (Params.proj_untyped hΓ)
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
 theorem ParRed.triangle (H1 : Γ ⊢ e : A) (H : Γ ⊢ e ≫ e') (H2 : Γ ⊢ e ⋙ o) :
@@ -972,6 +992,11 @@ theorem ParRedS.forallE (hf : Γ ⊢ A ≫* A') (ha : A::Γ ⊢ body ≫* body')
   induction hf with
   | rfl =>  exact .rfl
   | tail f1 f2 ihf => exact .tail ihf (.forallE f2 .rfl)
+
+theorem ParRedS.proj (h : Γ ⊢ e ≫* e') : Γ ⊢ .proj s k e ≫* .proj s k e' := by
+  induction h with
+  | rfl => exact .rfl
+  | tail _ a2 ih => exact .tail ih (.proj a2)
 
 variable! (hΓ : OnCtx Γ (IsType env univs)) in
 theorem ParRedS.inst (Ha : Γ ⊢ a : A)
@@ -1384,3 +1409,6 @@ theorem IsDefEq.church_rosser
     have ⟨_, _, _, _, a1, a2, a3, a4⟩ := extra_pat h1 h2 h3 (Γ := Γ)
     refine have h := .extra h1 h2 h3; mk h (.tail .rfl (.extra a1 a2 a3 fun _ => .rfl)) .rfl ?_
     exact a4 ▸ .refl h.hasType.2
+  | projDF h1 h2 h3 => exact absurd h3 (noProj h1 h2)
+  | projIota h1 h2 h3 => exact absurd h3 (noProj h1 h2)
+  | projEta h1 h2 h3 => exact absurd h3 (noProj h1 h2)

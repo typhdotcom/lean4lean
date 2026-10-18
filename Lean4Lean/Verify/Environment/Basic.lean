@@ -163,13 +163,13 @@ inductive AddInduct (safety : DefinitionSafety) (m₁ : ConstMap) (env₁ : VEnv
     env₁.addConstList decl.typeConsts = some envT →
     envT.addConstList decl.ctorConsts = some envC →
     envC.addConstList decl.recConsts = some envR →
-    env₂ = (envR.addDefEqList decl.iotaRules).addDefEqList decl.etaRules →
+    (envR.addDefEqList decl.iotaRules).addBlock decl = some env₂ →
     AddInduct safety m₁ env₁ decl m₂ env₂
 
 theorem AddInduct.to_addInduct
     (H : AddInduct safety m₁ env₁ decl m₂ env₂) : env₁.addInduct decl = some env₂ := by
-  obtain ⟨-, -, -, -, -, -, -, hT, hC, hR, rfl⟩ := H
-  simp [VEnv.addInduct, hT, hC, hR]
+  obtain ⟨-, -, -, -, -, -, -, hT, hC, hR, hB⟩ := H
+  simp [VEnv.addInduct, hT, hC, hR, hB]
 
 /-- Insert a whole block of definitions into the constant map. -/
 def insertDefs (C : ConstMap) (cis : List DefinitionVal) : ConstMap :=

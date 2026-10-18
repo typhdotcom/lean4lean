@@ -11,13 +11,14 @@ theorem VEnv.addConst_mono {env₁ env₂ env₁' env₂' : VEnv} (H : env₁ �
   unfold VEnv.addConst at h₁ h₂
   split at h₁ <;> cases h₁
   split at h₂ <;> cases h₂
-  refine { constants {n a} := ?_, defeqs := H.defeqs }
+  refine { constants {n a} := ?_, defeqs := H.defeqs, inducts := H.inducts }
   dsimp; split <;> [exact id; exact H.constants]
 
 theorem VEnv.addDefEq_mono {env₁ env₂ : VEnv} (H : env₁ ≤ env₂) :
     env₁.addDefEq df ≤ env₂.addDefEq df where
   constants := H.constants
   defeqs := by rintro d (rfl | hd) <;> [exact .inl rfl; exact .inr (H.defeqs hd)]
+  inducts := H.inducts
 
 theorem VEnv.addConsts_le {env env' : VEnv} : ∀ {cis}, env.addConsts cis = some env' → env ≤ env'
   | [], h => by cases h; exact .rfl
@@ -40,9 +41,19 @@ theorem VEnv.addDefEqList_le : ∀ {dfs} {env : VEnv}, env ≤ env.addDefEqList 
 
 theorem VEnv.addInduct_le {env env' : VEnv} (h : env.addInduct decl = some env') : env ≤ env' := by
   simp [VEnv.addInduct, Option.bind_eq_some_iff] at h
-  obtain ⟨_, h1, _, h2, _, h3, rfl⟩ := h
+  obtain ⟨_, h1, _, h2, _, h3, h4⟩ := h
   exact (addConstList_le h1).trans <| (addConstList_le h2).trans <| (addConstList_le h3).trans <|
-    addDefEqList_le.trans addDefEqList_le
+    addDefEqList_le.trans (addBlock_le h4)
+
+theorem VEnv.addBlock_mono {env₁ env₂ a b : VEnv} (H : env₁ ≤ env₂)
+    (h₁ : env₁.addBlock d = some a) (h₂ : env₂.addBlock d = some b) : a ≤ b := by
+  unfold VEnv.addBlock at h₁ h₂
+  split at h₁ <;> cases h₁; split at h₂ <;> cases h₂
+  refine ⟨H.constants, H.defeqs, fun {n _} h => ?_⟩
+  simp only at h ⊢
+  split at h
+  · exact h
+  · exact H.inducts h
 
 theorem VEnv.addConst_eq_none {env : VEnv} {name ci}
     (h : env.constants name = none) : ∃ env', env.addConst name ci = some env' := by

@@ -30,13 +30,14 @@ inductive Aligned : ConstMap → VEnv → Prop where
   | const : Aligned C venv → C.find? n = none → TrConstant safety venv ci ci' →
     venv.addConst n ci' = some venv' → ci.name = n → Aligned (C.insert n ci) venv'
   | defeq : Aligned C venv → Aligned C (venv.addDefEq df)
+  | block : Aligned C venv → venv.addBlock d = some venv' → Aligned C venv'
 
 theorem Aligned.map_wf (H : Aligned safety C venv) : C.WF := by
   induction H with
   | empty => exact .empty
   | ignoreConst _ h1 _ _ ih
   | const _ h1 _ _ _ ih => exact ih.insert _ _ h1
-  | defeq _ ih => exact ih
+  | defeq _ ih | block _ _ ih => exact ih
 
 theorem Aligned.find?_iff (H : Aligned safety C venv) :
     (∃ ci, C.find? name = some ci ∧ safety ≤ ci.safety) ↔ ∃ ci, venv.constants name = some ci := by
@@ -50,6 +51,7 @@ theorem Aligned.find?_iff (H : Aligned safety C venv) :
     simp [VEnv.addConst] at eq; split at eq <;> cases eq
     split <;> simp_all; exact h2.1
   | defeq _ ih => exact ih
+  | block _ h ih => rw [VEnv.addBlock_constants h]; exact ih
 
 theorem Aligned.addQuot1 {Q : Prop}
     (H1 : ∀ c env, Aligned safety c env → P c env → Q)
@@ -136,8 +138,8 @@ theorem AddInduct.le (H : AddInduct safety C₁ venv₁ decl C₂ venv₂) : ven
 
 theorem Aligned.addInduct (H : AddInduct safety C₁ venv₁ decl C₂ venv₂)
     (wf : Aligned safety C₁ venv₁) : Aligned safety C₂ venv₂ := by
-  obtain @⟨_, _, _, _, types, ctors, recs, -, hty, hct, hrc, hnd, hfr, rfl, hT, hC, hR, rfl⟩ := H
-  refine Aligned.addDefEqList <| Aligned.addDefEqList ?_
+  obtain @⟨_, _, _, _, types, ctors, recs, -, hty, hct, hrc, hnd, hfr, rfl, hT, hC, hR, hB⟩ := H
+  refine .block (Aligned.addDefEqList ?_) hB
   have hnd' := hnd
   simp only [inductConsts, List.map_append, List.nodup_append] at hnd'
   obtain ⟨⟨hnd1, hnd2, hd12⟩, hnd3, hd3⟩ := hnd'
@@ -236,6 +238,8 @@ theorem Aligned.find? (H : Aligned safety C venv)
       simp; rename_i h'; refine h2.mono this
     · let ⟨_, h1, h2⟩ := ih h; exact ⟨_, this.constants h1, h2.mono this⟩
   | defeq h1 ih => let ⟨_, h1, h2⟩ := ih h; exact ⟨_, h1, h2.mono VEnv.addDefEq_le⟩
+  | block _ h2 ih =>
+    let ⟨_, a, b⟩ := ih h; exact ⟨_, (VEnv.addBlock_le h2).constants a, b.mono (VEnv.addBlock_le h2)⟩
 
 theorem Aligned.find?_uniq (H : Aligned safety C venv)
     (h : C.find? name = some ci) (hs : venv.constants name = some ci') :
@@ -254,6 +258,9 @@ theorem Aligned.find?_uniq (H : Aligned safety C venv)
     · rintro ⟨⟩ ⟨⟩; rename_i n _ _ _; subst n; exact ⟨h4, h2.mono this⟩
     · intro hs h; let ⟨h1, h2⟩ := ih h hs; exact ⟨h1, h2.mono this⟩
   | defeq h1 ih => let ⟨h1, h2⟩ := ih h hs; exact ⟨h1, h2.mono VEnv.addDefEq_le⟩
+  | block _ h2 ih =>
+    let ⟨a, b⟩ := ih h (by rwa [VEnv.addBlock_constants h2] at hs)
+    exact ⟨a, b.mono (VEnv.addBlock_le h2)⟩
 
 theorem TrEnv.find?_iff (H : TrEnv safety env venv) :
     (∃ ci, env.find? name = some ci ∧ safety ≤ ci.safety) ↔ ∃ ci, venv.constants name = some ci := by
@@ -274,12 +281,6 @@ theorem TrEnv.find?_uniq (H : TrEnv safety env venv)
     (h : env.find? name = some ci) (hs : venv.constants name = some ci') :
     ci.name = name ∧ TrConstant safety venv ci ci' :=
   H.aligned.find?_uniq (H.map_wf.find?'_eq_find? _ ▸ h) hs
-
-theorem VEnv.addDefEqs_le : ∀ {cis' : List VDefVal} {venv : VEnv}, venv ≤ venv.addDefEqs cis'
-  | [], _ => .rfl
-  | ci :: cis, venv => by
-    show venv ≤ VEnv.addDefEqs (venv.addDefEq ci.toDefEq) cis
-    exact VEnv.addDefEq_le.trans VEnv.addDefEqs_le
 
 theorem VEnv.addDefEqs_self : ∀ {cis' : List VDefVal} {venv : VEnv} {ci'}, ci' ∈ cis' →
     (venv.addDefEqs cis').defeqs ci'.toDefEq

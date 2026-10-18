@@ -105,7 +105,7 @@ theorem whnfFVar.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c
 
 theorem reduceProjCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (he : Dom c₁ struct) (hs : struct.SuppIn S) :
-    RecM.SS c₁ c₂ s (reduceProjCore idx struct) (reduceProjCore idx struct) fun oe _ =>
+    RecM.SS c₁ c₂ s (reduceProjCore n idx struct) (reduceProjCore n idx struct) fun oe _ =>
       ∀ e₁, oe = some e₁ → SuppBelow c₁ struct e₁ := by
   refine .of_swf (Q' := fun _ _ => True) (reduceProjCore.SWF he) ?_
   unfold reduceProjCore
@@ -118,7 +118,7 @@ theorem reduceProjCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agr
       have hmk := getAppFn_const_supp (h S hS hs) heq
       refine .getEnv <| (RecM.SS.liftExcept envGet.SWF (envGet_agree hA hmk)).bind
         fun _ _ _ _ => ?_
-      split <;> exact .pure trivial
+      split <;> [(split <;> exact .pure trivial); exact .pure trivial]
     · exact .pure trivial
   simp only [c0]; split
   · rename_i str
@@ -130,7 +130,7 @@ theorem reduceProjCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agr
 
 theorem reduceProj.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S c₁ c₂)
     (hS : S.Closed c₁) (he : Dom c₁ struct) (hs : struct.SuppIn S) :
-    RecM.SS c₁ c₂ s (reduceProj idx struct cheapProj) (reduceProj idx struct cheapProj)
+    RecM.SS c₁ c₂ s (reduceProj n idx struct cheapProj) (reduceProj n idx struct cheapProj)
       fun oe _ => ∀ e₁, oe = some e₁ → SuppBelow c₁ struct e₁ := by
   unfold reduceProj
   refine .bind (Q := fun e₁ _ => SuppBelow c₁ struct e₁) ?_ fun _ _ _ h => .stateWF fun wf => ?_
