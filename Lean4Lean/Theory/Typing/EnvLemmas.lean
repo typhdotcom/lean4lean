@@ -12,6 +12,24 @@ theorem VEnv.addConsts_le {env env' : VEnv} : ∀ {cis}, env.addConsts cis = som
     obtain ⟨_, h1, h2⟩ := h
     exact (addConst_le h1).trans (addConsts_le h2)
 
+theorem VEnv.addConstList_le {env env' : VEnv} :
+    ∀ {cs}, env.addConstList cs = some env' → env ≤ env'
+  | [], h => by cases h; exact .rfl
+  | _ :: _, h => by
+    simp [VEnv.addConstList, Option.bind_eq_some_iff] at h
+    obtain ⟨_, h1, h2⟩ := h
+    exact (addConst_le h1).trans (addConstList_le h2)
+
+theorem VEnv.addDefEqList_le : ∀ {dfs} {env : VEnv}, env ≤ env.addDefEqList dfs
+  | [], _ => .rfl
+  | _ :: _, _ => addDefEq_le.trans addDefEqList_le
+
+theorem VEnv.addInduct_le {env env' : VEnv} (h : env.addInduct decl = some env') : env ≤ env' := by
+  simp [VEnv.addInduct, Option.bind_eq_some_iff] at h
+  obtain ⟨_, h1, _, h2, _, h3, rfl⟩ := h
+  exact (addConstList_le h1).trans <| (addConstList_le h2).trans <| (addConstList_le h3).trans <|
+    addDefEqList_le.trans addDefEqList_le
+
 theorem VEnv.addConst_eq_none {env : VEnv} {name ci}
     (h : env.constants name = none) : ∃ env', env.addConst name ci = some env' := by
   unfold VEnv.addConst; rw [h]; exact ⟨_, rfl⟩

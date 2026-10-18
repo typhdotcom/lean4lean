@@ -85,15 +85,6 @@ theorem TypeChecker.M.WF.withBoolProbe {c : VContext} {m : MLCtx} [cwf : c.MLCWF
   .withLocalDecl (hprim.trBool c.Ewf.ordered hbool)
     (hprim.boolIsType c.Ewf.ordered hbool (c.withMLC m).Δwf.toCtx) hs H
 
-/-- Application to a list of arguments, leftmost-first: the order `fvs` and a lambda telescope
-already use. Everything the recognizer hands back is closed and abstracted over its telescope, so
-arguments are *applied* rather than substituted, and no de Bruijn renumbering is involved. -/
-def VExpr.appN (e : VExpr) : List VExpr → VExpr
-  | [] => e
-  | a :: as => (e.app a).appN as
-
-@[simp] theorem VExpr.appN_nil (e : VExpr) : e.appN [] = e := rfl
-
 theorem VExpr.insts_appN (g : List VExpr) : ∀ (e : VExpr) as,
     (e.appN as).insts g = (e.insts g).appN (as.map (·.insts g))
   | _, [] => rfl
@@ -111,16 +102,6 @@ value. Both directions are needed: the recognizer works under the open telescope
 statements it feeds are about the value applied to ground arguments. `lams_appN` below is the
 bridge, and the arguments' typing -- which is what makes the closing a `VEnv.Ctx.SubstEq` -- is not an
 assumption but inversion of the application's own well-formedness. -/
-
-/-- A lambda telescope over a list of domains, outermost first: the order `appN` applies its
-arguments in and `insts` substitutes them. -/
-def VExpr.lams : List VExpr → VExpr → VExpr
-  | [], e => e
-  | A :: As, e => .lam A (VExpr.lams As e)
-
-@[simp] theorem VExpr.lams_nil (e : VExpr) : VExpr.lams [] e = e := rfl
-@[simp] theorem VExpr.lams_cons (A As e) :
-    VExpr.lams (A :: As) e = .lam A (VExpr.lams As e) := rfl
 
 /-- The lifted domains, named. `liftN_lams` below only records how many there are, which is all
 the closing lemmas need; a *caller* that has to type its own arguments against them needs them
@@ -323,11 +304,6 @@ theorem List.Forall₂.append_inv {α β} {R : α → β → Prop} : ∀ {l₁ l
     let .cons hx hxs := h
     obtain ⟨m₁, m₂, rfl, h₁, h₂⟩ := List.Forall₂.append_inv hxs
     exact ⟨_ :: m₁, m₂, rfl, .cons hx h₁, h₂⟩
-
-theorem VExpr.appN_append : ∀ (e : VExpr) (as bs : List VExpr),
-    e.appN (as ++ bs) = (e.appN as).appN bs
-  | _, [], _ => rfl
-  | e, a :: as, bs => VExpr.appN_append (e.app a) as bs
 
 /-- A property of both members of a two-element list, which is what a probe's arguments are. -/
 theorem List.forall_mem_pair {α} {P : α → Prop} {a b : α} (ha : P a) (hb : P b) :

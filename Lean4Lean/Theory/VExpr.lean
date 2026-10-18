@@ -329,6 +329,34 @@ def insts (e : VExpr) : List VExpr → VExpr
 
 @[simp] theorem insts_nil (e : VExpr) : e.insts [] = e := rfl
 
+/-- Application to a list of arguments, leftmost first. -/
+def appN (e : VExpr) : List VExpr → VExpr
+  | [] => e
+  | a :: as => (e.app a).appN as
+
+@[simp] theorem appN_nil (e : VExpr) : e.appN [] = e := rfl
+
+theorem appN_append : ∀ (e : VExpr) (as bs : List VExpr), e.appN (as ++ bs) = (e.appN as).appN bs
+  | _, [], _ => rfl
+  | e, a :: as, bs => appN_append (e.app a) as bs
+
+/-- A lambda telescope over a list of domains, outermost first: the order `appN` applies its
+arguments in and `insts` substitutes them. -/
+def lams : List VExpr → VExpr → VExpr
+  | [], e => e
+  | A :: As, e => .lam A (lams As e)
+
+@[simp] theorem lams_nil (e : VExpr) : lams [] e = e := rfl
+@[simp] theorem lams_cons (A As e) : lams (A :: As) e = .lam A (lams As e) := rfl
+
+/-- A pi telescope over a list of domains, outermost first. -/
+def foralls : List VExpr → VExpr → VExpr
+  | [], e => e
+  | A :: As, e => .forallE A (foralls As e)
+
+@[simp] theorem foralls_nil (e : VExpr) : foralls [] e = e := rfl
+@[simp] theorem foralls_cons (A As e) : foralls (A :: As) e = .forallE A (foralls As e) := rfl
+
 @[simp] theorem insts_cons (e a : VExpr) (as) : e.insts (a :: as) = (e.insts as).inst a := rfl
 
 /-- Substituting a telescope is substituting its outer half after its inner half. This is what

@@ -449,18 +449,10 @@ def mkRecRules (indTypes : Array InductiveType) (elimLevel : Level) (stats : Ind
     rules := rules.push rule
   return rules.toList
 
-def run (nparams : Nat) (types : List InductiveType) (numNested : Nat) : M Environment := do
-  let isUnsafe := (← read).safety != .safe
-  let indTypes := types.toArray
-  let {lparams, ..} ← read
-  Environment.checkDuplicatedUnivParams lparams
-  checkInductiveTypes nparams indTypes fun stats => do
-  withEnv (← declareInductiveTypes stats nparams indTypes numNested isUnsafe) do
-  checkConstructors indTypes stats isUnsafe
-  withEnv (← declareConstructors stats indTypes isUnsafe) do
-  let elimLevel ← getElimLevel stats indTypes
-  let k ← isKTarget stats indTypes
-  mkRecInfos stats indTypes elimLevel fun recInfos => do
+/-- Add the recursors, built from the local variables `mkRecInfos` opened, to `env`. -/
+def declareRecursors (env : Environment) (stats : InductiveStats)
+    (indTypes : Array InductiveType) (elimLevel : Level) (k : Bool)
+    (recInfos : Array RecInfo) : M Environment := do
   let motives := recInfos.map (·.motive)
   let minors := recInfos.flatMap (·.minors)
   let numMinors := minors.size
@@ -469,8 +461,8 @@ def run (nparams : Nat) (types : List InductiveType) (numNested : Nat) : M Envir
   let lctx ← getLCtx
   let isUnsafe := (← read).safety != .safe
   StateT.run' (s := 0) do
-  let mut env ← getEnv
-  let {allowPrimitive, ..} ← read
+  let mut env := env
+  let {allowPrimitive, lparams, ..} ← read
   for h : dIdx in [:indTypes.size] do
     let indType := indTypes[dIdx]
     let info := recInfos[dIdx]!
@@ -492,6 +484,35 @@ def run (nparams : Nat) (types : List InductiveType) (numNested : Nat) : M Envir
       name, all, numMotives, numMinors, rules, k, isUnsafe
     }
   pure env
+
+/-- The environment the rest of the block is checked in: its types as axioms, so that the type
+checker never sees them as inductive types whose constructors are missing (see `divergences.md`).
+A primitive type comes with its constructors, so for `Bool` and `Nat`, whose shape is fixed, they
+are axioms too. The block is added to the environment as it was before. -/
+def declareTypeAxioms (indTypes : Array InductiveType) (isUnsafe : Bool) : M Environment :=
+  fun c => indTypes.foldlM (init := c.env) fun env t => do
+    let ax (env : Environment) (name type) :=
+      env.add <| .axiomInfo { name, levelParams := c.lparams, type, isUnsafe }
+    let env := ax env t.name t.type
+    if c.allowPrimitive then
+      t.ctors.foldlM (init := env) fun env ctor => do
+        env.checkName ctor.name c.allowPrimitive
+        return ax env ctor.name ctor.type
+    else return env
+
+def run (nparams : Nat) (types : List InductiveType) (numNested : Nat) : M Environment := do
+  let isUnsafe := (← read).safety != .safe
+  let indTypes := types.toArray
+  let {lparams, ..} ← read
+  Environment.checkDuplicatedUnivParams lparams
+  checkInductiveTypes nparams indTypes fun stats => do
+  let envTypes ← declareInductiveTypes stats nparams indTypes numNested isUnsafe
+  withEnv (← declareTypeAxioms indTypes isUnsafe) do
+  checkConstructors indTypes stats isUnsafe
+  let envCtors ← withEnv envTypes <| declareConstructors stats indTypes isUnsafe
+  let elimLevel ← getElimLevel stats indTypes
+  let k ← isKTarget stats indTypes
+  mkRecInfos stats indTypes elimLevel (declareRecursors envCtors stats indTypes elimLevel k)
 
 end AddInductive
 

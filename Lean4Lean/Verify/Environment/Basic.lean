@@ -98,18 +98,77 @@ nonrec theorem AddQuot.to_addQuot (H : AddQuot m₁ m₂ env₁ env₂) : env₁
 nonrec theorem AddQuot.le (H : AddQuot m₁ m₂ env₁ env₂) : env₁ ≤ env₂ :=
   open AddQuot1 in (le <| le <| le <| le fun _ _ h => h.2 ▸ VEnv.addDefEq_le) _ _ H
 
-/-- This definition is essentially a `sorry`: it should relate `addInductive`'s
-effect on the constant map to `VEnv.addInduct` (which is itself a `sorry`,
-see `Lean4Lean.Theory.Inductive`), but it currently has no constructors, so the
-`TrEnv'.induct` case below can never fire and environments containing inductives
-are outside the verified `TrEnv` relation. -/
-inductive AddInduct (m₁ : ConstMap) (env₁ : VEnv) (decl : VInductDecl)
-    (m₂ : ConstMap) (env₂ : VEnv) : Prop
-  -- TODO
+/-- Insert constants into the map one after another. -/
+def insertConsts (C : ConstMap) (cis : List ConstantInfo) : ConstMap :=
+  cis.foldl (fun C ci => C.insert ci.name ci) C
 
-nonrec theorem AddInduct.to_addInduct
-    (H : AddInduct m₁ env₁ decl m₂ env₂) : env₁.addInduct decl = some env₂ :=
-  nomatch H
+section
+variable (decl : VInductDecl) (lparams : List Name)
+
+/-- What `addInductive` records about a type of `decl`, besides its type. -/
+def TrInductVal (T : VInductiveType) (v : InductiveVal) : Prop :=
+  v.name = T.name ∧ v.levelParams = lparams ∧ v.numParams = decl.params.length ∧
+  v.numIndices = T.indices.length ∧ v.all = decl.names ∧ v.ctors = T.ctors.map (·.name) ∧
+  v.numNested = 0 ∧ v.isRec = decl.isRec ∧ v.isUnsafe = decl.isUnsafe
+
+/-- What `addInductive` records about constructor `c` of the `j`th type, besides its type. -/
+def TrCtorVal (j : Nat) (c : VConstructor) (v : ConstructorVal) : Prop :=
+  ∃ T, decl.types[j]? = some T ∧ T.ctors[v.cidx]? = some c ∧
+  v.name = c.name ∧ v.levelParams = lparams ∧ v.induct = T.name ∧
+  v.numParams = decl.params.length ∧ v.numFields = c.fields.length ∧ v.isUnsafe = decl.isUnsafe
+
+/-- What `addInductive` records about the `i`th type's recursor, besides its type: in particular
+each rule's right-hand side, which translates to that of `VEnv.addInduct`'s iota rule, in `env`,
+which has the recursors. The motive's level parameter, when there is one, comes first. -/
+def TrRecVal (env : VEnv) (i : Nat) (T : VInductiveType) (v : RecursorVal) : Prop :=
+  v.name = Lean.mkRecName T.name ∧
+  (decl.LargeElim → ∃ u, u ∉ lparams ∧ v.levelParams = u :: lparams) ∧
+  (¬decl.LargeElim → v.levelParams = lparams) ∧
+  v.numParams = decl.params.length ∧ v.numIndices = T.indices.length ∧
+  v.numMotives = decl.types.length ∧ v.numMinors = decl.ctors.length ∧ v.all = decl.names ∧
+  (v.k = true ↔ decl.IsKTarget) ∧ v.isUnsafe = decl.isUnsafe ∧
+  List.Forall₂ (fun rule ((j, c), q) => j = i ∧ rule.ctor = c.name ∧
+      rule.nfields = c.fields.length ∧
+      TrExprS env v.levelParams [] rule.rhs
+        (decl.iotaRule decl.recLevels decl.motiveLevel (VLevel.params decl.recUVars) q j c).rhs)
+    v.rules (decl.ctors.zipIdx.filter (·.1.1 = i))
+
+end
+
+/-- The constants `addInductive` inserts: the types, then the constructors, then the recursors. -/
+def inductConsts (types : List InductiveVal) (ctors : List ConstructorVal)
+    (recs : List RecursorVal) : List ConstantInfo :=
+  types.map .inductInfo ++ ctors.map .ctorInfo ++ recs.map .recInfo
+
+/-- The step `addInductive` takes for a block without nested occurrences, modelled by `decl`:
+each constant it inserts translates, at the safety level, to the one `VEnv.addInduct` adds under
+the same name, against the environment as it was before that group of constants. -/
+inductive AddInduct (safety : DefinitionSafety) (m₁ : ConstMap) (env₁ : VEnv)
+    (decl : VInductDecl) (m₂ : ConstMap) (env₂ : VEnv) : Prop
+  | mk {lparams : List Name} {envT envC envR : VEnv} {types : List InductiveVal}
+      {ctors : List ConstructorVal} {recs : List RecursorVal} :
+    lparams.length = decl.uvars →
+    List.Forall₂ (fun v T => TrInductVal decl lparams T v ∧
+      TrConstant safety env₁ (.inductInfo v) ⟨decl.uvars, T.type⟩) types decl.types →
+    List.Forall₂ (fun v (j, c) => TrCtorVal decl lparams j c v ∧
+      TrConstant safety envT (.ctorInfo v) ⟨decl.uvars, c.type⟩) ctors decl.ctors →
+    List.Forall₂ (fun v (T, i) => TrRecVal decl lparams envR i T v ∧
+      TrConstant safety envC (.recInfo v)
+        ⟨decl.recUVars, decl.recType decl.recLevels decl.motiveLevel i T⟩)
+      recs decl.types.zipIdx →
+    ((inductConsts types ctors recs).map (·.name)).Nodup →
+    (∀ ci ∈ inductConsts types ctors recs, m₁.find? ci.name = none) →
+    m₂ = insertConsts m₁ (inductConsts types ctors recs) →
+    env₁.addConstList decl.typeConsts = some envT →
+    envT.addConstList decl.ctorConsts = some envC →
+    envC.addConstList decl.recConsts = some envR →
+    env₂ = (envR.addDefEqList decl.iotaRules).addDefEqList decl.etaRules →
+    AddInduct safety m₁ env₁ decl m₂ env₂
+
+theorem AddInduct.to_addInduct
+    (H : AddInduct safety m₁ env₁ decl m₂ env₂) : env₁.addInduct decl = some env₂ := by
+  obtain ⟨-, -, -, -, -, -, -, hT, hC, hR, rfl⟩ := H
+  simp [VEnv.addInduct, hT, hC, hR]
 
 /-- Insert a whole block of definitions into the constant map. -/
 def insertDefs (C : ConstMap) (cis : List DefinitionVal) : ConstMap :=
@@ -174,7 +233,7 @@ inductive TrEnv' : ConstMap → Bool → VEnv → Prop where
     TrEnv' C' true env'
   | induct :
     decl.WF env →
-    AddInduct C env decl C' env' →
+    AddInduct safety C env decl C' env' →
     TrEnv' C Q env →
     TrEnv' C' Q env'
 

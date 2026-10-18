@@ -63,9 +63,107 @@ nonrec theorem Aligned.addQuot (H : AddQuot C₁ C₂ venv₁ venv₂)
   refine (addQuot1 <| addQuot1 <| addQuot1 <| addQuot1 ?_) _ _ wf H
   rintro _ _ h ⟨rfl, rfl⟩; exact h.defeq
 
-theorem Aligned.addInduct (H : AddInduct C₁ venv₁ decl C₂ venv₂) :
-    Aligned safety C₁ env₁ → Aligned safety C₂ env₂ :=
-  nomatch H
+theorem insertConsts_find?_of_not_mem : ∀ {cis : List ConstantInfo} {C : ConstMap} {name},
+    C.WF → (∀ ci ∈ cis, C.find? ci.name = none) → (cis.map (·.name)).Nodup →
+    name ∉ cis.map (·.name) → (insertConsts C cis).find? name = C.find? name
+  | [], _, _, _, _, _, _ => rfl
+  | ci :: cis, C, name, hC, hfr, hnd, hn => by
+    simp only [List.map_cons, List.nodup_cons, List.mem_cons, not_or] at hnd hn
+    show (insertConsts (C.insert ci.name ci) cis).find? name = _
+    have hC' := hC.insert ci.name ci (hfr ci (.head _))
+    have hne (a b : Name) (h : a ≠ b) : ¬(a == b) = true := by simpa using h
+    rw [insertConsts_find?_of_not_mem hC' (fun c hc => ?_) hnd.2 hn.2, hC.find?_insert,
+      if_neg (hne _ _ (Ne.symm hn.1))]
+    rw [hC.find?_insert, if_neg (hne _ _ fun h => hnd.1 (by rw [h]; exact List.mem_map_of_mem hc))]
+    exact hfr c (.tail _ hc)
+
+theorem insertConsts_wf : ∀ {cis : List ConstantInfo} {C : ConstMap}, C.WF →
+    (∀ ci ∈ cis, C.find? ci.name = none) → (cis.map (·.name)).Nodup → (insertConsts C cis).WF
+  | [], _, hC, _, _ => hC
+  | ci :: cis, C, hC, hfr, hnd => by
+    rw [List.map_cons, List.nodup_cons] at hnd
+    refine insertConsts_wf (cis := cis) (hC.insert _ _ (hfr _ (.head _))) (fun c hc => ?_) hnd.2
+    rw [hC.find?_insert, if_neg]; · exact hfr c (.tail _ hc)
+    simp only [beq_iff_eq]; intro hh
+    exact hnd.1 (by rw [hh]; exact List.mem_map_of_mem hc)
+
+theorem insertConsts_find? : ∀ {cis : List ConstantInfo} {C : ConstMap} {name ci}, C.WF →
+    (∀ c ∈ cis, C.find? c.name = none) → (cis.map (·.name)).Nodup →
+    (insertConsts C cis).find? name = some ci → C.find? name = some ci ∨ ci ∈ cis ∧ ci.name = name
+  | [], _, _, _, _, _, _, h => .inl h
+  | c :: cs, C, name, ci, hC, hfr, hnd, h => by
+    rw [List.map_cons, List.nodup_cons] at hnd
+    have hfr' : ∀ e ∈ cs, (C.insert c.name c).find? e.name = none := by
+      intro e he
+      rw [hC.find?_insert, if_neg]; · exact hfr e (.tail _ he)
+      simp only [beq_iff_eq]; intro hh; exact hnd.1 (by rw [hh]; exact List.mem_map_of_mem he)
+    rcases insertConsts_find? (cis := cs) (hC.insert _ _ (hfr _ (.head _))) hfr' hnd.2 h with
+      h | h
+    · rw [hC.find?_insert] at h; split at h
+      · rename_i hb; cases h; exact .inr ⟨.head _, by simpa using hb⟩
+      · exact .inl h
+    · exact .inr ⟨.tail _ h.1, h.2⟩
+
+theorem Aligned.insertConsts {cis : List ConstantInfo} {vcs : List (Name × VConstant)}
+    {C venv venv'} (H : Aligned safety C venv) (hnd : (cis.map (·.name)).Nodup)
+    (hfr : ∀ ci ∈ cis, C.find? ci.name = none)
+    (hblk : List.Forall₂ (fun ci (p : Name × VConstant) =>
+      ci.name = p.1 ∧ TrConstant safety venv ci p.2) cis vcs)
+    (e : venv.addConstList vcs = some venv') : Aligned safety (insertConsts C cis) venv' := by
+  induction cis generalizing vcs C venv with
+  | nil => cases hblk; cases e; exact H
+  | cons ci cis ih =>
+    obtain _ | ⟨⟨hname, htr⟩, hblk⟩ := hblk
+    simp [VEnv.addConstList, Option.bind_eq_some_iff] at e
+    obtain ⟨venv₁, h1, h2⟩ := e
+    rw [List.map_cons, List.nodup_cons] at hnd
+    refine ih (H.const (hfr _ (.head _)) htr (hname ▸ h1) rfl) hnd.2 (fun c hc => ?_)
+      (Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1, h.2.mono (VEnv.addConst_le h1)⟩) hblk) h2
+    rw [H.map_wf.find?_insert, if_neg]; · exact hfr c (.tail _ hc)
+    simp only [beq_iff_eq]; intro hh; exact hnd.1 (by rw [hh]; exact List.mem_map_of_mem hc)
+
+theorem Aligned.addDefEqList : ∀ {dfs : List VDefEq} {venv},
+    Aligned safety C venv → Aligned safety C (venv.addDefEqList dfs)
+  | [], _, H => H
+  | df :: _, venv, H =>
+    show Aligned _ _ ((venv.addDefEq df).addDefEqList _) from Aligned.addDefEqList H.defeq
+
+theorem insertConsts_append (C : ConstMap) (as bs : List ConstantInfo) :
+    insertConsts C (as ++ bs) = insertConsts (insertConsts C as) bs := List.foldl_append ..
+
+theorem AddInduct.le (H : AddInduct safety C₁ venv₁ decl C₂ venv₂) : venv₁ ≤ venv₂ :=
+  VEnv.addInduct_le H.to_addInduct
+
+theorem Aligned.addInduct (H : AddInduct safety C₁ venv₁ decl C₂ venv₂)
+    (wf : Aligned safety C₁ venv₁) : Aligned safety C₂ venv₂ := by
+  obtain @⟨_, _, _, _, types, ctors, recs, -, hty, hct, hrc, hnd, hfr, rfl, hT, hC, hR, rfl⟩ := H
+  refine Aligned.addDefEqList <| Aligned.addDefEqList ?_
+  have hnd' := hnd
+  simp only [inductConsts, List.map_append, List.nodup_append] at hnd'
+  obtain ⟨⟨hnd1, hnd2, hd12⟩, hnd3, hd3⟩ := hnd'
+  have hC₁ := wf.map_wf
+  have hfrA : ∀ ci ∈ types.map ConstantInfo.inductInfo ++ ctors.map ConstantInfo.ctorInfo,
+      C₁.find? ci.name = none := fun ci hci => hfr ci (List.mem_append_left _ hci)
+  have hfr1 : ∀ ci ∈ types.map ConstantInfo.inductInfo, C₁.find? ci.name = none :=
+    fun ci hci => hfrA ci (List.mem_append_left _ hci)
+  have hndA : ((types.map ConstantInfo.inductInfo ++ ctors.map ConstantInfo.ctorInfo).map ConstantInfo.name).Nodup := by
+    simp only [List.map_append, List.nodup_append]; exact ⟨hnd1, hnd2, hd12⟩
+  have w1 := wf.insertConsts hnd1 hfr1 (by
+    simp only [VInductDecl.typeConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+    exact Lean4Lean.List.Forall₂.imp (fun _ _ h => ⟨h.1.1, h.2⟩) hty) hT
+  have w2 := w1.insertConsts hnd2 (fun ci hci => by
+    rw [insertConsts_find?_of_not_mem hC₁ hfr1 hnd1 fun h => hd12 _ h _
+      (List.mem_map_of_mem hci) rfl]
+    exact hfrA ci (List.mem_append_right _ hci)) (by
+    simp only [VInductDecl.ctorConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+    exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => ⟨h.1.choose_spec.2.2.1, h.2⟩) hct) hC
+  have w3 := w2.insertConsts hnd3 (fun ci hci => by
+    rw [← insertConsts_append, insertConsts_find?_of_not_mem hC₁ hfrA hndA fun h => hd3 _ (by simpa only [List.map_append] using h) _
+      (List.mem_map_of_mem hci) rfl]
+    exact hfr ci (List.mem_append_right _ hci)) (by
+    simp only [VInductDecl.recConsts, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+    exact Lean4Lean.List.Forall₂.imp (fun _ ⟨_, _⟩ h => ⟨h.1.1, h.2⟩) hrc) hR
+  simpa only [inductConsts, insertConsts_append] using w3
 
 theorem Aligned.addDefEqs {C : ConstMap} : ∀ {cis' : List VDefVal} {venv},
     Aligned safety C venv → Aligned safety C (venv.addDefEqs cis')
@@ -275,7 +373,13 @@ theorem TrEnv'.of_value (H : TrEnv' safety C Q venv) (h : C.find? name = some ci
     obtain h | ⟨rfl, rfl⟩ := this wf.map_wf (ih _ _ wf' h5)
     · exact h
     · contradiction
-  | induct _ h1 H ih => cases h1
+  | induct _ h1 H ih =>
+    have hle := h1.le
+    obtain ⟨-, -, -, -, hnd, hfr, rfl, -⟩ := h1
+    rcases insertConsts_find? H.map_wf hfr hnd h with h | h
+    · exact (ih h).mono hle
+    · simp only [inductConsts, List.mem_append, List.mem_map] at h
+      obtain ⟨(⟨_, -, rfl⟩ | ⟨_, -, rfl⟩) | ⟨_, -, rfl⟩, -⟩ := h <;> cases hv
 
 nonrec theorem TrEnv.of_value (H : TrEnv safety env venv) (h : env.find? name = some ci)
     (hs : safety ≤ ci.safety) (hv : ci.deltaValue? = some v) :

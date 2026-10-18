@@ -1,4 +1,4 @@
-import Lean4Lean.Verify.Environment.Extension
+import Lean4Lean.Verify.Environment.Flat
 
 namespace Lean4Lean
 open Lean4Lean
@@ -110,33 +110,25 @@ theorem addOpaque.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (v : Op
     exact .opaque (ci' := ci') ⟨⟨htr, hname⟩, hvalue.mono hto⟩
       (by rwa [← old.map_wf.find?'_eq_find?]) (hci.mono hto) hadd old
 
-theorem checkEqType.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) :
-    (checkEqType env).WF fun _ => False := by
-  -- `AddInduct` currently has no constructors, so the unsafe translation cannot contain
-  -- the inductive `Eq` declaration required by quotient initialization. This case becomes
-  -- constructive when the inductive-declaration verification boundary is implemented.
-  intro _ h
-  unfold checkEqType at h
-  simp only [Environment.get] at h
-  split at h <;> try contradiction
-  rename_i ci hfind
-  cases ci with
-  | inductInfo info =>
-    have hfind' : env.constants.find? ``Eq = some (.inductInfo info) := by
-      rw [← (wf.tr (safety := .unsafe)).map_wf.find?'_eq_find?]
-      exact hfind
-    exact False.elim <| (wf.tr (safety := .unsafe)).no_inductInfo hfind'
-  | _ => simp_all [( · >>= · ), Except.bind, pure, Pure.pure, Except.pure]
+/-- Initializing quotients, which is verified only up to this boundary. What it needs:
+* that `Eq` is safe. Neither kernel checks this, and without it the safe model cannot contain
+  `Quot`, whose constants' types mention `Eq`.
+* that the `Eq` `checkEqType` accepts translates to `eqConst`, so that each model is
+  `QuotReady`.
+* translations of the four constants `addQuot` adds, giving `AddQuot` at each safety level. -/
+theorem addQuot.WF_uninit {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+    (h : env.quotInit = false) :
+    (Environment.addQuot env).WF fun env' =>
+      ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety :=
+  sorry
 
-/-- This is currently vacuous in the non-initialized case: `TrEnv` cannot contain the
-inductive `Eq` declaration until `AddInduct` is implemented. -/
 theorem addQuot.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) :
     (Environment.addQuot env).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
-  unfold Environment.addQuot
-  split
-  · exact .pure ⟨ves, wf, fun _ => VEnv.LE.rfl⟩
-  · exact (checkEqType.WF wf).bind fun _ h => False.elim h
+  cases h : env.quotInit
+  · exact addQuot.WF_uninit wf h
+  · unfold Environment.addQuot; rw [if_pos h]
+    exact .pure ⟨ves, wf, fun _ => VEnv.LE.rfl⟩
 
 private theorem Except.WF.throw' {e : ε} {Q : α → Prop} : (throw e : Except ε α).WF Q :=
   fun _ h => nomatch h
@@ -219,9 +211,16 @@ theorem addMutual.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
   · obtain ⟨v, -, h⟩ := hbody.forall_exists_r ci hc; exact h.2
 
 /-- Successful checked addition preserves well-formedness and extends every safety-indexed
-abstract environment. The only declaration form still outstanding is inductives, which need a
-constructive `AddInduct` model. -/
-theorem addDecl.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (decl : Declaration) :
+abstract environment. Inductives rest on `addInductive.WF_flat`, and nested ones are not covered
+(see `addInductive.WF`).
+
+The type annotations the kernel erases by name must be identities in the model: neither kernel
+checks this, so it is assumed, of the environment (`AnnotationsDefine`: each is undeclared or
+defined as Lean's prelude defines it) and of an inductive declaration (it does not declare them). -/
+theorem addDecl.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
+    (hann : ∀ safety, (ves.venv safety).AnnotationsDefine) (decl : Declaration)
+    (hnames : ∀ lparams nparams types isUnsafe, decl = .inductDecl lparams nparams types isUnsafe →
+      ∀ t ∈ types, t.name ∉ typeAnnotations.map (·.1)) :
     (addDecl env decl (check := true) (fuel := {})).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
   cases decl with
@@ -232,4 +231,6 @@ theorem addDecl.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (decl : D
     exact (addOpaque.WF wf v).mono fun _ ⟨ves', hwf, _, h⟩ => ⟨ves', hwf, (h · |>.le)⟩
   | quotDecl => exact addQuot.WF wf
   | mutualDefnDecl vs => exact addMutual.WF wf vs
-  | inductDecl _ _ _ _ => sorry
+  | inductDecl lparams nparams types isUnsafe =>
+    exact (Primitive.checkInductive.WF env lparams nparams types isUnsafe).bind fun allow h =>
+      addInductive.WF wf hann lparams nparams types (hnames _ _ _ _ rfl) isUnsafe allow {} h
