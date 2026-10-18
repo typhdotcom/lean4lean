@@ -73,3 +73,4 @@ import Lean4Lean.Theory.Typing.LogRel.AdeqIndTy
 import Lean4Lean.Theory.Typing.LogRel.AdeqQuotMk
 import Lean4Lean.Theory.Typing.LogRel.AdeqStruct
 import Lean4Lean.Theory.Typing.LogRel.StructProj
+import Lean4Lean.Theory.Typing.LogRel.AnnotStep

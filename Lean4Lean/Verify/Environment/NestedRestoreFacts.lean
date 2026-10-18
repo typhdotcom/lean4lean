@@ -739,7 +739,7 @@ theorem restoreInputs {venv E₁ : VEnv} (henv : venv.WF) (hprim : venv.HasPrimi
       ((hd.ctors E₁ hE₁ T (VInductDecl.mem_allTypes_of_types hT)).2 c hc) (hnested T hT) hpa hCD
       (hin T₁ hT₁ c₀ hc₀) ((hcl T₁ hT₁).2.2 c₀ hc₀).2.1 htr
       (fun ps Ds B h1 h2 k D f h3 h4 => (AddInductive.Elaborates.stripsToBy hEl rfl T hT c hc
-        ps Ds B h1 h2 k D f h3 h4).mono fun x hx hm => hx (by
+        ps Ds B h1 h2 k D f h3 h4).mono fun x hx hm => hx.1 (by
           rwa [VInductDecl.names, ← Lean4Lean.List.Forall₂.map_eq
             (Lean4Lean.List.Forall₂.imp (fun _ _ h => h.1.symm) hEl.types)] at hm))
 

@@ -123,7 +123,8 @@ theorem VInductDecl.FieldsKeptWF.mono (H : decl.FieldsKeptWF env c Ds) :
 
 theorem VConstructor.WF.mono (H : c.WF env decl T) : c.WF env' decl T :=
   have ⟨ps, Ds, h1, h2, h3, h4, h5⟩ := H.shape
-  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv, h4, h5.mono henv⟩, H.indices⟩
+  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv, h4, h5.mono henv⟩, H.indices,
+    fun ps Ds B e hl k D f hD hf => (H.strips ps Ds B e hl k D f hD hf).mono fun _ h => h.mono henv⟩
 
 theorem VInductiveType.WF.mono (H : T.WF env decl) : T.WF env' decl :=
   ⟨H.indices.mono henv, H.defeq.mono henv⟩

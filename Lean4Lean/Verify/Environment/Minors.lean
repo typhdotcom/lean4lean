@@ -508,7 +508,7 @@ structure CtorArgsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
   fields : ∀ j D fty, Ds[j]? = some D → ftys[j]? = some fty →
     cT.venv.IsDefEqU cT.lparams.length ((ftys.take j).reverse ++ params.reverse) D fty
   within : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty →
-    D.StripsToBy (fun n => ∃ v, cT.env.find? n = some (.defnInfo v)) fty
+    D.StripsToBy (fun n => (∃ v, cT.env.find? n = some (.defnInfo v)) ∧ cT.venv.AnnotDef n) fty
   /-- The view `N₀` of the kernel's context, with the fields pushed. -/
   comp : ∃ N ρN, Ext N cb ρN ∧
     VLCtx.FVLift' (Mf.instL (VLevel.shift pre.length cT.lparams.length)).vlctx N.vlctx 0
@@ -2534,7 +2534,8 @@ structure CtorOut (cT : VContext) (pre : List Name) (params : List VExpr) (d₀ 
   /-- A field's view is its declared domain with annotations stripped, each defined in the
   environment. -/
   within : ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-    D.StripsToBy (fun n => ∃ v, cT.env.find? n = some (.defnInfo v)) f.type
+    D.StripsToBy (fun n => (∃ v, cT.env.find? n = some (.defnInfo v)) ∧ cT.venv.AnnotDef n)
+      f.type
   sort : ∀ k f, c.fields[k]? = some f →
     cT.venv.HasType cT.lparams.length
       (((c.fields.take k).map (·.type)).reverse ++ params.reverse) f.type (.sort f.level) ∧

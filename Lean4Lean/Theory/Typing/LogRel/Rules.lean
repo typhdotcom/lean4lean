@@ -35,10 +35,6 @@ theorem VEnv.RuleKind.mono {env env' : VEnv} (H : env ≤ env') {df} :
 
 namespace VEnv
 
-theorem addConst_defeqs {env env' : VEnv} {n ci} (h : env.addConst n ci = some env') :
-    env'.defeqs = env.defeqs := by
-  unfold addConst at h; split at h <;> cases h; rfl
-
 theorem addConsts_defeqs : ∀ {env env' : VEnv} {cis : List VDefVal},
     env.addConsts cis = some env' → env'.defeqs = env.defeqs
   | _, _, [], h => by cases h; rfl
@@ -46,14 +42,6 @@ theorem addConsts_defeqs : ∀ {env env' : VEnv} {cis : List VDefVal},
     simp only [addConsts, List.foldlM, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
     obtain ⟨_, h1, h2⟩ := h
     exact (addConsts_defeqs h2).trans (addConst_defeqs h1)
-
-theorem addConstList_defeqs' : ∀ {env env' : VEnv} {cs : List (Name × VConstant)},
-    env.addConstList cs = some env' → env'.defeqs = env.defeqs
-  | _, _, [], h => by cases h; rfl
-  | _, _, _ :: _, h => by
-    simp only [addConstList, List.foldlM, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
-    obtain ⟨_, h1, h2⟩ := h
-    exact (addConstList_defeqs' h2).trans (addConst_defeqs h1)
 
 theorem addDefEqs_defeqs : ∀ {env : VEnv} {cis : List VDefVal} {df},
     (env.addDefEqs cis).defeqs df → (∃ ci ∈ cis, df = ci.toDefEq) ∨ env.defeqs df

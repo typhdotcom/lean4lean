@@ -737,11 +737,14 @@ defines. -/
 theorem Sub.consumeTypeAnnotations_heads {X pre ρ cs cb} (H : Sub X pre ρ cs cb) {e : Expr} :
     WF cb (AddInductive.consumeTypeAnnotations e) fun e' =>
       e' = e.consumeTypeAnnotations' ∧ cs.venv.StripOK e ∧
-        e.StripHeads fun n => ∃ v, cs.env.find? n = some (.defnInfo v) := by
+        e.StripHeads fun n => (∃ v, cs.env.find? n = some (.defnInfo v)) ∧ cs.venv.AnnotDef n := by
   intro r h
   obtain ⟨h1, h2⟩ := H.consumeTypeAnnotations r h
-  exact ⟨h1, h2, (AddInductive.stripAnnotations_heads (env := cb.env) h).mono fun n ⟨v, hv⟩ =>
-    ⟨v, (H.env n (H.defn n v hv)) ▸ hv⟩⟩
+  have h' := stripAnnotations_mono (fun n v hv => (H.env n (H.defn n v hv)) ▸ hv) h
+  have hA := AddInductive.stripAnnotations_rules cs.trenv h'
+  have hD := (AddInductive.stripAnnotations_heads (env := cb.env) h).mono fun n ⟨v, hv⟩ =>
+    (⟨v, (H.env n (H.defn n v hv)) ▸ hv⟩ : ∃ v, cs.env.find? n = some (ConstantInfo.defnInfo v))
+  exact ⟨h1, h2, Lean.Expr.StripHeads.and hD hA⟩
 
 /-- `m` holds some of the kernel's variables, declared alike, in its environment and at its
 universe parameters, the kernel's context lifting it by `ρ`: a specification's view of the

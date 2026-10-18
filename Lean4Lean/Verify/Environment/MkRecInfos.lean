@@ -260,7 +260,7 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
         (VLevel.params c.lparams.length)) (VExpr.bvars params.length Ds.length ++ cv.indices)) ∧
       FieldsElab c.venv d d.params.reverse 0 Ds cv.fields ∧
       (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f →
-        D.StripsToBy (· ∉ types.map (·.name)) f.type) ∧
+        D.StripsToBy (fun n => n ∉ types.map (·.name) ∧ c.venv.AnnotDef n) f.type) ∧
       (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f → ∀ u,
         c.venv.HasType c.lparams.length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
         (u ≈ .zero ↔ f.level ≈ .zero)) ∧
@@ -275,8 +275,8 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
     rw [Option.some.inj ((List.getElem?_eq_getElem _).symm.trans hT'), hn]
   refine ⟨hout.name, hout.type ▸ htr, ps, Ds, htele.length_eq, hout.len.symm,
     by rw [hout.type, hout.indices]; exact hsh, ?_, fun k D f hD hf =>
-      (hout.within k D f hD hf).mono fun n ⟨v, hv⟩ hn => by
-        obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn; exact hnotDefn t ht v hv, ?_, hout.views⟩
+      (hout.within k D f hD hf).mono fun n ⟨⟨v, hv⟩, hA⟩ => ⟨fun hn => by
+        obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn; exact hnotDefn t ht v hv, hA⟩, ?_, hout.views⟩
   · rw [hdp]
     refine FieldsElab.of_getElem (by rw [hout.len]) fun k D f hD hf =>
       ⟨hdu ▸ hout.defeq k D f hD hf, fun _ h => (hout.within k D f hD hf).toStripsTo.skips h,

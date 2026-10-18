@@ -349,6 +349,7 @@ theorem primField_level {venv : VEnv} {I : Name} (henv : venv.WF)
 in the one with its type only: the fields' types and their inductive hypotheses' views are the
 type itself. -/
 theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx)
+    {cs : List (Name × VConstant)} (hAxT : venvT.addConstList cs = some venvAx)
     (henvAx : venvAx.WF)
     (hIT : venvT.constants I = some ⟨0, .sort (.succ .zero)⟩) {envAx : Environment}
     (hax : ∃ ax, envAx.find? I = some (.axiomInfo ax)) {type : InductiveType}
@@ -381,7 +382,7 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
             (VExpr.bvars 0 Ds.length ++ c.indices)) ∧
           FieldsElab venvAx d d.params.reverse 0 Ds c.fields ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-            D.StripsToBy (· ∉ [type].map (·.name)) f.type) ∧
+            D.StripsToBy (fun n => n ∉ [type].map (·.name) ∧ venvAx.AnnotDef n) f.type) ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvAx.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
             (u ≈ .zero ↔ f.level ≈ .zero)) ∧
@@ -398,7 +399,7 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
             (VExpr.bvars 0 Ds.length ++ c.indices)) ∧
           FieldsElab venvT d d.params.reverse 0 Ds c.fields ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-            D.StripsToBy (· ∉ [type].map (·.name)) f.type) ∧
+            D.StripsToBy (fun n => n ∉ [type].map (·.name) ∧ venvT.AnnotDef n) f.type) ∧
           (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvT.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
             (u ≈ .zero ↔ f.level ≈ .zero)) ∧
@@ -416,7 +417,8 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
       obtain ⟨-, -, huA⟩ := primCtor_tr hIAx hpc
       have hcv := huA _ htrA
       obtain rfl : ps = [] := List.eq_nil_of_length_eq_zero hps
-      refine ⟨hn, hcv ▸ htrT, [], Ds, rfl, hDs, hsh, ?_, hstr,
+      refine ⟨hn, hcv ▸ htrT, [], Ds, rfl, hDs, hsh, ?_, fun k D f h1 h2 => (hstr k D f h1 h2).mono
+          fun _ ⟨a, b⟩ => ⟨a, b.of_addConstList hAxT⟩,
         fun k D f h1 h2 u h3 => hlv k D f h1 h2 u (h3.mono hle), hviews⟩
       rcases hpc with he | ⟨nm, bi, he⟩
       · -- no field
@@ -790,7 +792,7 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
   have hfirst := hR.first hdp
   rw [hcAxv, hcAxl, hcl, hcAxenv] at hfirst
   have hEl : AddInductive.Elaborates venvT [] 0 level [type] d :=
-    AddInductive.elaborates_prim hleTA wfAx.tr.wf hIT hax rfl hct hEl₂ hdu hdp hdi hR.aux hR.nested
+    AddInductive.elaborates_prim hleTA hAx₁ wfAx.tr.wf hIT hax rfl hct hEl₂ hdu hdp hdi hR.aux hR.nested
       hfirst
   have hlevwf : level.WF 0 := .of_ofLevel hT.resultLevel
   have hInd : ∀ T ∈ d.types, T.WF venvT d := by

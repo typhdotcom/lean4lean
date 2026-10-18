@@ -69,6 +69,50 @@ theorem VExpr.StripsToBy.mono {P Q : Lean.Name → Prop} (h : ∀ c, P c → Q c
   | app2 hc hP _ ih => exact .app2 hc (h _ hP) ih
   | app1 hc hP _ ih => exact .app1 hc (h _ hP) ih
 
+theorem VExpr.StripsToBy.sizeOf_le {P : Lean.Name → Prop} {e e' : VExpr}
+    (H : e.StripsToBy P e') : sizeOf e' ≤ sizeOf e := by
+  induction H with
+  | refl => exact Nat.le_refl _
+  | app2 _ _ _ ih => simp only [VExpr.app.sizeOf_spec]; omega
+  | app1 _ _ _ ih => simp only [VExpr.app.sizeOf_spec]; omega
+
+/-- Stripping to a given type strips the same annotations, so two predicates on them combine. -/
+theorem VExpr.StripsToBy.and {P Q : Lean.Name → Prop} {e e' : VExpr}
+    (H1 : e.StripsToBy P e') (H2 : e.StripsToBy Q e') : e.StripsToBy (fun c => P c ∧ Q c) e' := by
+  induction H1 with
+  | refl =>
+    cases H2 with
+    | refl => exact .refl
+    | app2 _ _ h => have := h.sizeOf_le; simp only [VExpr.app.sizeOf_spec] at this; omega
+    | app1 _ _ h => have := h.sizeOf_le; simp only [VExpr.app.sizeOf_spec] at this; omega
+  | app2 hc hP h ih =>
+    cases H2 with
+    | refl => have := h.sizeOf_le; simp only [VExpr.app.sizeOf_spec] at this; omega
+    | app2 _ hQ h' => exact .app2 hc ⟨hP, hQ⟩ (ih h')
+  | app1 hc hP h ih =>
+    cases H2 with
+    | refl => have := h.sizeOf_le; simp only [VExpr.app.sizeOf_spec] at this; omega
+    | app1 _ hQ h' => exact .app1 hc ⟨hP, hQ⟩ (ih h')
+
+theorem VExpr.foralls_getElem_eq : ∀ {As As' : List VExpr} {B B' : VExpr},
+    VExpr.foralls As B = VExpr.foralls As' B' →
+    ∀ k (h : k < As.length) (h' : k < As'.length), As[k] = As'[k]
+  | _ :: _, _ :: _, _, _, e, 0, _, _ => by
+    simp only [VExpr.foralls, VExpr.forallE.injEq] at e; simp [e.1]
+  | _ :: _, _ :: _, _, _, e, k + 1, h, h' => by
+    simp only [VExpr.foralls, VExpr.forallE.injEq] at e
+    exact foralls_getElem_eq e.2 k (by simpa using h) (by simpa using h')
+
+/-- Two splits of a telescope past binders of the same length agree on their later binders. -/
+theorem VExpr.foralls_split_getElem? {ps Ds ps' Ds' : List VExpr} {B B' D D' : VExpr} {k : Nat}
+    (e : VExpr.foralls (ps ++ Ds) B = VExpr.foralls (ps' ++ Ds') B') (hl : ps.length = ps'.length)
+    (hD : Ds[k]? = some D) (hD' : Ds'[k]? = some D') : D = D' := by
+  obtain ⟨hk, rfl⟩ := List.getElem?_eq_some_iff.1 hD
+  obtain ⟨hk', rfl⟩ := List.getElem?_eq_some_iff.1 hD'
+  have := VExpr.foralls_getElem_eq e (ps.length + k) (by simp; omega) (by simp; omega)
+  rw [List.getElem_append_right (by omega), List.getElem_append_right (by omega)] at this
+  simpa [hl] using this
+
 theorem VExpr.StripsTo.skips {e e' : VExpr} (H : e.StripsTo e') {n k : Nat} (h : e.Skips n k) :
     e'.Skips n k := by
   induction H with

@@ -1421,22 +1421,13 @@ structure Elaborates (venv : VEnv) (U : List Name) (nparams : Nat) (level : VLev
           (VExpr.bvars nparams Ds.length ++ c.indices)) ∧
         FieldsElab venv d d.params.reverse 0 Ds c.fields ∧
         (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-          D.StripsToBy (· ∉ types.map (·.name)) f.type) ∧
+          D.StripsToBy (fun n => n ∉ types.map (·.name) ∧ venv.AnnotDef n) f.type) ∧
         (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
           venv.HasType U.length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
           (u ≈ .zero ↔ f.level ≈ .zero)) ∧
         ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
           f.type = D.stripN ((ct.type.domStrips.drop nparams)[k]?.getD 0)) t.ctors T.ctors)
     types d.types
-
-theorem VExpr.foralls_getElem_eq : ∀ {As As' : List VExpr} {B B' : VExpr},
-    VExpr.foralls As B = VExpr.foralls As' B' →
-    ∀ k (h : k < As.length) (h' : k < As'.length), As[k] = As'[k]
-  | _ :: _, _ :: _, _, _, e, 0, _, _ => by
-    simp only [VExpr.foralls, VExpr.forallE.injEq] at e; simp [e.1]
-  | _ :: _, _ :: _, _, _, e, k + 1, h, h' => by
-    simp only [VExpr.foralls, VExpr.forallE.injEq] at e
-    exact foralls_getElem_eq e.2 k (by simpa using h) (by simpa using h')
 
 /-- A constructor's declared domains strip to its fields' types, at any split of its type past the
 parameters, stripping no annotation named as one of the block's types. -/
@@ -1446,7 +1437,7 @@ theorem Elaborates.stripsToBy {venv : VEnv} {U : List Name} {nparams : Nat} {lev
     ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ (ps Ds : List VExpr) (B : VExpr),
       c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
       ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-      D.StripsToBy (· ∉ types.map (·.name)) f.type := by
+      D.StripsToBy (fun n => n ∉ types.map (·.name) ∧ venv.AnnotDef n) f.type := by
   intro T hT c hc ps Ds B hty hps k D f hD hf
   obtain ⟨t, -, -, hcs⟩ := Lean4Lean.List.Forall₂.forall_exists_r H.types T hT
   obtain ⟨ct, -, hct⟩ := Lean4Lean.List.Forall₂.forall_exists_r hcs c hc
@@ -1527,18 +1518,21 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
     (hparams : venv.IsTele d.uvars [] d.params)
     {t : InductiveType} {T : VInductiveType} {nidx : Nat} (hname : T.name = t.name)
     (hno : T.nested = none) (hnidx : nidx = T.indices.length) {ct : Constructor} {c : VConstructor}
-    {X Y : List VExpr → List VExpr → Prop}
+    {Pn : Name → Prop} {Y : List VExpr → List VExpr → Prop}
     (hC : CtorChecked venv U d t nidx ct)
     (hE : c.name = ct.name ∧ TrExprS venv U [] ct.type c.type ∧ ∃ ps Ds, ps.length = nparams ∧
         Ds.length = c.fields.length ∧
         c.type = .foralls (ps ++ Ds) (.appN (.const t.name (VLevel.params U.length))
           (VExpr.bvars nparams Ds.length ++ c.indices)) ∧
-        FieldsElab venv d d.params.reverse 0 Ds c.fields ∧ X ps Ds ∧ Y ps Ds ∧
+        FieldsElab venv d d.params.reverse 0 Ds c.fields ∧
+        (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+          D.StripsToBy Pn f.type) ∧ Y ps Ds ∧
         ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-          f.type = D.stripN ((ct.type.domStrips.drop nparams)[k]?.getD 0)) :
+          f.type = D.stripN ((ct.type.domStrips.drop nparams)[k]?.getD 0))
+    (hPn : ∀ n, Pn n → venv.AnnotDef n) :
     c.WF venv d T ∧ declareConstructors.arity 0 ct.type = nparams + c.fields.length ∧
       CtorDoms venv U nparams c.fields.length ct.type := by
-  obtain ⟨-, htr, ps, Ds, hps, hDs, hty, hfe, -, -, hviews⟩ := hE
+  obtain ⟨-, htr, ps, Ds, hps, hDs, hty, hfe, hstr, -, hviews⟩ := hE
   obtain ⟨hT, ps', Ds', idx, hty', har, htele, hidx, hmen, hfc, hKC, hCD⟩ := hC _ htr
   rw [hty] at hty'
   have ⟨h1, h2⟩ := VExpr.foralls_inj_notPi (VExpr.appN_notPi (e := .const ..) _ trivial)
@@ -1572,8 +1566,18 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within,
       VInductDecl.FieldsKeptWF.of_fieldKept henv hparams hFW fun k D h => by
         rw [hU, ← hVs]; exact hKC k D h⟩,
-    ⟨hidx.trans hnidx, hmen⟩⟩, by rw [har, hps, hDs], by rw [← hps, ← hDs]; exact hCD⟩
-  rw [hty, VInductiveType.typeApp_of_none hno, hname, hU, hnp, hDs]
+    ⟨hidx.trans hnidx, hmen⟩, ?_⟩, by rw [har, hps, hDs], by rw [← hps, ← hDs]; exact hCD⟩
+  · rw [hty, VInductiveType.typeApp_of_none hno, hname, hU, hnp, hDs]
+  · intro ps' Ds' B' hty' hps' k D f hD hf
+    have hk : k < Ds'.length := (List.getElem?_eq_some_iff.1 hD).1
+    have hkf : k < c.fields.length := (List.getElem?_eq_some_iff.1 hf).1
+    have hk' : k < Ds.length := by omega
+    have e := VExpr.foralls_getElem_eq (hty'.symm.trans hty) (ps'.length + k) (by simp; omega)
+      (by simp; omega)
+    rw [List.getElem_append_right (by omega), List.getElem_append_right (by omega)] at e
+    simp only [Nat.add_sub_cancel_left, hps', hnp, ← hps] at e
+    rw [List.getElem?_eq_getElem hk] at hD; cases hD
+    rw [e]; exact (hstr k _ f (List.getElem?_eq_getElem hk') hf).mono hPn
 
 /-- The type `run` gives the `i`th recursor, from the local variables `mkRecInfos` opened. -/
 def recTypeExpr (lctx : LocalContext) (stats : InductiveStats) (recInfos : Array RecInfo)
@@ -1748,7 +1752,7 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     have hps : env'.IsTele d.uvars [] d.params := by
       rw [hR.params, hU, hU₀]; exact (hV₀ ▸ hT.params_tele).mono hle
     exact (ctor_WF henvAx hU hlen hps hname (hR.nested T hTm) rfl
-      (hC hcompat j t ht ct hct _ (hR.nindices j T hj)) hrel).1
+      (hC hcompat j t ht ct hct _ (hR.nindices j T hj)) hrel (fun _ h => h.2)).1
 
 theorem inductVals_length {lparams : List Name} {stats : InductiveStats} {np nn : Nat}
     {types : List InductiveType} {isUnsafe : Bool} (h : stats.nindices.size = types.length) :
@@ -1891,7 +1895,7 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
     simp [List.getElem?_zipIdx, hct] at hv; exact hv.symm
   subst hv'
   obtain ⟨-, har, hCD⟩ := ctor_WF henvAx hU hlen hps hname (hR.nested T (List.mem_of_getElem? hTj)) rfl
-    (hC hcompat j t ht ct (List.mem_of_getElem? hct) _ (hR.nindices j T hTj)) hrel
+    (hC hcompat j t ht ct (List.mem_of_getElem? hct) _ (hR.nindices j T hTj)) hrel (fun _ h => h.2)
   refine ⟨⟨T, hTj, hc', hrel.1.symm, rfl, hname.symm, hlen.symm, ?_, hR.isUnsafe.symm, ?_⟩,
     ⟨?_, ?_, ?_⟩, ?_⟩
   · show declareConstructors.arity 0 ct.type - nparams = c'.fields.length

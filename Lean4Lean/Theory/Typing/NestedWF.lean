@@ -534,6 +534,26 @@ theorem VExpr.StripsToBy.restore {R : Name → Option VAuxHead} {ren : Name → 
       simp [VExpr.restore, VExpr.restoreAux, VExpr.constSpine?, h1, h2]
     rw [this]; exact .app1 hc ih
 
+/-- Restoring keeps a declared domain's relation to the type the kernel reads off it, and which
+annotations it strips, where they are neither auxiliary nor renamed. -/
+theorem VExpr.StripsToBy.restore' {R : Name → Option VAuxHead} {ren : Name → Option Name}
+    {Q : Name → Prop} {e e' : VExpr}
+    (H : e.StripsToBy (fun c => (R c = none ∧ ren c = none) ∧ Q c) e') :
+    (e.restore R ren).StripsToBy Q (e'.restore R ren) := by
+  induction H with
+  | refl => exact .refl
+  | @app2 A _ ls v c hc hR _ ih =>
+    obtain ⟨⟨h1, h2⟩, hQ⟩ := hR
+    have : (VExpr.app (.app (.const c ls) A) v).restore R ren =
+        .app (.app (.const c ls) (A.restore R ren)) (v.restore R ren) := by
+      simp [VExpr.restore, VExpr.restoreAux, VExpr.constSpine?, h1, h2]
+    rw [this]; exact .app2 hc hQ ih
+  | @app1 A _ ls c hc hR _ ih =>
+    obtain ⟨⟨h1, h2⟩, hQ⟩ := hR
+    have : (VExpr.app (.const c ls) A).restore R ren = .app (.const c ls) (A.restore R ren) := by
+      simp [VExpr.restore, VExpr.restoreAux, VExpr.constSpine?, h1, h2]
+    rw [this]; exact .app1 hc hQ ih
+
 /-- What the restoration needs to know of a constructor of the translated block `d`, beyond its
 check: its declared type's parameter binders mention no auxiliary or renamed constant and its body
 has its auxiliary constants at the parameters; so do its fields; its indices mention no auxiliary
@@ -796,7 +816,7 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
           (bvars d.params.length c.fields.length) (c.indices.map (·.restore R ren))) := by
       show c.type.restore R ren = _
       rw [hty, VExpr.restore_foralls, hpsR, VExpr.restore_foralls, hX, VExpr.foralls_append]
-    refine ⟨?_, ⟨ps, Ds.map (·.restore R ren), ?_, ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩⟩
+    refine ⟨?_, ⟨ps, Ds.map (·.restore R ren), ?_, ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩, ?_⟩
     · -- the type
       have HEps := mkHE E₀ hE₀ hQ hQP
       have := HEps.isType (Δ := []) (by simpa using hpsT.onCtx trivial) trivial hBA
@@ -890,6 +910,19 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
       rw [restore_of_constsSat hxc]
       have hmx : x.mentions d.names = false := by simpa using hm
       simpa using VExpr.mentions_mono restoreNested_names_sub hmx
+    · -- the annotations each field's view strips
+      intro ps' Ds' B' hty' hps' k D' f' hD' hf'
+      rw [VConstructor.restore_fields_getElem?] at hf'
+      obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.1 hf'
+      have hk : k < Ds.length := by
+        have := (List.getElem?_eq_some_iff.1 hf).1
+        have := hFW.length; omega
+      have e := VExpr.foralls_split_getElem? (hcty.symm.trans hty') (by rw [hps', hparams, hpsl])
+        (by rw [List.getElem?_map, List.getElem?_eq_getElem hk]; rfl) hD'
+      subst e
+      have hS := (hF.strips ps Ds _ hty₀ hpsl k _ f (List.getElem?_eq_getElem hk) hf).and
+        (hcW.strips ps Ds _ hty₀ (by rw [hpsl]) k _ f (List.getElem?_eq_getElem hk) hf)
+      exact (hS.mono fun c ⟨h1, h2⟩ => ⟨h1, (h2.of_addConstList hE₁).mono hle₀⟩).restore'
   · intro hr T' hT' c' hc' f' hf'
     rw [restoreNested_allTypes] at hT'
     obtain ⟨⟨T, j⟩, hm, rfl⟩ := List.mem_map.1 hT'

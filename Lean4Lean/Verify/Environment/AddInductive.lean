@@ -216,6 +216,13 @@ theorem _root_.Lean.Expr.StripHeads.mono {P Q : Name → Prop} (h : ∀ n, P n �
     simp only [Lean.Expr.StripHeads] at H ⊢; exact ⟨h _ H.1, ih H.2⟩
   | case5 e h1 h2 h3 h4 => rw [Lean.Expr.StripHeads.eq_5 _ e h1 h2 h3 h4]; trivial
 
+theorem _root_.Lean.Expr.StripHeads.and {P Q : Name → Prop} {e : Expr}
+    (H1 : e.StripHeads P) (H2 : e.StripHeads Q) : e.StripHeads fun n => P n ∧ Q n := by
+  induction e using Lean.Expr.consumeTypeAnnotations'.induct with
+  | case1 _ A _ ih | case2 _ A _ ih | case3 _ A ih | case4 _ A ih =>
+    simp only [Lean.Expr.StripHeads] at H1 H2 ⊢; exact ⟨⟨H1.1, H2.1⟩, ih H1.2 H2.2⟩
+  | case5 e h1 h2 h3 h4 => rw [Lean.Expr.StripHeads.eq_5 _ e h1 h2 h3 h4]; trivial
+
 /-- Stripping succeeds only where the environment defines each annotation it strips. -/
 theorem AddInductive.stripAnnotations_heads {env : Environment} :
     ∀ {e r : Expr}, stripAnnotations env e = .ok r →
@@ -235,6 +242,40 @@ theorem AddInductive.stripAnnotations_heads {env : Environment} :
     rename_i u hu
     simp only [Lean.Expr.StripHeads]
     exact ⟨hc hu, ih h⟩
+  | case5 e h1 h2 h3 h4 => intros; rw [Lean.Expr.StripHeads.eq_5 _ e h1 h2 h3 h4]; trivial
+
+/-- What `AddInductive.checkTypeAnnotation` checks is a defining rule of the model: the
+annotation is defined as returning its first argument. -/
+theorem AddInductive.checkTypeAnnotation.rule {env : Environment} {venv : VEnv}
+    (H : TrEnv safety env venv) :
+    (checkTypeAnnotation env n k).WF fun _ => venv.ReturnsFirstRule n k := by
+  unfold checkTypeAnnotation
+  split <;> [skip; exact .throw]
+  rename_i hv
+  split <;> [skip; exact .throw]
+  rename_i hr
+  refine .pure ?_
+  have hC : env.constants.find? n = _ := (H.map_wf.find?'_eq_find? _).symm.trans hv
+  obtain ⟨df, venv₀, h1, h2, -, h4⟩ := TrEnv'.defn_rule H hC DefinitionSafety.le_safe
+  obtain ⟨As, hAs, e⟩ := TrExprS.returnsFirstArg (Δ := []) (fun _ h => nomatch h) rfl hr h4
+  exact ⟨df, As, h1, h2, hAs, by simpa using e⟩
+
+/-- Stripping succeeds only with each annotation it strips defined, in the model, as returning
+the type it annotates. -/
+theorem AddInductive.stripAnnotations_rules {env : Environment} {venv : VEnv}
+    (H : TrEnv safety env venv) :
+    ∀ {e r : Expr}, stripAnnotations env e = .ok r → e.StripHeads venv.AnnotDef := by
+  have hc {n k} (h : checkTypeAnnotation env n k = .ok ()) : venv.ReturnsFirstRule n k :=
+    checkTypeAnnotation.rule H _ h
+  intro e
+  induction e using Lean.Expr.consumeTypeAnnotations'.induct with
+  | case1 _ A _ ih | case2 _ A _ ih | case3 _ A ih | case4 _ A ih =>
+    intro r h
+    simp only [stripAnnotations, bind, Except.bind] at h
+    split at h <;> [cases h; skip]
+    rename_i u hu
+    simp only [Lean.Expr.StripHeads]
+    exact ⟨by simpa [VEnv.AnnotDef] using hc hu, ih h⟩
   | case5 e h1 h2 h3 h4 => intros; rw [Lean.Expr.StripHeads.eq_5 _ e h1 h2 h3 h4]; trivial
 
 open private Lean.Kernel.Environment.add from Lean.Environment

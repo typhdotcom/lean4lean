@@ -445,6 +445,41 @@ def FieldsKeptWF (env : VEnv) (c : VConstructor) (Ds : List VExpr) : Prop :=
 
 end VInductDecl
 
+/-- `n` is defined in `env` as the function of its `k` arguments returning the first. -/
+def VEnv.ReturnsFirstRule (env : VEnv) (n : Name) (k : Nat) : Prop :=
+  ∃ (df : VDefEq) (As : List VExpr), env.defeqs df ∧ df.lhs = .const n (VLevel.params df.uvars) ∧
+    As.length = k ∧ df.rhs = .lams As (.bvar (k - 1))
+
+/-- A type annotation `VExpr.StripsTo` strips, as `env` defines it: returning the type it
+annotates, so a binder's declared type unfolds to the type stripped of it. -/
+def VEnv.AnnotDef (env : VEnv) (c : Name) : Prop :=
+  env.ReturnsFirstRule c (if c = ``outParam ∨ c = ``semiOutParam then 1 else 2)
+
+theorem VEnv.ReturnsFirstRule.mono {env env' : VEnv} (le : env ≤ env') {n k}
+    (H : env.ReturnsFirstRule n k) : env'.ReturnsFirstRule n k :=
+  let ⟨df, As, h1, h2, h3, h4⟩ := H; ⟨df, As, le.defeqs h1, h2, h3, h4⟩
+
+theorem VEnv.addConst_defeqs {env env' : VEnv} {n ci} (h : env.addConst n ci = some env') :
+    env'.defeqs = env.defeqs := by
+  unfold VEnv.addConst at h; split at h <;> cases h; rfl
+
+theorem VEnv.addConstList_defeqs' : ∀ {env env' : VEnv} {cs : List (Name × VConstant)},
+    env.addConstList cs = some env' → env'.defeqs = env.defeqs
+  | _, _, [], h => by cases h; rfl
+  | _, _, _ :: _, h => by
+    simp only [VEnv.addConstList, List.foldlM, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+    obtain ⟨_, h1, h2⟩ := h
+    exact (addConstList_defeqs' h2).trans (VEnv.addConst_defeqs h1)
+
+/-- A rule `env'` has is `env`'s, when `env'` only adds constants to it. -/
+theorem VEnv.ReturnsFirstRule.of_addConstList {env env' : VEnv} {cs} (h : env.addConstList cs = some env')
+    {n k} (H : env'.ReturnsFirstRule n k) : env.ReturnsFirstRule n k :=
+  let ⟨df, As, h1, h2, h3, h4⟩ := H
+  ⟨df, As, (VEnv.addConstList_defeqs' h) ▸ h1, h2, h3, h4⟩
+
+theorem VEnv.AnnotDef.mono {env env' : VEnv} (le : env ≤ env') {c}
+    (H : env.AnnotDef c) : env'.AnnotDef c := VEnv.ReturnsFirstRule.mono le H
+
 /-- A type former's index telescope, read off its type as the recursor reads it: in an environment
 with the block's types, which the kernel normalizes in. -/
 structure VInductiveType.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType) : Prop where
@@ -468,6 +503,11 @@ structure VConstructor.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType)
       ∀ j, D.Skips 1 j → f.type.Skips 1 j) ∧
     d.FieldsKeptWF env c Ds
   indices : c.indices.length = T.indices.length ∧ c.indices.all (!·.mentions d.names)
+  /-- Each field's view is its declared domain with type annotations stripped that `env` defines
+  as returning the type they annotate. -/
+  strips : ∀ ps Ds B, c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
+    ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      D.StripsToBy env.AnnotDef f.type
 
 /-- What makes `T` an auxiliary type of the block `d`, standing for the occurrence `n` in `env`,
 the environment with the block's types: `n` is the `tI`th type of a block `dI` recorded there, at

@@ -445,6 +445,75 @@ theorem TrEnv'.of_value (H : TrEnv' safety C Q venv) (h : C.find? name = some ci
     · simp only [inductConsts, List.mem_append, List.mem_map] at h
       obtain ⟨(⟨_, -, rfl⟩ | ⟨_, -, rfl⟩) | ⟨_, -, rfl⟩, -⟩ := h <;> cases hv
 
+/-- A definition the environment has is a defining rule of the model, at its level parameters,
+whose right-hand side translates its value. -/
+theorem TrEnv'.defn_rule (H : TrEnv' safety C Q venv) {v : DefinitionVal}
+    (h : C.find? name = some (.defnInfo v)) (hs : safety ≤ (ConstantInfo.defnInfo v).safety) :
+    ∃ (df : VDefEq) (venv₀ : VEnv), venv.defeqs df ∧
+      df.lhs = .const name (VLevel.params df.uvars) ∧ df.uvars = v.levelParams.length ∧
+      TrExprS venv₀ v.levelParams [] v.value df.rhs := by
+  have {C n ci'} (hC : C.WF) :
+      (SMap.insert C n ci').find? name = some (ConstantInfo.defnInfo v) →
+      C.find? name = some (ConstantInfo.defnInfo v) ∨ n = name ∧ ci' = ConstantInfo.defnInfo v := by
+    rw [hC.find?_insert]; simp; split <;> simp +contextual [*]
+  induction H with
+  | empty => simp [SMap.find?] at h
+  | ignore h1 h2 H ih =>
+    obtain h | ⟨rfl, rfl⟩ := this H.map_wf h
+    · exact ih h
+    · exact (h2 hs).elim
+  | «axiom» _ _ _ h1 H ih =>
+    obtain h | ⟨rfl, ⟨⟩⟩ := this H.map_wf h
+    obtain ⟨df, e₀, h1', h2', h3', h4'⟩ := ih h
+    exact ⟨df, e₀, (VEnv.addConst_le h1).defeqs h1', h2', h3', h4'⟩
+  | defn h2 h3 h4 h1 H ih =>
+    have' le := (VEnv.addConst_le h1).trans VEnv.addDefEq_le
+    obtain h | ⟨rfl, ⟨⟩⟩ := this H.map_wf h
+    · obtain ⟨df, e₀, h1', h2', h3', h4'⟩ := ih h
+      exact ⟨df, e₀, le.defeqs h1', h2', h3', h4'⟩
+    · obtain ⟨⟨⟨-, b2, -⟩, b4⟩, b5⟩ := h2
+      refine ⟨_, _, VEnv.addDefEq_self, ?_, b2.symm, b5⟩
+      simp only [VDefVal.toDefEq]
+      exact congrArg (VExpr.const · _) b4.symm
+  | mutualDef hblk hnd hfr _ hadd _ H ih =>
+    have' le := (VEnv.addConsts_le hadd).trans VEnv.addDefEqs_le
+    rcases insertDefs_find? H.map_wf hfr hnd h with h | ⟨d, hd, rfl, ⟨⟩⟩
+    · obtain ⟨df, e₀, h1', h2', h3', h4'⟩ := ih h
+      exact ⟨df, e₀, le.defeqs h1', h2', h3', h4'⟩
+    · obtain ⟨d', hd', htr, hval⟩ := Lean4Lean.List.Forall₂.forall_exists_l hblk _ hd
+      obtain ⟨⟨-, b2, -⟩, b4⟩ := htr
+      refine ⟨_, _, VEnv.addDefEqs_self hd', ?_, b2.symm, hval⟩
+      simp only [VDefVal.toDefEq]
+      exact congrArg (VExpr.const · _) b4.symm
+  | thm _ _ _ _ h1 H ih =>
+    obtain h | ⟨rfl, ⟨⟩⟩ := this H.map_wf h
+    obtain ⟨df, e₀, h1', h2', h3', h4'⟩ := ih h
+    exact ⟨df, e₀, (VEnv.addConst_le h1).defeqs h1', h2', h3', h4'⟩
+  | «opaque» _ _ _ h1 H ih =>
+    obtain h | ⟨rfl, ⟨⟩⟩ := this H.map_wf h
+    obtain ⟨df, e₀, h1', h2', h3', h4'⟩ := ih h
+    exact ⟨df, e₀, (VEnv.addConst_le h1).defeqs h1', h2', h3', h4'⟩
+  | quot _ h1 H ih =>
+    suffices ∀ {n k ci' P}, (∀ C env, Aligned safety C env → P C env →
+        C.find? name = some (ConstantInfo.defnInfo v)) →
+        ∀ C env, Aligned safety C env → AddQuot1 n k ci' P C env →
+          C.find? name = some (ConstantInfo.defnInfo v) by
+      have hf := this (this <| this <| this (by rintro _ _ _ ⟨rfl, rfl⟩; exact h)) _ _ H.aligned h1
+      obtain ⟨df, e₀, h1', h2', h3', h4'⟩ := ih hf
+      exact ⟨df, e₀, h1.le.defeqs h1', h2', h3', h4'⟩
+    rintro n k ci' P ih C env wf ⟨_, h1, _, h2, h3, h4, h5⟩
+    have wf' := wf.const h3 ⟨by cases safety <;> rfl, h2.2⟩ h4 rfl
+    obtain h | ⟨rfl, ⟨⟩⟩ := this wf.map_wf (ih _ _ wf' h5)
+    exact h
+  | induct _ h1 H ih =>
+    have hle := h1.le
+    obtain ⟨-, -, -, -, hnd, hfr, ⟨_, hp, rfl⟩, -⟩ := h1
+    rcases insertConsts_find?_perm H.map_wf hfr hnd hp h with h | h
+    · obtain ⟨df, e₀, h1', h2', h3', h4'⟩ := ih h
+      exact ⟨df, e₀, hle.defeqs h1', h2', h3', h4'⟩
+    · simp only [inductConsts, List.mem_append, List.mem_map] at h
+      obtain ⟨(⟨_, -, ⟨⟩⟩ | ⟨_, -, ⟨⟩⟩) | ⟨_, -, ⟨⟩⟩, -⟩ := h
+
 nonrec theorem TrEnv.of_value (H : TrEnv safety env venv) (h : env.find? name = some ci)
     (hs : safety ≤ ci.safety) (hv : ci.deltaValue? = some v) :
     TrExpr venv ci.levelParams [] v (.const ci.name (VLevel.params ci.levelParams.length)) :=
