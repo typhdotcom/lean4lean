@@ -140,6 +140,7 @@ theorem VInductDecl.WF.mono (H : decl.WF env) : decl.WF env' where
   level := H.level
   params := H.params.mono henv
   types T hT := (H.types T hT).imp_left (·.mono henv)
+  indices T hT := (H.indices T hT).mono henv
   aux T hT := let ⟨n, h1, h2⟩ := H.aux T hT; ⟨n, h1, fun _ hT' =>
     let ⟨_, h, hle⟩ := VEnv.addConstList_of_le henv hT'; (h2 _ h).mono hle⟩
   ctors _ hT' T hT :=

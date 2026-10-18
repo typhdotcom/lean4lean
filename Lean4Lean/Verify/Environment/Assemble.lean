@@ -128,6 +128,7 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
     (hEl : AddInductive.Elaborates venvAx c.lparams nparams level types d)
     (hInd : ∀ T ∈ d.types, T.WF venvAx d)
     (hLE : elimLevel ≠ .zero → d.LargeElimOK)
+    (hIE : ∀ T ∈ d.types, c.venv.IsTele c.lparams.length d.params.reverse T.indices)
     {env' : Environment} {recs : List RecursorVal}
     (hRc : env'.constants = insertConsts envCtors.constants (recs.map .recInfo))
     (hRnd : ((recs.map ConstantInfo.recInfo).map (·.name)).Nodup)
@@ -156,7 +157,7 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
   have hcvenv : c.venv = ves.venv (inductSafety isUnsafe) := hb.venv
   have hcs : c.safety = inductSafety isUnsafe := hb.safety
   have mapWF : c.env.constants.WF := c.envAt.tr.map_wf
-  have hdecl := AddInductive.decl_WF hT hne hAx henvAx hC hc₂U hR hEl hInd hLE
+  have hdecl := AddInductive.decl_WF hT hne hAx henvAx hC hc₂U hR hEl hInd hIE hLE
   have hU : d.uvars = c.lparams.length := hR.uvars.trans (by rw [hc₂U])
   have hall : d.allTypes = d.types := VInductDecl.allTypes_of_aux hR.aux
   have hAxd : c.venv.addConstList d.typeConsts = some venvAx := by
@@ -336,6 +337,7 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
     (hR : AddInductive.RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel
       recInfos c₃ d)
     (hLE : elimLevel ≠ .zero → d.LargeElimOK)
+    (hIE : ∀ T ∈ d.types, c.venv.IsTele c.lparams.length d.params.reverse T.indices)
     {env' : Environment} {recs : List RecursorVal}
     (hRc : env'.constants = insertConsts envCtors.constants (recs.map .recInfo))
     (hRq : env'.quotInit = env.quotInit)
@@ -357,7 +359,7 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
         recs d.types.zipIdx) :
     FlatResult ves env lparams nparams types isUnsafe false nn env' := by
   obtain ⟨hdecl, hAxd, ⟨_, hstep⟩, hnames⟩ := AddInductive.assemble_step wf hne hT hDc hDnd hDfr
-    hleAx henvAx hAx hC hDCc hDCnd hDCfr hc₂U hR (hc₂ ▸ hc₂U ▸ hR.elaborates) (hc₂ ▸ hR.indices) hLE hRc
+    hleAx henvAx hAx hC hDCc hDCnd hDCfr hc₂U hR (hc₂ ▸ hc₂U ▸ hR.elaborates) (hc₂ ▸ hR.indices) hLE hIE hRc
     hRnd hRfr hRnames hRtr
   have hcp : c.allowPrimitive = false := hT.base.allowPrimitive
   have hcl : c.lparams = lparams := hT.base.lparams

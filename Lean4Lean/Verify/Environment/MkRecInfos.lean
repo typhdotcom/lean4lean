@@ -27,6 +27,11 @@ theorem foldl_addAxiom_constants : ∀ (axs : List AxiomVal) (env : Environment)
   | [], _ => rfl
   | ax :: axs, env => foldl_addAxiom_constants axs (env.add (.axiomInfo ax))
 
+theorem foldl_addAxiom_quotInit : ∀ (axs : List AxiomVal) (env : Environment),
+    (axs.foldl (fun e ax => e.add (.axiomInfo ax)) env).quotInit = env.quotInit
+  | [], _ => rfl
+  | ax :: axs, env => (foldl_addAxiom_quotInit axs (env.add (.axiomInfo ax))).trans rfl
+
 /-- `declareInductiveTypes` refuses the constant a kernel panic returns as a type's name. -/
 theorem declareInductiveTypes.ne_dummy {c : VContext} {stats : InductiveStats}
     {numParams numNested : Nat} {indTypes : Array InductiveType} {isUnsafe : Bool} :
@@ -731,6 +736,12 @@ theorem blockNames_contains (types : List InductiveType) : ∀ t ∈ types,
   rw [← Array.foldl_toList]
   exact ns_foldl_types_contains_mem (s := ({} : NS)) types ⟨t, ht, .inl rfl⟩
 
+/-- A block's indices are a telescope in the environment before the block, unless the block is
+primitive. -/
+def IndicesE (c₀ : VContext) (types : List InductiveType) (d : VInductDecl) : Prop :=
+  (∀ t ∈ types, Environment.primitives.contains t.name = false) →
+    ∀ T ∈ d.types, c₀.venv.IsTele c₀.lparams.length d.params.reverse T.indices
+
 /-- `mkRecInfos` in an environment `envCA` that has the block's constructors as axioms, beside the
 checking environment of `c`: they are new there, the names `X`, unless the block is primitive and
 `c`'s environment has them already. Its constructors' fields are read as `d`'s fields, which `run`
@@ -778,10 +789,14 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
         TrExprS c.venv c.lparams [] ct.type C' →
         envC.constants ct.name = some ⟨c.lparams.length, C'⟩) → venvC ≤ envC)
     {elimLevel : Level} (hE : elimLevel = .zero ∨ ∃ u, elimLevel = .param u ∧ u ∉ c.lparams)
+    (hEsim : (∀ t ∈ types, Environment.primitives.contains t.name = false) →
+      (∀ n, n ∉ types.map (·.name) → c.env.find? n = c₁.env.find? n) ∧
+      (∀ t ∈ types, c₁.env.find? t.name = none) ∧ ConstMap.Closed c₁.env.constants ∧
+      c.env.quotInit = c₁.env.quotInit ∧ c.safety = c₁.safety ∧ c.fuel = c₁.fuel)
     {k : Array RecInfo → M α} {Q}
     (H : ∀ recInfos c' d,
       RecInfosData c nparams types stats params level typeTr isUnsafe elimLevel recInfos c' d →
-      WF c' (k recInfos) Q) :
+      IndicesE c₀ types d → WF c' (k recInfos) Q) :
     WF (c.withEnv envCA venvC hVC hleC)
       (withReader (fun ctx => { ctx with lparams := getRecLevelParams elimLevel ctx.lparams }) <|
         mkRecInfos stats types.toArray elimLevel k) Q := by
@@ -885,10 +900,63 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
     ml := hml
     lpnd := hpnd
     levelWF := by rw [hlp₀]; exact .of_ofLevel hT.resultLevel }
+  -- the context the indices are read off in: the environment before the block, unless the block
+  -- is primitive
+  obtain ⟨cE, XE, hMpE, hEv, hEl, hdeclE, ⟨ρE, hsubE⟩, hcE⟩ : ∃ (cE : VContext) (XE : Name → Prop)
+      (hMpE : Mp.WF cE.venv cE.lparams), cE.venv ≤ c.venv ∧ cE.lparams = c.lparams ∧
+      (∀ (j : Nat) (t : InductiveType) (T' : VExpr), types[j]? = some t →
+        typeTr[j]? = some T' → ∃ idx₀ u,
+        TrExprS cE.venv cE.lparams [] t.type T' ∧ cE.venv.IsType cE.lparams.length [] T' ∧
+        cE.venv.IsDefEqU cE.lparams.length [] T' (.foralls (params ++ idx₀) (.sort u)) ∧
+        u ≈ level ∧ stats.nindices[j]? = some idx₀.length) ∧
+      (∃ ρ, Sub XE pre ρ (cE.small Mp hMpE) cb) ∧
+      ((∀ t ∈ types, Environment.primitives.contains t.name = false) →
+        cE.venv = c₀.venv ∧ cE.lparams = c₀.lparams) := by
+    by_cases hSE : ∀ t ∈ types, Environment.primitives.contains t.name = false
+    · obtain ⟨hEenv, hEfresh, hEclosed, hEq, hEs, hEf⟩ := hEsim hSE
+      have hMpE : Mp.WF c₁.venv c₁.lparams := by
+        rw [← hMpdef, hMpeq]; exact c₁.mlctx_wf.dropN kp hkp
+      refine ⟨c₁, fun n => X n ∨ n ∈ types.map (·.name), hMpE, ?_, hU.symm, ?_, ⟨ρp, ?_⟩,
+        fun _ => ⟨hT.base.venv, hT.base.lparams⟩⟩
+      · rw [hT.base.venv]; exact hle
+      · intro j t T' hj hT'
+        obtain ⟨idx, u, h1, h2, h3, h4, h5, -⟩ := hT.types j t T' hj hT'
+        rw [hT.base.venv, hT.base.lparams]
+        exact ⟨idx, u, h1, h2, h3, h4, h5⟩
+      · exact {
+          lparams := by rw [hsub.lparams]; simp [hU]
+          pre_fresh := by simpa [hU] using hsub.pre_fresh
+          lift := by simpa [hU] using hsub.lift
+          lctx := hsub.lctx
+          venv := by rw [hcbvenv]; exact (hT.base.venv ▸ hle).trans hleC
+          env := fun n hn => by
+            simp only [not_or] at hn
+            rw [hcbenv, hXenv n hn.1]; exact hEenv n hn.2
+          defn := fun n v hv hX => by
+            rcases hX with hX | hX
+            · exact hXdefn n v (hcbenv ▸ hv) hX
+            · obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hX
+              exact hnotDefn t ht v (hcbenv ▸ hv)
+          fresh := fun n hX => by
+            by_cases hn : n ∈ types.map (·.name)
+            · obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn
+              exact ⟨hEfresh t ht, hdummy t ht, hSE t ht⟩
+            · have h := hXfresh n (hX.resolve_right hn)
+              exact ⟨(hEenv n hn) ▸ h.1, h.2⟩
+          closed := hEclosed
+          closedB := hsub.closedB
+          quotInit := hsub.quotInit.trans hEq
+          safety := hsub.safety.trans hEs
+          fuel := hsub.fuel.trans hEf
+          eagerReduce := rfl
+          notKernel := hsub.notKernel }
+    · exact ⟨c, X, hMp, VEnv.LE.rfl, rfl, hRS.decl, ⟨ρp, hsub⟩, fun h => absurd h hSE⟩
   rw [mkRecInfos]
   refine loopInd1.WF (X := X) (hMp := hMp) (VB := venvC) (base := cb.mlctx.vlctx.fvars) hRS
-    (blockNames_contains types) hNM ?cont types.length
-    [] cb (by simp) ⟨⟨ρp, hsub⟩, ⟨ρp, hsub.ext⟩, hcbenv, hcbvenv, hcbap, by simp, by simp, by simp, fun _ _ h => by simp at h⟩
+    (blockNames_contains types) hNM (cE := cE) (XE := XE) (hMpE := hMpE) hEv hEl hdeclE
+    ?cont types.length
+    [] cb (by simp) ⟨⟨ρp, hsub⟩, ⟨ρp, hsub.ext⟩, hcbenv, hcbvenv, hcbap, by simp, by simp, by simp,
+      fun _ _ h => by simp at h, ⟨ρE, hsubE⟩, fun _ _ h => by simp at h⟩
   case cont =>
   intro tds cb₁ htds hI1
   obtain ⟨ρp₁, hsub₁⟩ := hI1.sub
@@ -1731,7 +1799,13 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
       obtain rfl : recInfos[t] = info := by simpa [Array.getElem?_eq_getElem ht] using h1
       rw [hI₂.infoCount t ht, flatCtors_filter_length, hcs]; rfl
     rules := fun q j cv hq => by rw [hrl, hrecL.1, hrecL.2]; exact hrules q j cv hq }
-  exact H recInfos cb₂ d hR
+  refine H recInfos cb₂ d hR fun hSE T hT => ?_
+  obtain ⟨j, hj⟩ := List.mem_iff_getElem?.1 hT
+  obtain ⟨t, T', td, nidx, cs, -, -, h3, -, -, rfl, -⟩ := hdty j T hj
+  obtain ⟨e1, e2⟩ := hcE hSE
+  have := hI1.idxE j td h3
+  rw [e1, e2] at this
+  exact this
 
 
 /-- `mkRecInfos`, in the checking environment with the constructors added as axioms. Its
@@ -1755,10 +1829,14 @@ theorem mkRecInfos.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List Ind
     (henvB : ∀ n ci, c.env.find? n = some ci → n ∉ types.map (·.name) →
       ci.SuppIn fun m => m ∉ types.map (·.name))
     {elimLevel : Level} (hE : elimLevel = .zero ∨ ∃ u, elimLevel = .param u ∧ u ∉ c.lparams)
+    (hEsim : (∀ t ∈ types, Environment.primitives.contains t.name = false) →
+      (∀ n, n ∉ types.map (·.name) → c.env.find? n = c₁.env.find? n) ∧
+      (∀ t ∈ types, c₁.env.find? t.name = none) ∧ ConstMap.Closed c₁.env.constants ∧
+      c.env.quotInit = c₁.env.quotInit ∧ c.safety = c₁.safety ∧ c.fuel = c₁.fuel)
     {k : Array RecInfo → M α} {Q}
     (H : ∀ recInfos c' d,
       RecInfosData c nparams types stats params level typeTr isUnsafe elimLevel recInfos c' d →
-      WF c' (k recInfos) Q) :
+      IndicesE c₀ types d → WF c' (k recInfos) Q) :
     WF c (do withEnv (← declareCtorAxioms types.toArray isUnsafe) <|
       withReader (fun ctx => { ctx with lparams := getRecLevelParams elimLevel ctx.lparams }) <|
       mkRecInfos stats types.toArray elimLevel k) Q := by
@@ -1836,7 +1914,7 @@ theorem mkRecInfos.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List Ind
     (fun n hX => ?_) ?_ (by rw [hCAq]) (fun t ht v hv => ?_)
     (fun j t ct C' hj hct htr => VEnv.addConstList_constants_of_mem hadd
       (hCtorC j t ct C' hj hct htr))
-    (fun envC hle' hcc => VEnv.addConstList_le_of hadd hle' fun p hp => ?_) hE H
+    (fun envC hle' hcc => VEnv.addConstList_le_of hadd hle' fun p hp => ?_) hE hEsim H
   · -- a literal's constants are older than the block
     have hold (n) (hp : Environment.primitives.contains n = true) (h : c.venv.contains n) :
         c₀.venv.contains n := by

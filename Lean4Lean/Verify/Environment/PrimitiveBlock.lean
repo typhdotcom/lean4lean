@@ -745,9 +745,11 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     (fun t ht ct hct' hsp har => ((hnoguard ct (by simpa using hct')) ⟨hsp, har⟩).elim)
     hlit cAx.envAt VEnv.LE.rfl (X := fun _ => False) (fun _ _ => rfl) (fun _ _ _ => id)
     (fun _ h => h.elim) (by rw [hcAxenv]; exact hclosed) rfl hnotDefn hCtorC (fun _ h _ => h)
-    hE.2 ?H
+    hE.2 (fun h => absurd (h type (.head _)) (by
+      rcases hI with h | h <;> rw [h] <;>
+        simp +decide [Environment.primitives, NameSet.ofList, NameSet.contains])) ?H
   case H =>
-  intro recInfos c₃ d hR
+  intro recInfos c₃ d hR _
   have mapWFT : envTypes.constants.WF := by
     rw [hDc]; exact insertConsts_wf c.envAt.tr.map_wf hDfr hDnd
   have mapWFC : envCtors.constants.WF := by
@@ -838,7 +840,8 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     hDc hDnd hDfr hleT (VEnv.WF.addConstList c.envAt.tr.wf (fun p hp => by
       simp only [List.mem_singleton] at hp; subst hp; exact ⟨_, .sort (by simp [VLevel.WF])⟩) hT₁)
     (by rw [hcl]; exact hT₁) (hchk venvT hIT d) hDC'.1 hDC'.2.2.1 hDC'.2.2.2 hcAxl hR (hcl ▸ hEl) hInd
-    (fun h => hE.1 h d hR.compat hR.elaborates) hRc hRnd hRfr hRnames hRtr'
+    (fun h => hE.1 h d hR.compat hR.elaborates) (fun T hT' => by rw [hdi T hT', hdp]; exact .nil)
+    hRc hRnd hRfr hRnames hRtr'
   -- the constants the step adds are the recognizer's, plus the recursor
   obtain ⟨T, hTd⟩ : ∃ T, d.types = [T] :=
     List.length_eq_one_iff.1 (Lean4Lean.List.Forall₂.length_eq hEl₂.types).symm

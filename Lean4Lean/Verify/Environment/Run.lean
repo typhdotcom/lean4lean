@@ -1704,6 +1704,7 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c₃ d)
     (hEl : Elaborates venvAx c.lparams nparams level types d)
     (hInd : ∀ T ∈ d.types, T.WF venvAx d)
+    (hIE : ∀ T ∈ d.types, c.venv.IsTele c.lparams.length d.params.reverse T.indices)
     (hLE : elimLevel ≠ .zero → d.LargeElimOK) :
     d.WF c.venv := by
   have hU : d.uvars = c.lparams.length := hR.uvars.trans (by rw [hc₂U])
@@ -1723,7 +1724,8 @@ theorem decl_WF {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
     obtain ⟨T', hT', e⟩ := List.Forall₂.getElem?_l hR.typeTr hj
     exact ⟨j, t, hj, ht, e ▸ hT'⟩
   have hall : d.allTypes = d.types := VInductDecl.allTypes_of_aux hR.aux
-  refine ⟨fun h => hne ?_, ?_, ?_, fun T hTm => ⟨?_, hR.nested T hTm⟩, fun T hT => ?_,
+  refine ⟨fun h => hne ?_, ?_, ?_, fun T hTm => ⟨?_, hR.nested T hTm⟩,
+    fun T hT => by rw [hU]; exact hIE T (hall ▸ hT), fun T hT => ?_,
     fun env' h T hTm => ?_, fun h T hT => hR.isRecArgs h T (hall ▸ hT),
     fun h => hLE (hR.largeElim.1 h)⟩
   · exact List.eq_nil_of_length_eq_zero ((Lean4Lean.List.Forall₂.length_eq hEl.types).trans (by rw [h]; rfl))

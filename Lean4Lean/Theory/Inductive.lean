@@ -498,6 +498,9 @@ structure VInductDecl.WF (env : VEnv) (d : VInductDecl) : Prop where
   level : d.level.WF d.uvars
   params : env.IsTele d.uvars [] d.params
   types : ∀ T ∈ d.types, env.IsType d.uvars [] T.type ∧ T.nested = none
+  /-- Each type's indices are a telescope over the parameters before the block exists: they do
+  not depend on its types. -/
+  indices : ∀ T ∈ d.allTypes, env.IsTele d.uvars d.params.reverse T.indices
   aux : ∀ T ∈ d.aux, ∃ n, T.nested = some n ∧ ∀ env', env.addConstList d.typeConsts = some env' →
     T.AuxWF env' d n
   ctors : ∀ env', env.addConstList d.typeConsts = some env' →

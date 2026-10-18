@@ -96,6 +96,8 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     rcases insertConsts_find? c.envAt.tr.map_wf hfrA hndA hv with h | ⟨h, -⟩
     · rw [hfrT t ht] at h; cases h
     · obtain ⟨_, -, h⟩ := List.mem_map.1 h; cases h
+  have hfrT' : ∀ t ∈ types, c.env.find? t.name = none := fun t ht => by
+    rw [Kernel.Environment.find?, c.envAt.tr.map_wf.find?'_eq_find?]; exact hfrT t ht
   have hclosed₀ : ConstMap.Closed c.env.constants := by
     rw [hcenv₀]
     exact TrEnv'.closed (wf.tr (safety := .unsafe)) wf.hasPrimitives
@@ -143,7 +145,18 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     (hnames' ▸ hDnd) hnotDefn hclosed
     (by show c.lparams.Nodup; rw [hT.base.lparams]; exact hUs)
     (fun t ht => let ⟨ci, h1, h2⟩ := hmem ht; h2 ▸ hDd ci h1) henvB
-    hE.2 fun recInfos c₃ d hR => ?_
+    hE.2 (fun _ => ⟨fun n hn => ?_, hfrT', hclosed₀, ?_, rfl, rfl⟩) fun recInfos c₃ d hR hIE => ?_
+  · show envAx.find? n = c.env.find? n
+    rw [Kernel.Environment.find?, wfAx.tr.map_wf.find?'_eq_find?, hDax,
+      insertConsts_find?_of_not_mem c.envAt.tr.map_wf hfrA hndA (by
+        simpa [List.map_map, Function.comp_def, ConstantInfo.name, ConstantInfo.toConstantVal,
+          AddInductive.typeAxiom] using hn), Kernel.Environment.find?,
+      c.envAt.tr.map_wf.find?'_eq_find?]
+  · show envAx.quotInit = c.env.quotInit
+    have := AddInductive.foldl_addAxiom_quotInit
+      (types.map (AddInductive.typeAxiom c.lparams isUnsafe)) c.env
+    rw [← hax] at this
+    exact hAxe ▸ this
   have mapWFC : envCtors.constants.WF := by
     rw [hDC.1]; exact insertConsts_wf mapWFT hDC.2.2.2.1 hDC.2.2.1
   refine AddInductive.WF.mono (AddInductive.declareRecursors.WF hR hR.largeElim
@@ -151,7 +164,8 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
   obtain ⟨recs, hRc, hRq, hRnd, hRfr, hRp, hRnames, hRmaj, hRtr⟩ := hRecs
   exact AddInductive.assemble wf hUs hne hT hDc hDnd hDfr hDp hleAx wfAx.tr.wf hAxEq (hC d) hDC.1
     hDC.2.2.1 hDC.2.2.2.1 hDC.2.2.2.2 (c₂ := c.withEnv envAx venvAx wfAx hleAx) rfl rfl hR
-    (fun h => hE.1 h d hR.compat hR.elaborates) hRc
+    (fun h => hE.1 h d hR.compat hR.elaborates)
+    (fun T hT' => by rw [hT.base.venv, hT.base.lparams]; exact hIE hB.nonPrim T hT') hRc
     (hRq.trans (hDC.2.1.trans (hDq.trans (by rw [hT.base.env]; rfl)))) hRnd hRfr
     (fun ci h hp => hR.allowPrimitive ▸ hRp ci h hp) hRnames hRmaj (hR.safety ▸ hRtr)
 

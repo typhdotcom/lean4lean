@@ -658,6 +658,7 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
     level := hd.level
     params := by rw [hparams]; exact hd.params
     types := ?_
+    indices := ?_
     aux := hAux
     ctors := ?_
     isRec := ?_
@@ -674,6 +675,21 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
     refine ⟨?_, rfl⟩
     show venv.IsType d.uvars [] (T.type.restore R ren)
     rw [hTrestore hTm]; exact (hd.types T hTm).1
+  · intro T' hT'
+    rw [restoreNested_allTypes] at hT'
+    obtain ⟨⟨T, j⟩, hm, rfl⟩ := List.mem_map.1 hT'
+    have hj : d.types[j]? = some T := List.mk_mem_zipIdx_iff_getElem?.1 hm
+    have hTm := List.mem_of_getElem? hj
+    have hI := hd.indices T (by rw [allTypes_of_aux H.flat]; exact hTm)
+    have hPP : OnCtx d.params.reverse (venv.IsType d.uvars) := by
+      simpa using hd.params.onCtx trivial
+    have hIC := VEnv.IsTele.constsSat hO hI hPP
+    have hidx : T.indices.map (·.restore R ren) = T.indices :=
+      (List.map_congr_left fun x hx => restore_of_constsSat (hfr (hIC x hx))).trans
+        (List.map_id' _)
+    show venv.IsTele d.uvars (d.restoreNested R ren n ns cname).params.reverse
+      (T.indices.map (·.restore R ren))
+    rw [hparams, hidx]; exact hI
   · intro E₀ hE₀ T' hT'
     rw [restoreNested_allTypes] at hT'
     obtain ⟨⟨T, j⟩, hm, rfl⟩ := List.mem_map.1 hT'
