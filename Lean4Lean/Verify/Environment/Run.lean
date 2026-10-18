@@ -372,7 +372,7 @@ abbrev TypesData (c₀ : VContext) (nparams : Nat) (types : List InductiveType) 
 /-- The first type's loop: each parameter and index becomes a local variable, of the type the
 binder normalizes to with annotations stripped, and the type of the block is, up to defeq, a pi over
 them into the remaining type. -/
-theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.AnnotationsErase)
+theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF)
     {nparams : Nat} {stats₀ : InductiveStats} (h₀ : stats₀.indConsts = #[]) {T' : VExpr}
     {k : Expr → InductiveStats → Nat → M α} {Q}
     (H : ∀ type V (c : VContext) fvs params idx, SameBase c₀ c →
@@ -396,14 +396,19 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.A
   | forallE name dom body bi =>
     rw [checkInductiveTypes.loopInd.loop.eq_2]
     have henv' : c.venv.WF := hc.venv ▸ henv
-    have hann' : c.venv.AnnotationsErase := hc.venv ▸ hann
     have hΔ := c.tc.Δwf
     have hΓ := hΔ.toCtx
     obtain ⟨V₀, hS, hdef⟩ := htr
     cases hS with | forallE hdomT hbodyT hdom hbody => ?_
     rename_i dom' body'
-    rw [Lean.Expr.consumeTypeAnnotations_eq]
-    obtain ⟨ty', hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv' hann' hΔ hdom
+    by_cases hok : c.venv.StripOK dom
+    case neg =>
+      have fail {β} {F : Expr → M β} {Q'} : AddInductive.WF c (consumeTypeAnnotations dom >>= F) Q' :=
+        AddInductive.WF.bind consumeTypeAnnotations.WF fun _ h => absurd h.2 hok
+      split
+      · rw [if_pos (by simp [h₀])]; exact fail
+      · exact fail
+    obtain ⟨ty', hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv' hΔ hok hdom
     have htyT : c.venv.IsType c.lparams.length c.mlctx.vlctx.toCtx ty' :=
       hdomT.defeqU_l henv' hΓ hdefty
     obtain ⟨u, hdomS⟩ := hdomT
@@ -455,6 +460,7 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.A
       have hidx : idx = [] := List.eq_nil_of_length_eq_zero hn
       subst hidx
       rw [if_pos (by simp [h₀])]
+      refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, _⟩ => ?_; subst hx
       refine AddInductive.WF.withLocalDecl hty htyT ?_
       refine step (params' := params ++ [ty']) (idx' := []) ?_ (by simp) (by simp [hi]) rfl
         nofun hlt
@@ -462,6 +468,7 @@ theorem loopFirst.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.A
       simp [← hlen, List.take_of_length_le]
     · rename_i hlt
       have hi' : i = nparams := Nat.le_antisymm hle (Nat.not_lt.1 hlt)
+      refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, _⟩ => ?_; subst hx
       refine AddInductive.WF.withLocalDecl hty htyT ?_
       refine step (params' := params) (idx' := idx ++ [ty']) ?_ (by simp) hi (by simp [hn])
         (fun _ => hi') hle
@@ -485,7 +492,7 @@ abbrev initStats (c : VContext) : InductiveStats :=
 
 /-- The first type of the block. -/
 theorem loopInd0.WF {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.venv.WF)
-    (hann : c₀.venv.AnnotationsErase) {nparams : Nat} {types : List InductiveType}
+    {nparams : Nat} {types : List InductiveType}
     (hne : types ≠ []) {k : InductiveStats → M α} {Q}
     (H : ∀ stats c params level typeTr, TypesSoFar c₀ nparams types 1 stats c params level typeTr →
       WF c (checkInductiveTypes.loopInd nparams types.toArray k 1 stats) Q) :
@@ -503,7 +510,7 @@ theorem loopInd0.WF {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.ve
     change TrExprS c₀.venv c₀.lparams c₀.mlctx.vlctx _ _ at hT'
     rw [h₀] at hT'; exact hT'
   have hnil : VLCtx.WF c₀.venv c₀.lparams.length ([] : VLCtx) := trivial
-  refine loopFirst.WF henv hann (stats₀ := initStats c₀) rfl (T' := T') ?_ _ e₁ 0 0 c₀ [] [] []
+  refine loopFirst.WF henv (stats₀ := initStats c₀) rfl (T' := T') ?_ _ e₁ 0 0 c₀ [] [] []
     T' .refl (by rw [h₀]; exact .nil) rfl rfl nofun (Nat.zero_le _) he₁
     (by have := TrExprS.wf henv.ordered hnil hT'0; exact this)
   intro type V c fvs params idx hc htele hnp htr hT
@@ -558,7 +565,7 @@ theorem getType.WF {c : VContext} {fv : FVarId} {d : LocalDecl}
     h] at e
   cases e; rfl
 
-theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.AnnotationsErase)
+theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
     {nparams : Nat} {stats : InductiveStats} (hne : stats.indConsts.isEmpty = false)
     {Mp : MLCtx} {pfvs : List FVarId} {params : List VExpr} (hMp : Mp.IsTele pfvs params)
     (hpar : stats.params.toList = pfvs.map .fvar) (hnp : params.length = nparams)
@@ -702,10 +709,9 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.A
       have hi' : i = params.length := Nat.le_antisymm hle (Nat.not_lt.1 hlt)
       subst hi'
       rw [List.take_of_length_le (Nat.le_refl _)] at hΔ htele hT
-      rw [Lean.Expr.consumeTypeAnnotations_eq]
+      refine AddInductive.WF.bind consumeTypeAnnotations.WF fun _ ⟨hx, hok⟩ => ?_; subst hx
       have hΓ := hΔs.toCtx
-      obtain ⟨tys, hty, hdefty⟩ :=
-        TrExprS.consumeTypeAnnotations' henv' (hc.venv ▸ hann) hΔs hdom
+      obtain ⟨tys, hty, hdefty⟩ := TrExprS.consumeTypeAnnotations' henv' hΔs hok hdom
       have htyT : c.venv.IsType c.lparams.length Δs.toCtx tys := hdomT.defeqU_l henv' hΓ hdefty
       obtain ⟨u, hdomS⟩ := hdomT
       have hdomty := hdefty.of_l henv' hΓ hdomS
@@ -777,7 +783,7 @@ theorem loopLater.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.A
 in the same universe. Its loop runs in a local context holding the earlier types' indices too, which
 the type does not mention, so each step is read in the context of the parameters and its own
 indices. -/
-theorem loopIndLater.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.AnnotationsErase)
+theorem loopIndLater.WF {c₀ : VContext} (henv : c₀.venv.WF)
     {nparams : Nat} {types : List InductiveType} {k : InductiveStats → M α} {Q}
     {dIdx : Nat} (hd : 1 ≤ dIdx) (hlt : dIdx < types.length) {stats c params level typeTr}
     (hT : TypesSoFar c₀ nparams types dIdx stats c params level typeTr)
@@ -813,7 +819,7 @@ theorem loopIndLater.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.ven
   have hnil : VLCtx.WF c.venv c.lparams.length ([] : VLCtx) := trivial
   have hT'wf := TrExprS.wf henv'.ordered hnil hT'0
   obtain ⟨hkall, hall⟩ := hMp.dropN_all
-  refine loopLater.WF henv hann hne hMp hpar hT.nparams hT.params_tele (T' := T') (M₁ := c.mlctx)
+  refine loopLater.WF henv hne hMp hpar hT.nparams hT.params_tele (T' := T') (M₁ := c.mlctx)
     ⟨k₁, hk₁, rfl⟩ ?_ _ e₁ 0 0 c [] [] T' hc ⟨Nat.zero_le _, rfl⟩ ⟨_, W₀⟩ rfl
     (fun _ => ⟨by simpa [hT.nparams] using hkall, by simp [← hT.nparams, hall]⟩)
     (Nat.zero_le _) rfl nofun (by simpa using VEnv.IsTele.nil) htr₁
@@ -905,7 +911,7 @@ theorem loopIndEnd.WF {c₀ : VContext} {nparams : Nat} {types : List InductiveT
   simp only [h1, h2, h3, h4, beq_self_eq_true, ↓reduceIte]
   exact H _ _ _ _ _ hT
 
-theorem loopIndFrom.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv.AnnotationsErase)
+theorem loopIndFrom.WF {c₀ : VContext} (henv : c₀.venv.WF)
     {nparams : Nat} {types : List InductiveType} {k : InductiveStats → M α} {Q}
     (H : ∀ stats c params level typeTr, TypesData c₀ nparams types stats c params level typeTr →
       WF c (k stats) Q) :
@@ -917,20 +923,20 @@ theorem loopIndFrom.WF {c₀ : VContext} (henv : c₀.venv.WF) (hann : c₀.venv
     obtain rfl : dIdx = types.length := by omega
     exact loopIndEnd.WF hT H
   | m + 1, dIdx, hm, hd, _, _, _, _, _, _, hT =>
-    loopIndLater.WF henv hann hd (by omega) hT fun _ _ _ hT' =>
-      loopIndFrom.WF henv hann H m (dIdx + 1) (by omega) (by omega) (by omega) _ _ _ _ _ hT'
+    loopIndLater.WF henv hd (by omega) hT fun _ _ _ hT' =>
+      loopIndFrom.WF henv H m (dIdx + 1) (by omega) (by omega) (by omega) _ _ _ _ _ hT'
 
 /-- `checkInductiveTypes` from the empty local context. -/
 theorem checkInductiveTypes.WF {c₀ : VContext} (h₀ : c₀.mlctx = .nil) (henv : c₀.venv.WF)
-    (hann : c₀.venv.AnnotationsErase) {nparams : Nat} {types : List InductiveType}
+    {nparams : Nat} {types : List InductiveType}
     (hne : types ≠ []) {k : InductiveStats → M α} {Q}
     (H : ∀ stats c params level typeTr, TypesData c₀ nparams types stats c params level typeTr →
       WF c (k stats) Q) :
     WF c₀ (checkInductiveTypes nparams types.toArray k) Q := by
   unfold checkInductiveTypes
   refine WF.bind WF.read fun _ hr => ?_; subst hr
-  exact loopInd0.WF h₀ henv hann hne fun _ _ _ _ _ hT =>
-    loopIndFrom.WF henv hann H _ 1 rfl (Nat.le_refl _)
+  exact loopInd0.WF h₀ henv hne fun _ _ _ _ _ hT =>
+    loopIndFrom.WF henv H _ 1 rfl (Nat.le_refl _)
       (List.length_pos_iff.2 hne) _ _ _ _ _ hT
 
 /-- The records `declareInductiveTypes` adds. -/
@@ -1347,7 +1353,7 @@ constructors' fields are read as `d`'s fields, which `run` then builds the recur
 theorem mkRecInfos.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c₁ params level typeTr)
     (hc : c.mlctx = c₁.mlctx) (hU : c.lparams = c₁.lparams) (hle : c₀.venv ≤ c.venv)
-    (henv : c.venv.WF) (hann : c.venv.AnnotationsErase) {isUnsafe : Bool}
+    (henv : c.venv.WF) {isUnsafe : Bool}
     (hp : c.allowPrimitive = false)
     (hC : ∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
       ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors, ∀ nidx,

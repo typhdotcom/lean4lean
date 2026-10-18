@@ -55,6 +55,9 @@ def checkName (env : Environment) (n : Name)
     (allowPrimitive := false) : Except Exception Unit := do
   if env.contains n then
     throw <| .alreadyDeclared env n
+  -- A panic in the kernel returns this constant, which must stay undeclared to mean nothing.
+  if n == `_inhabitedExprDummy then
+    throw <| .other s!"invalid declaration name {n}, the kernel reserves it"
   unless allowPrimitive do
     if primitives.contains n then
       throw <| .other s!"unexpected use of primitive name {n}"

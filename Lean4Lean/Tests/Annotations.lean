@@ -5,7 +5,8 @@ A recursive field whose type normalizes to the block only through a type annotat
 the identity. `isRecArg` sees the field as recursive by normalizing its declared type, while the
 inductive hypothesis is built from the type with the annotation stripped by name, which does not
 end in the block. Lean's kernel builds the hypothesis anyway, at the first type of the block, and
-accepts an ill-typed recursor; lean4lean rejects the block (see `divergences.md`).
+accepts an ill-typed recursor. Lean4lean checks each annotation it strips and rejects the block
+(see `divergences.md`).
 
 This needs a prelude whose `optParam` keeps its second argument rather than its first, so the
 environment is assembled from scratch.
@@ -50,7 +51,7 @@ private def prefixDecls : List Declaration :=
   | .ok _ => throwError "lean4lean accepted the block"
   | .error e =>
     let msg ← (e.toMessageData {}).toString
-    unless (msg.splitOn "invalid recursive argument").length > 1 do
+    unless (msg.splitOn "does not return its first argument").length > 1 do
       throwError "lean4lean rejected the block for the wrong reason: {msg}"
 
 end Lean4Lean.Tests.Annotations

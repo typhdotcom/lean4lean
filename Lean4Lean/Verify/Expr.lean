@@ -1203,3 +1203,117 @@ theorem instantiate1_eqv {e₁ e₂ : Expr} :
 theorem instantiateList_eqv {e₁ e₂ : Expr} (h : e₁ == e₂) :
     e₁.instantiateList as k == e₂.instantiateList as k := by
   induction as generalizing e₁ e₂ <;> simp [instantiate1_eqv, *]
+
+/-- Whether a subterm of `e`, `e` included, satisfies `p`. -/
+def anySub (p : Expr → Bool) : Expr → Bool
+  | e@(.app f a) => p e || f.anySub p || a.anySub p
+  | e@(.lam _ t b _) | e@(.forallE _ t b _) => p e || t.anySub p || b.anySub p
+  | e@(.letE _ t v b _) => p e || t.anySub p || v.anySub p || b.anySub p
+  | e@(.mdata _ b) | e@(.proj _ _ b) => p e || b.anySub p
+  | e => p e
+
+/-- What `stripAnnotations` returns when the annotations check: Lean's `consumeTypeAnnotations`,
+without `partial`. -/
+def consumeTypeAnnotations' : Expr → Expr
+  | .app (.app (.const ``optParam _) A) _ => A.consumeTypeAnnotations'
+  | .app (.app (.const ``autoParam _) A) _ => A.consumeTypeAnnotations'
+  | .app (.const ``outParam _) A => A.consumeTypeAnnotations'
+  | .app (.const ``semiOutParam _) A => A.consumeTypeAnnotations'
+  | e => e
+
+end Expr
+end Lean
+
+namespace Lean4Lean
+open Lean
+
+theorem anySub_eqv {p : Expr → Bool} (hp : ∀ a b : Expr, a == b → p a = p b) :
+    ∀ {a b : Expr}, a == b → a.anySub p = b.anySub p := by
+  intro a
+  induction a <;> intro b h <;> have hh := hp _ _ h <;> cases b <;>
+    simp only [(· == ·), Expr.eqv_eq, Expr.eqv', Bool.and_eq_true] at h <;>
+    simp only [Expr.anySub, hh] <;> (try simp at h) <;> (try contradiction)
+  · rename_i ih1 ih2 _ _; rw [ih1 (by simpa [(· == ·)] using h.1), ih2 (by simpa [(· == ·)] using h.2)]
+  · rename_i ih1 ih2 _ _ _ _; rw [ih1 (by simpa [(· == ·)] using h.1), ih2 (by simpa [(· == ·)] using h.2)]
+  · rename_i ih1 ih2 _ _ _ _; rw [ih1 (by simpa [(· == ·)] using h.1), ih2 (by simpa [(· == ·)] using h.2)]
+  · rename_i ih1 ih2 ih3 _ _ _ _ _
+    rw [ih1 (by simpa [(· == ·)] using h.1.1.1), ih2 (by simpa [(· == ·)] using h.1.1.2),
+      ih3 (by simpa [(· == ·)] using h.1.2)]
+  · rename_i ih _ _; rw [ih (by simpa [(· == ·)] using h.1)]
+  · rename_i ih _ _ _; rw [ih (by simpa [(· == ·)] using h.1.1)]
+
+/-- What `anySubterm` keeps: the subterms it has searched have no match. -/
+def anySubterm.Inv (p : Expr → Bool) (S : Std.HashSet Expr) : Prop :=
+  ∀ x, S.contains x → x.anySub p = false
+
+theorem anySubterm.go_spec {p : Expr → Bool} (hp : ∀ a b : Expr, a == b → p a = p b) :
+    ∀ (e : Expr) (S : Std.HashSet Expr), anySubterm.Inv p S →
+      (Expr.anySubterm.go p e S).1 = e.anySub p ∧ anySubterm.Inv p (Expr.anySubterm.go p e S).2 := by
+  have finish {e : Expr} {r : Bool × Std.HashSet Expr} (h1 : r.1 = e.anySub p)
+      (h2 : anySubterm.Inv p r.2) :
+      (if r.1 = true then r else (false, r.2.insert e)).1 = e.anySub p ∧
+      anySubterm.Inv p (if r.1 = true then r else (false, r.2.insert e)).2 := by
+    split
+    · exact ⟨h1, h2⟩
+    · rename_i hr
+      refine ⟨by simp at hr; rw [← h1, hr], fun x hx => ?_⟩
+      rw [Std.HashSet.contains_insert] at hx
+      rcases Bool.or_eq_true_iff.1 hx with hx | hx
+      · rw [← anySub_eqv hp hx, ← h1]; simpa using hr
+      · exact h2 x hx
+  have orElse {x : Expr} {S} {k : Std.HashSet Expr → Bool × Std.HashSet Expr} {b : Bool}
+      (hx : ∀ S, anySubterm.Inv p S →
+        (Expr.anySubterm.go p x S).1 = x.anySub p ∧ anySubterm.Inv p (Expr.anySubterm.go p x S).2)
+      (hk : ∀ S, anySubterm.Inv p S → (k S).1 = b ∧ anySubterm.Inv p (k S).2)
+      (hS : anySubterm.Inv p S) :
+      (let r := Expr.anySubterm.go p x S; if r.1 then r else k r.2).1 = (x.anySub p || b) ∧
+      anySubterm.Inv p (let r := Expr.anySubterm.go p x S; if r.1 then r else k r.2).2 := by
+    obtain ⟨h1, h2⟩ := hx S hS
+    dsimp only; split
+    · rename_i h; exact ⟨by rw [← h1, h]; simp, h2⟩
+    · rename_i h
+      obtain ⟨h3, h4⟩ := hk _ h2
+      refine ⟨?_, h4⟩
+      rw [h3, ← h1]; simp at h; simp [h]
+  have pre {e : Expr} {S} {k : Std.HashSet Expr → Bool × Std.HashSet Expr}
+      (hS : anySubterm.Inv p S)
+      (H : p e = false → (k S).1 = e.anySub p ∧ anySubterm.Inv p (k S).2) :
+      (Expr.anySubterm.visit p e S k).1 = e.anySub p ∧
+      anySubterm.Inv p (Expr.anySubterm.visit p e S k).2 := by
+    unfold Expr.anySubterm.visit
+    split
+    · rename_i hc; exact ⟨(hS _ hc).symm, hS⟩
+    split
+    · rename_i hpe; exact ⟨by cases e <;> simp [Expr.anySub, hpe], hS⟩
+    · rename_i hpe; simp at hpe; obtain ⟨h1, h2⟩ := H hpe; exact finish h1 h2
+  intro e
+  induction e with
+  | app f a ih1 ih2 =>
+    intro S hS; rw [Expr.anySubterm.go]
+    refine pre hS fun hpe => ?_
+    have := orElse ih1 ih2 hS
+    simpa [Expr.anySub, hpe] using this
+  | lam _ t b _ ih1 ih2 | forallE _ t b _ ih1 ih2 =>
+    intro S hS; rw [Expr.anySubterm.go]
+    refine pre hS fun hpe => ?_
+    have := orElse ih1 ih2 hS
+    simpa [Expr.anySub, hpe] using this
+  | letE _ t v b _ ih1 ih2 ih3 =>
+    intro S hS; rw [Expr.anySubterm.go]
+    refine pre hS fun hpe => ?_
+    have := orElse ih1 (fun S hS => orElse ih2 ih3 hS) hS
+    simpa [Expr.anySub, hpe, Bool.or_assoc] using this
+  | mdata _ b ih | proj _ _ b ih =>
+    intro S hS; rw [Expr.anySubterm.go]
+    refine pre hS fun hpe => ?_
+    simpa [Expr.anySub, hpe] using ih S hS
+  | _ =>
+    intro S hS; rw [Expr.anySubterm.go]
+    · exact ⟨by simp [Expr.anySub], hS⟩
+    all_goals intros; contradiction
+
+theorem anySubterm_eq {p : Expr → Bool} (hp : ∀ a b : Expr, a == b → p a = p b) (e : Expr) :
+    e.anySubterm p = e.anySub p :=
+  (anySubterm.go_spec hp e {} (fun x h => by simp at h)).1
+
+end Lean4Lean

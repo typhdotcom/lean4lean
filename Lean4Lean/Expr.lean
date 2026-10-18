@@ -1,4 +1,5 @@
 import Lean.Environment
+import Std.Data.HashSet
 
 namespace Lean
 namespace Expr
@@ -8,6 +9,26 @@ def prop : Expr := .sort .zero
 def arrow (d b : Expr) : Expr := .forallE `a d b .default
 
 def lam0 (ty e : Expr) : Expr := .lam `_ ty e default
+
+/-- Whether a subterm of `e` satisfies `p`, searching each distinct compound subterm once: the set
+holds compound subterms already searched without a match. `p` should not tell apart terms that are
+`==`. This is `Expr.find?` for the kernel's purposes, without native code. -/
+def anySubterm (p : Expr → Bool) (e : Expr) : Bool := (go p e {}).1
+where
+  go (p : Expr → Bool) (e : Expr) (S : Std.HashSet Expr) : Bool × Std.HashSet Expr :=
+    match e with
+    | .app f a => visit p e S fun S => let r := go p f S; if r.1 then r else go p a r.2
+    | .lam _ t b _ | .forallE _ t b _ =>
+      visit p e S fun S => let r := go p t S; if r.1 then r else go p b r.2
+    | .letE _ t v b _ => visit p e S fun S =>
+      let r := go p t S; if r.1 then r else let r := go p v r.2; if r.1 then r else go p b r.2
+    | .mdata _ b | .proj _ _ b => visit p e S fun S => go p b S
+    | _ => (p e, S)
+  @[inline] visit (p : Expr → Bool) (e : Expr) (S : Std.HashSet Expr)
+      (k : Std.HashSet Expr → Bool × Std.HashSet Expr) : Bool × Std.HashSet Expr :=
+    if S.contains e then (false, S) else if p e then (true, S) else
+    let r := k S
+    if r.1 then r else (false, r.2.insert e)
 
 namespace ReplaceImpl
 

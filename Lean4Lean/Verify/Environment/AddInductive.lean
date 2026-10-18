@@ -63,42 +63,6 @@ theorem ofLevel_isAlwaysZero_iff (h : VLevel.ofLevel Us u = some u') :
   cases e : u.isAlwaysZero; · exact (eval_ones_of_not_isAlwaysZero h e (VLevel.equiv_def.1 H _)).elim
   rfl
 
-/-- The type annotations `consumeTypeAnnotations` strips by name, each with its arity and the
-argument it keeps. -/
-def typeAnnotations : List (Name × Nat × Nat) :=
-  [(``optParam, 2, 0), (``autoParam, 2, 0), (``outParam, 1, 0), (``semiOutParam, 1, 0)]
-
-/-- The type annotations are identities wherever they are well typed. The kernel opens
-parameters, indices and fields at their stripped types, so a recursor built from them is only
-well typed if this holds. Lean's prelude defines them so; neither kernel checks it. -/
-def VEnv.AnnotationsErase (env : VEnv) : Prop :=
-  ∀ n k i, (n, k, i) ∈ typeAnnotations →
-    ∀ U Γ ls args, OnCtx Γ (env.IsType U) → args.length = k →
-      VExpr.WF env U Γ (.appN (.const n ls) args) →
-      env.IsDefEqU U Γ (.appN (.const n ls) args) (args.getD i default)
-
-/-- `n` is undeclared, or declared with a rule making it the function returning the `i`th of its
-`k` arguments: what a definition `fun x₁ .. xₖ => xᵢ` contributes. -/
-def VEnv.DefinesProjection (env : VEnv) (n : Name) (k i : Nat) : Prop :=
-  ∀ ci, env.constants n = some ci → ∃ As, As.length = k ∧
-    env.defeqs ⟨ci.uvars, .const n (VLevel.params ci.uvars), .lams As (.bvar (k - 1 - i)), ci.type⟩
-
-/-- Each type annotation is undeclared, or defined as Lean's prelude defines it. Unlike
-`AnnotationsErase`, this survives extending the environment by constants with other names. -/
-def VEnv.AnnotationsDefine (env : VEnv) : Prop :=
-  ∀ n k i, (n, k, i) ∈ typeAnnotations → env.DefinesProjection n k i
-
-theorem VEnv.AnnotationsDefine.mono {env env' : VEnv} (h : env.AnnotationsDefine) (hle : env ≤ env')
-    (hnew : ∀ n k i, (n, k, i) ∈ typeAnnotations → env.constants n = none →
-      env'.constants n = none) : env'.AnnotationsDefine := by
-  intro n k i hmem ci hci
-  cases hc : env.constants n with
-  | none => rw [hnew n k i hmem hc] at hci; cases hci
-  | some ci₀ =>
-    cases (hle.constants hc).symm.trans hci
-    obtain ⟨As, h1, h2⟩ := h n k i hmem _ hc
-    exact ⟨As, h1, hle.defeqs h2⟩
-
 theorem VEnv.HasType.lams_ctx {env : VEnv} (henv : env.Ordered) :
     ∀ {Γ As e T}, OnCtx Γ (env.IsType U) → env.HasType U Γ (.lams As e) T →
       OnCtx (As.reverse ++ Γ) (env.IsType U)
@@ -107,28 +71,129 @@ theorem VEnv.HasType.lams_ctx {env : VEnv} (henv : env.Ordered) :
     obtain ⟨hA, _, hb⟩ := h.lam_inv henv hΓ
     simpa using VEnv.HasType.lams_ctx henv (Γ := A :: Γ) ⟨hΓ, hA⟩ hb
 
-/-- Annotations defined as Lean's prelude defines them erase. -/
-theorem VEnv.AnnotationsDefine.erase {env : VEnv} (henv : env.WF) (H : env.AnnotationsDefine) :
-    env.AnnotationsErase := by
-  intro n k i hmem U Γ ls args hΓ hlen hwf
+/-- `n` returns the `i`th of its `k` arguments wherever it is applied well typed. -/
+def VEnv.Erases (env : VEnv) (n : Name) (k i : Nat) : Prop :=
+  ∀ U Γ ls args, OnCtx Γ (env.IsType U) → args.length = k →
+    VExpr.WF env U Γ (.appN (.const n ls) args) →
+    env.IsDefEqU U Γ (.appN (.const n ls) args) (args.getD i default)
+
+/-- `n` is, up to definitional equality, the function of its `k` arguments returning the first:
+what `AddInductive.checkTypeAnnotation` checks of a type annotation's definition. -/
+def VEnv.ReturnsFirst (env : VEnv) (n : Name) (k : Nat) : Prop :=
+  ∀ ci, env.constants n = some ci → ∃ As T, As.length = k ∧
+    env.IsDefEq ci.uvars [] (.const n (VLevel.params ci.uvars)) (.lams As (.bvar (k - 1))) T
+
+theorem VEnv.ReturnsFirst.erases {env : VEnv} (henv : env.WF) (hk : 0 < k)
+    (H : env.ReturnsFirst n k) :
+    env.Erases n k 0 := by
+  intro U Γ ls args hΓ hlen hwf
   have ⟨_, hc⟩ := VExpr.WF.appN_inv henv.ordered hΓ hwf
   obtain ⟨ci, hci, hls, hlen'⟩ := VEnv.HasType.const_inv henv.ordered hΓ hc
-  obtain ⟨As, hAs, hdf⟩ := H n k i hmem ci hci
-  have hrule := VEnv.IsDefEq.extra (Γ := Γ) hdf hls hlen'
+  obtain ⟨As, T, hAs, hdf⟩ := H ci hci
+  have hrule := (hdf.instL hls).weak0 henv.ordered (Γ := Γ)
   simp only [VExpr.instL, VLevel.inst_map_id hlen', VExpr.instL_lams] at hrule
   have h1 := VEnv.IsDefEqU.appN henv hΓ ⟨_, hrule⟩ hwf
-  have hwf2 : VExpr.WF env U Γ ((VExpr.lams (As.map (·.instL ls)) (.bvar (k - 1 - i))).appN args) :=
+  have hwf2 : VExpr.WF env U Γ ((VExpr.lams (As.map (·.instL ls)) (.bvar (k - 1))).appN args) :=
     let ⟨_, h⟩ := h1; ⟨_, h.hasType.2⟩
-  have hdfwf := henv.ordered.defEqWF hdf
-  have hctx := (VEnv.HasType.lams_ctx henv.ordered trivial hdfwf.2).instL hls
+  have hctx := (VEnv.HasType.lams_ctx henv.ordered trivial hdf.hasType.2).instL hls
   obtain ⟨-, h2, -⟩ := VExpr.lams_appN henv hΓ (As := As.map (·.instL ls)) (Γ := [])
     (by simpa [List.map_reverse] using hctx) (σ := .id) .nil (vs := args) (by simp [hlen, hAs])
     (by simpa using hwf2)
   have h3 := h1.trans henv hΓ (by simpa using h2)
-  simp only [typeAnnotations, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hmem
-  obtain ⟨-, rfl, rfl⟩ | ⟨-, rfl, rfl⟩ | ⟨-, rfl, rfl⟩ | ⟨-, rfl, rfl⟩ := hmem <;>
-  · rcases args with _ | ⟨a, _ | ⟨b, _ | ⟨c, _⟩⟩⟩ <;>
-      first | (simp at hlen; done) | simpa [VExpr.subst, VExpr.Subst.cons] using h3
+  obtain _ | ⟨a, rest⟩ := args
+  · subst hlen; cases hk
+  · subst hlen
+    have : VExpr.Subst.consN .id (a :: rest) rest.length = a := by
+      simpa [VExpr.Subst.cons] using VExpr.Subst.consN_add rest (VExpr.Subst.id.cons a) 0
+    simpa [VExpr.subst, this] using h3
+
+/-- What the kernel checked of the type annotations it stripped from `e`'s head: each returns the
+type it annotates. -/
+def VEnv.StripOK (env : VEnv) : Expr → Prop
+  | .app (.app (.const ``optParam _) A) _ => env.Erases ``optParam 2 0 ∧ env.StripOK A
+  | .app (.app (.const ``autoParam _) A) _ => env.Erases ``autoParam 2 0 ∧ env.StripOK A
+  | .app (.const ``outParam _) A => env.Erases ``outParam 1 0 ∧ env.StripOK A
+  | .app (.const ``semiOutParam _) A => env.Erases ``semiOutParam 1 0 ∧ env.StripOK A
+  | _ => True
+
+/-- A local context of `d` lambda-bound variables without free variables, as a closed term's
+binders translate to. -/
+def VLCtx.Lams (Δ : VLCtx) : Prop := ∀ p ∈ Δ, p.1 = none ∧ ∃ A, p.2 = .vlam A
+
+theorem VLCtx.Lams.find?_bvar : ∀ {Δ : VLCtx}, Δ.Lams → ∀ i, i < Δ.length →
+    ∃ A, Δ.find? (.inl i) = some (.bvar i, A)
+  | [], _, _, h => nomatch h
+  | (o, d) :: Δ, H, i, hi => by
+    obtain ⟨rfl, A, rfl⟩ := H _ (.head _)
+    cases i with
+    | zero => exact ⟨_, rfl⟩
+    | succ i =>
+      obtain ⟨B, hB⟩ := find?_bvar (fun p hp => H p (.tail _ hp)) i (by simpa using hi)
+      refine ⟨B.liftN 1, ?_⟩
+      simp [VLCtx.find?, VLCtx.next, hB, VLocalDecl.depth, VExpr.liftN]
+
+/-- A closed term the kernel checked returns its first argument translates to a function that
+does. -/
+theorem TrExprS.returnsFirstArg {env : VEnv} {Us : List Name} :
+    ∀ {k d : Nat} {Δ : VLCtx} {v : Expr} {e : VExpr}, Δ.Lams → Δ.length = d →
+    AddInductive.returnsFirstArg d k v = true → TrExprS env Us Δ v e →
+    ∃ As, As.length = k ∧ e = .lams As (.bvar (d + k - 1))
+  | k + 1, d, Δ, .lam _ ty b _, e, hΔ, hd, hv, H => by
+    let .lam (ty' := ty') (body' := b') _ _ hb := H
+    obtain ⟨As, hAs, rfl⟩ := TrExprS.returnsFirstArg (k := k) (d := d + 1)
+      (fun p hp => by
+        rcases List.mem_cons.1 hp with rfl | hp
+        · exact ⟨rfl, _, rfl⟩
+        · exact hΔ p hp) (by simp [hd]) (by simpa [AddInductive.returnsFirstArg] using hv) hb
+    exact ⟨ty' :: As, by simp [hAs], by simp [VExpr.lams]⟩
+  | 0, d, Δ, .bvar i, e, hΔ, hd, hv, H => by
+    simp [AddInductive.returnsFirstArg] at hv
+    let .bvar h := H
+    obtain ⟨A, hA⟩ := hΔ.find?_bvar i (by omega)
+    rw [hA] at h; cases h
+    exact ⟨[], rfl, by simp [VExpr.lams]; omega⟩
+  | 0, _, _, .lam .., _, _, _, hv, _ | k + 1, _, _, .bvar _, _, _, _, hv, _ => by
+    simp [AddInductive.returnsFirstArg] at hv
+  | _, _, _, .fvar _, _, _, _, hv, _ | _, _, _, .mvar _, _, _, _, hv, _
+  | _, _, _, .sort _, _, _, _, hv, _ | _, _, _, .const .., _, _, _, hv, _
+  | _, _, _, .app .., _, _, _, hv, _ | _, _, _, .forallE .., _, _, _, hv, _
+  | _, _, _, .letE .., _, _, _, hv, _ | _, _, _, .lit _, _, _, _, hv, _
+  | _, _, _, .mdata .., _, _, _, hv, _ | _, _, _, .proj .., _, _, _, hv, _ => by
+    simp [AddInductive.returnsFirstArg] at hv
+
+theorem AddInductive.checkTypeAnnotation.WF {env : Environment} {venv : VEnv}
+    (H : TrEnv safety env venv) :
+    (checkTypeAnnotation env n k).WF fun _ => venv.ReturnsFirst n k := by
+  unfold checkTypeAnnotation
+  split <;> [skip; exact .throw]
+  rename_i hv
+  split <;> [skip; exact .throw]
+  rename_i hr
+  refine .pure fun ci hci => ?_
+  have hC : env.constants.find? n = _ := (H.map_wf.find?'_eq_find? _).symm.trans hv
+  obtain ⟨hname, hTr⟩ := H.find?_uniq hv hci
+  have := TrEnv'.of_value H hC DefinitionSafety.le_safe rfl
+  obtain ⟨e₂, he₂, hdf⟩ := this
+  obtain ⟨As, hAs, rfl⟩ := TrExprS.returnsFirstArg (Δ := []) (fun _ h => nomatch h) rfl hr he₂
+  obtain ⟨T, hdf⟩ := hdf
+  refine ⟨As, T, hAs, ?_⟩
+  rw [← hTr.2.1, ← hname]
+  simpa [VLCtx.toCtx] using hdf.symm
+
+/-- Stripping succeeds only with each annotation it strips checked, and then strips as
+`consumeTypeAnnotations'` does. -/
+theorem AddInductive.stripAnnotations.WF {env : Environment} {venv : VEnv}
+    (H : TrEnv safety env venv) (henv : venv.WF) {e : Expr} :
+    (stripAnnotations env e).WF fun e' => e' = e.consumeTypeAnnotations' ∧ venv.StripOK e := by
+  induction e using Lean.Expr.consumeTypeAnnotations'.induct with
+  | case1 _ A _ ih | case2 _ A _ ih | case3 _ A ih | case4 _ A ih =>
+    simp only [stripAnnotations]
+    refine (checkTypeAnnotation.WF H).bind fun _ h => ih.mono fun e' ⟨h1, h2⟩ => ?_
+    exact ⟨by simp [h1, Lean.Expr.consumeTypeAnnotations'], h.erases henv (by decide), h2⟩
+  | case5 e h1 h2 h3 h4 =>
+    rw [stripAnnotations.eq_5 env e h1 h2 h3 h4]
+    refine .pure ⟨(Lean.Expr.consumeTypeAnnotations'.eq_5 e h1 h2 h3 h4).symm, ?_⟩
+    rw [VEnv.StripOK.eq_5 venv e h1 h2 h3 h4]; trivial
 
 open private Lean.Kernel.Environment.add from Lean.Environment
 
@@ -163,24 +228,23 @@ theorem addChecked.WF {env : Environment} (mapWF : env.constants.WF) (allow : Bo
       exact this
     · simp only [List.map_cons, List.mem_cons, forall_eq_or_imp]; exact ⟨hp, h5⟩
 
-variable! (henv : VEnv.WF env) (hann : env.AnnotationsErase)
-  {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ) in
-/-- Stripping type annotations does not change a translation, up to defeq. -/
-theorem TrExprS.consumeTypeAnnotations' {e e'} (H : TrExprS env Us Δ e e') :
+variable! (henv : VEnv.WF env) {Us : List Name} (hΔ : VLCtx.WF env Us.length Δ) in
+/-- Stripping type annotations the kernel checked does not change a translation, up to defeq. -/
+theorem TrExprS.consumeTypeAnnotations' {e e'} (hok : env.StripOK e) (H : TrExprS env Us Δ e e') :
     ∃ e'', TrExprS env Us Δ e.consumeTypeAnnotations' e'' ∧
       env.IsDefEqU Us.length Δ.toCtx e' e'' := by
   have hΓ := hΔ.toCtx
   induction e using Lean.Expr.consumeTypeAnnotations'.induct generalizing e' with
   | case1 _ A _ ih | case2 _ A _ ih =>
     cases H with | app h1 h2 hf _ => cases hf with | app _ _ hc hA => cases hc with | const =>
-    have := hann _ 2 0 (by simp [typeAnnotations]) _ _ _ [_, _] hΓ rfl ⟨_, h1.app h2⟩
-    obtain ⟨A'', h3, h4⟩ := ih hA
+    have := hok.1 _ _ _ [_, _] hΓ rfl ⟨_, h1.app h2⟩
+    obtain ⟨A'', h3, h4⟩ := ih hok.2 hA
     exact ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
       this.trans henv hΓ (by simpa using h4)⟩
   | case3 _ A ih | case4 _ A ih =>
     cases H with | app h1 h2 hc hA => cases hc with | const =>
-    have := hann _ 1 0 (by simp [typeAnnotations]) _ _ _ [_] hΓ rfl ⟨_, h1.app h2⟩
-    obtain ⟨A'', h3, h4⟩ := ih hA
+    have := hok.1 _ _ _ [_] hΓ rfl ⟨_, h1.app h2⟩
+    obtain ⟨A'', h3, h4⟩ := ih hok.2 hA
     exact ⟨A'', by simpa [Lean.Expr.consumeTypeAnnotations'] using h3,
       this.trans henv hΓ (by simpa using h4)⟩
   | case5 e h1 h2 h3 h4 =>
@@ -244,6 +308,12 @@ theorem VState.WF.emptyM (c : VContext) : TypeChecker.VState.WF c.tc {} where
   whnfCore_wf := .empty
   whnf_wf := .empty
   unfold_wf _ := by simp
+
+/-- Stripping a binder type's annotations, each checked to return the type it annotates. -/
+theorem consumeTypeAnnotations.WF {c : VContext} {e : Expr} :
+    WF c (consumeTypeAnnotations e) fun e' =>
+      e' = e.consumeTypeAnnotations' ∧ c.venv.StripOK e :=
+  stripAnnotations.WF c.envAt.tr c.envAt.tr.wf
 
 /-- A type checker call, run over the kernel's local context. -/
 theorem WF.liftTC {c : VContext} {x : TypeChecker.M α} {Q}

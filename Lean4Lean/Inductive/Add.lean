@@ -11,6 +11,36 @@ open private Lean.Kernel.Environment.add from Lean.Environment
 namespace AddInductive
 open TypeChecker
 
+/-- `v`, under `depth` binders already passed, is a function of `k` more arguments returning the
+first of all of them. -/
+def returnsFirstArg (depth : Nat) : Nat → Expr → Bool
+  | k + 1, .lam _ _ b _ => returnsFirstArg (depth + 1) k b
+  | 0, .bvar i => i + 1 == depth
+  | _, _ => false
+
+/-- The type annotation `n` takes `k` arguments, and the environment defines it as returning the
+first, as Lean's prelude does. -/
+def checkTypeAnnotation (env : Environment) (n : Name) (k : Nat) : Except Exception Unit := do
+  let some (.defnInfo { value, safety := .safe, .. }) := env.find? n
+    | throw <| .other s!"type annotation '{n}' is not a safe definition"
+  unless returnsFirstArg 0 k value do
+    throw <| .other s!"type annotation '{n}' does not return its first argument"
+
+/-- `e` with the type annotations at its head (`optParam`, `autoParam`, `outParam`,
+`semiOutParam`) stripped, as the block's binders are opened. Each is checked to return the type it
+annotates, so stripping keeps the binder's type up to definitional equality; Lean's kernel strips
+them by name (see `divergences.md`). -/
+def stripAnnotations (env : Environment) : Expr → Except Exception Expr
+  | .app (.app (.const ``optParam _) A) _ => do
+    checkTypeAnnotation env ``optParam 2; stripAnnotations env A
+  | .app (.app (.const ``autoParam _) A) _ => do
+    checkTypeAnnotation env ``autoParam 2; stripAnnotations env A
+  | .app (.const ``outParam _) A => do
+    checkTypeAnnotation env ``outParam 1; stripAnnotations env A
+  | .app (.const ``semiOutParam _) A => do
+    checkTypeAnnotation env ``semiOutParam 1; stripAnnotations env A
+  | e => pure e
+
 /-- Stands for the recursor applied to the parameters, motives and minor premises in an
 `IHInfo`, which is recorded before the minor premises exist. Not a name the kernel generates. -/
 def recPlaceholder : Expr := .fvar ⟨`_recursor⟩
@@ -75,6 +105,9 @@ instance : MonadLCtx M where
 def getType (fvar : Expr) : M Expr :=
   return ((← getLCtx).get! fvar.fvarId!).type
 
+/-- `stripAnnotations` in the current environment. -/
+def consumeTypeAnnotations (e : Expr) : M Expr := fun c => stripAnnotations c.env e
+
 def checkInductiveTypes
     (nparams : Nat) (indTypes : Array InductiveType)
     (k : InductiveStats → M α) : M α := do
@@ -91,7 +124,7 @@ def checkInductiveTypes
         if let .forallE name dom body bi := type then
           if i < nparams then
             if stats.indConsts.isEmpty then
-              withLocalDecl name bi dom.consumeTypeAnnotations fun param => do
+              withLocalDecl name bi (← consumeTypeAnnotations dom) fun param => do
                 let stats := { stats with params := stats.params.push param }
                 let type := body.instantiate1 param
                 loop stats (← whnf type) (i + 1) nindices fuel k
@@ -102,7 +135,7 @@ def checkInductiveTypes
               let type := body.instantiate1 param
               loop stats (← whnf type) (i + 1) nindices fuel k
           else
-            withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+            withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
               let type := body.instantiate1 arg
               loop stats (← whnf type) i (nindices + 1) fuel k
         else
@@ -134,9 +167,9 @@ def checkInductiveTypes
   loopInd 0 { (default : InductiveStats) with levels := (← read).lparams.map .param }
 
 def hasIndOcc (indConsts : Array Expr) (t : Expr) : Bool :=
-  (t.find? fun
+  t.anySubterm fun
     | .const e _ => indConsts.any fun I => I.constName! == e
-    | _ => false).isSome
+    | _ => false
 
 /-- Return true if declaration is recursive -/
 def isRec (indTypes : Array InductiveType) (indConsts : Array Expr) : Bool :=
@@ -196,7 +229,7 @@ where
   | fuel+1 => do
     let t ← whnf t
     let .forallE name dom body bi := t | return isValidIndApp? stats t
-    withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+    withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
     loop (body.instantiate1 arg) fuel
 
 def checkPositivity (stats : InductiveStats) (t : Expr) (ctor : Name) (idx : Nat) :
@@ -210,7 +243,7 @@ def checkPositivity (stats : InductiveStats) (t : Expr) (ctor : Name) (idx : Nat
       if hasIndOcc stats.indConsts dom then
         throw <| .other s!"arg #{idx + 1} of '{ctor}' \
           has a non positive occurrence of the datatypes being declared"
-      withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+      withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
       loop (body.instantiate1 arg) fuel
     else if let none := isValidIndApp? stats t then
       throw <| .other s!"arg #{idx + 1} of '{ctor}' \
@@ -246,7 +279,7 @@ def checkConstructors (indTypes : Array InductiveType)
                 is too big for the corresponding inductive datatype"
             if !isUnsafe then
               checkPositivity stats dom n i
-            withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+            withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
               loop (body.instantiate1 arg) (i + 1) fuel
         else if !isValidIndAppIdx stats t idx then
           throw <| .other s!"invalid return type for '{n}'"
@@ -283,7 +316,7 @@ def isLargeEliminator (stats : InductiveStats) (indTypes : Array InductiveType) 
     | 0 => throw .deepRecursion
     | fuel+1 => do
       if let .forallE name dom body bi := type then
-        withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+        withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
           let mut toCheck := toCheck
           if i ≥ stats.params.size then
             if !(← ensureType dom).sortLevel!.isAlwaysZero then
@@ -336,7 +369,7 @@ def loopArgs1 (stats : InductiveStats) (type : Expr) (i : Nat) (indices : Array 
       if i < stats.params.size then
         loopArgs1 stats (← whnf <| body.instantiate1 stats.params[i]!) (i + 1) indices fuel k
       else
-        withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+        withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
         loopArgs1 stats (← whnf <| body.instantiate1 arg) i (indices.push arg) fuel k
     else
       k type i indices
@@ -351,11 +384,11 @@ def loopInd1 (dIdx : Nat) (recInfos : Array RecInfo) (k : Array RecInfo → M α
         some indices.size == stats.nindices[dIdx]? do
       throw <| .other "invalid inductive datatype declaration, its type changed shape"
     let tTy := mkAppN (mkAppN stats.indConsts[dIdx]! stats.params) indices
-    withLocalDecl `t .default tTy.consumeTypeAnnotations fun major => do
+    withLocalDecl `t .default (← consumeTypeAnnotations tTy) fun major => do
     let lctx ← getLCtx
     let motiveTy := lctx.mkForall indices <| lctx.mkForall #[major] <| .sort elimLevel
     let name := if indTypes.size > 1 then (`motive).appendIndexAfter (dIdx+1) else `motive
-    withLocalDecl name .default motiveTy.consumeTypeAnnotations fun motive => do
+    withLocalDecl name .default (← consumeTypeAnnotations motiveTy) fun motive => do
     loopInd1 (dIdx + 1) (recInfos.push { motive, minors := #[], minorInfos := #[], indices, major }) k
   else
     k recInfos
@@ -372,14 +405,9 @@ where
       if let some param := stats.params[i]? then
         loop (body.instantiate1 param) (i + 1) bu u fuel
       else
-        withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+        withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
         let bu := bu.push arg
-        -- A field is recursive only if its declared domain mentions the block, as `isRec` has it.
-        -- Normalizing mentions only what the domain and the environment do, and names the
-        -- kernel builds itself (literal expansions, `_inhabitedExprDummy` on a panic), which a
-        -- block may take.
-        let u := if hasIndOcc stats.indConsts dom && (← isRecArg stats dom).isSome then u.push arg
-          else u
+        let u := if (← isRecArg stats dom).isSome then u.push arg else u
         loop (body.instantiate1 arg) (i + 1) bu u fuel
     else k t bu u
 
@@ -390,7 +418,7 @@ where
   | 0 => throw .deepRecursion
   | fuel+1 => do
     if let .forallE name dom body bi := uiTy then
-      withLocalDecl name bi dom.consumeTypeAnnotations fun arg => do
+      withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
       loop (← whnf <| body.instantiate1 arg) (xs.push arg) fuel
     else
       k uiTy xs
@@ -407,7 +435,7 @@ def loopU (i : Nat) (v : Array Expr) (ihs : Array IHInfo)
         { itIdx, val := lctx.mkLambda xs <|
           (mkAppN recPlaceholder itIndices).app (mkAppN ui xs) })
     let vName := ((← getLCtx).get! ui.fvarId!).userName.appendAfter "_ih"
-    withLocalDecl vName .default viTy.consumeTypeAnnotations fun vi => do
+    withLocalDecl vName .default (← consumeTypeAnnotations viTy) fun vi => do
     loopU (i + 1) (v.push vi) (ihs.push ih) k
   else
     k v ihs
@@ -425,7 +453,7 @@ def loopCtors (recInfos : Array RecInfo)
     let lctx ← getLCtx
     let minorTy := lctx.mkForall bu <| lctx.mkForall v motiveApp
     let minorName := ctor.name.replacePrefix indTypeName .anonymous
-    withLocalDecl minorName .default minorTy.consumeTypeAnnotations fun minor => do
+    withLocalDecl minorName .default (← consumeTypeAnnotations minorTy) fun minor => do
     let recInfos := recInfos.modify dIdx fun s => { s with
       minors := s.minors.push minor, minorInfos := s.minorInfos.push { fields := bu, ihs } }
     loopCtors recInfos ctors k
@@ -681,7 +709,7 @@ def isNestedInductiveApp? (e : Expr) : M (Option InductiveVal) := do
     if args[i]!.hasLooseBVars then
       looseBVars := true
     let newTypes := (← get).newTypes
-    if let some _ := args[i]!.find? fun
+    if args[i]!.anySubterm fun
       | .const t _ => newTypes.any fun ty => t == ty.name
       | _ => false
     then
@@ -799,10 +827,10 @@ def mkAuxRecNameMap (env' : Environment) (types : List InductiveType) :
   return (oldRecNames.toList, recMap)
 
 def checkNoNestedAux (n : Name) (e : Expr) : Except Exception Unit := do
-  if (e.find? fun
+  if e.anySubterm fun
       | .const c _ => (`_nested).isPrefixOf c
       | .proj s _ _ => (`_nested).isPrefixOf s
-      | _ => false).isSome then
+      | _ => false then
     throw <| .other s!"invalid declaration '{n}', it uses the reserved prefix '_nested'"
 
 def Environment.addInductive (env : Environment) (lparams : List Name) (nparams : Nat)

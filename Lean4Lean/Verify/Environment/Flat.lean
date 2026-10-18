@@ -215,9 +215,7 @@ theorem checkDuplicatedUnivParams.WF : ∀ (ls : List Name),
 /-- `AddInductive.run` on a block without nested occurrences or primitive names. -/
 theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
-    (isUnsafe : Bool) (fuel : FuelConfig)
-    (hann : (ves.venv (inductSafety isUnsafe)).AnnotationsDefine)
-    (hnames : ∀ t ∈ types, t.name ∉ typeAnnotations.map (·.1)) (hne : types ≠ []) :
+    (isUnsafe : Bool) (fuel : FuelConfig) (hne : types ≠ []) :
     (AddInductive.run nparams types 0
       { env, allowPrimitive := false, lparams, fuel, safety := inductSafety isUnsafe }).WF
       (FlatResult ves env isUnsafe false) := by
@@ -231,7 +229,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
   have hsafe : (c₀.safety != .safe) = isUnsafe := by cases isUnsafe <;> rfl
   simp only [hsafe]
   have henv₀ := (wf.tr (safety := inductSafety isUnsafe)).wf
-  refine AddInductive.checkInductiveTypes.WF rfl henv₀ (hann.erase henv₀)
+  refine AddInductive.checkInductiveTypes.WF rfl henv₀
     hne fun stats c params level typeTr hT => ?_
   refine AddInductive.WF.bind AddInductive.declareInductiveTypes.WF
     fun envTypes ⟨hDc, hDq, hDnd, hDfr, hDp⟩ => ?_
@@ -251,13 +249,6 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
   have hAxEq := hAxEq hT.base.allowPrimitive
   refine AddInductive.WF.withEnv wfAx hleAx ?_
   have hle₀ : c₀.venv ≤ venvAx := hT.base.venv ▸ hleAx
-  have hannAx : venvAx.AnnotationsDefine := by
-    refine hann.mono hle₀ fun n k i hmemA h0 => ?_
-    refine Decidable.byContradiction fun h1 => ?_
-    rcases hnew n (hT.base.venv ▸ h0) h1 with hn | ⟨hp, t, ht, hn⟩
-    · obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn
-      exact hnames t ht (List.mem_map.2 ⟨_, hmemA, rfl⟩)
-    · cases hT.base.allowPrimitive.symm.trans hp
   have hB : AddInductive.BlockFresh c₀.venv venvAx types := by
     refine ⟨henv₀, c₀.envAt.hasPrimitives, wfAx.tr.wf, fun t ht => ?_, fun t ht => ?_,
       fun n h1 h0 => ?_⟩
@@ -273,7 +264,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
       · cases hT.base.allowPrimitive.symm.trans hp
   refine AddInductive.WF.bind (AddInductive.checkConstructors.WF
     (c := c.withEnv envAx venvAx wfAx hleAx) hT rfl rfl hle₀ hconst hB
-    (hannAx.erase wfAx.tr.wf) (by show c.lparams.Nodup; rw [hT.base.lparams]; exact hUs))
+    (by show c.lparams.Nodup; rw [hT.base.lparams]; exact hUs))
     fun _ ⟨hC, hCt⟩ => ?_
   have mapWFT : envTypes.constants.WF := by
     rw [hDc]; exact insertConsts_wf c.envAt.tr.map_wf hDfr hDnd
@@ -281,7 +272,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
     (AddInductive.declareConstructors.WF (c := { (c.withEnv envAx venvAx wfAx hleAx).toContext with
       env := envTypes }) mapWFT)) fun envCtors hDC => ?_
   refine AddInductive.WF.bind (AddInductive.getElimLevel.WF hT
-    (c' := c.withEnv envAx venvAx wfAx hleAx) rfl hle₀ wfAx.tr.wf (hannAx.erase wfAx.tr.wf) hC)
+    (c' := c.withEnv envAx venvAx wfAx hleAx) rfl hle₀ wfAx.tr.wf hC)
     fun elimLevel hE => ?_
   refine AddInductive.WF.bind (AddInductive.isKTarget.WF hT (c' := c.withEnv envAx venvAx wfAx hleAx)
     rfl hle₀ wfAx.tr.wf hC) fun kflag hK => ?_
@@ -290,7 +281,7 @@ theorem AddInductive.run.WF_nonPrimitive {env : Environment} {ves : VEnvs} (wf :
   conv => arg 2; arg 2; intro; arg 2; rw [hlp]
   refine AddInductive.mkRecInfos.WF (c := c.withEnv envAx venvAx wfAx hleAx) (isUnsafe := isUnsafe)
     hT rfl rfl hle₀
-    wfAx.tr.wf (hannAx.erase wfAx.tr.wf) hT.base.allowPrimitive hC hCt fun recInfos c₃ d hR => ?_
+    wfAx.tr.wf hT.base.allowPrimitive hC hCt fun recInfos c₃ d hR => ?_
   have mapWFC : envCtors.constants.WF := by
     rw [hDC.1]; exact insertConsts_wf mapWFT hDC.2.2.2.1 hDC.2.2.1
   refine AddInductive.WF.mono (AddInductive.declareRecursors.WF hR hR.largeElim
@@ -311,8 +302,6 @@ which for `Bool` and `Nat` is a computation; the primitive clauses of `FlatResul
 theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
     (isUnsafe : Bool) (fuel : FuelConfig)
-    (hann : (ves.venv (inductSafety isUnsafe)).AnnotationsDefine)
-    (hnames : ∀ t ∈ types, t.name ∉ typeAnnotations.map (·.1))
     (hallow : Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (AddInductive.run nparams types 0
       { env, allowPrimitive := true, lparams, fuel, safety := inductSafety isUnsafe }).WF
@@ -322,26 +311,21 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
 /-- `AddInductive.run` on a block without nested occurrences. -/
 theorem AddInductive.run.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
-    (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig)
-    (hann : (ves.venv (inductSafety isUnsafe)).AnnotationsDefine)
-    (hnames : ∀ t ∈ types, t.name ∉ typeAnnotations.map (·.1)) (hne : types ≠ [])
+    (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig) (hne : types ≠ [])
     (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (AddInductive.run nparams types 0
       { env, allowPrimitive, lparams, fuel, safety := inductSafety isUnsafe }).WF
       (FlatResult ves env isUnsafe allowPrimitive) := by
   cases allowPrimitive with
   | false =>
-    exact AddInductive.run.WF_nonPrimitive wf lparams nparams types isUnsafe fuel hann hnames hne
+    exact AddInductive.run.WF_nonPrimitive wf lparams nparams types isUnsafe fuel hne
   | true =>
-    exact AddInductive.run.WF_primitive wf lparams nparams types isUnsafe fuel hann hnames
-      (hallow rfl)
+    exact AddInductive.run.WF_primitive wf lparams nparams types isUnsafe fuel (hallow rfl)
 
 theorem addInductive.WF_flat {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
     (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig)
     (hflat : IsFlat env lparams nparams types fuel)
-    (hann : (ves.venv (inductSafety isUnsafe)).AnnotationsDefine)
-    (hnames : ∀ t ∈ types, t.name ∉ typeAnnotations.map (·.1))
     (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (Environment.addInductive env lparams nparams types isUnsafe allowPrimitive fuel).WF
       (FlatResult ves env isUnsafe allowPrimitive) := by
@@ -354,29 +338,23 @@ theorem addInductive.WF_flat {env : Environment} {ves : VEnvs} (wf : ves.WF env)
       ElimNestedInductive.run_ne_nil h⟩)
     fun res ⟨h1, ⟨hn, h0⟩, hne⟩ => ?_
   simp only [h1]
-  have hnames' : ∀ t ∈ res.types, t.name ∉ typeAnnotations.map (·.1) := fun t ht => by
-    have : t.name ∈ types.map (·.name) := hn ▸ List.mem_map_of_mem ht
-    obtain ⟨t', ht', e⟩ := List.mem_map.1 this
-    exact e ▸ hnames t' ht'
   have hne' : res.types ≠ [] := fun h => hne (by simpa [h] using hn.symm)
   have hallow' : allowPrimitive →
       Primitive.PrimitiveInductiveResult lparams nparams res.types isUnsafe := fun hp => by
     have := hallow hp; rwa [h0 this.2.2.1]
-  exact (AddInductive.run.WF wf lparams nparams res.types isUnsafe allowPrimitive fuel hann
-    hnames' hne' hallow').bind
+  exact (AddInductive.run.WF wf lparams nparams res.types isUnsafe allowPrimitive fuel
+    hne' hallow').bind
     fun _ h => .pure h
 
 theorem addInductive.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
-    (hann : ∀ safety, (ves.venv safety).AnnotationsDefine)
     (lparams : List Name) (nparams : Nat) (types : List InductiveType)
-    (hnames : ∀ t ∈ types, t.name ∉ typeAnnotations.map (·.1))
     (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig)
     (hallow : allowPrimitive → Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (Environment.addInductive env lparams nparams types isUnsafe allowPrimitive fuel).WF
       fun env' => ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
   by_cases hflat : IsFlat env lparams nparams types fuel
   · refine (addInductive.WF_flat wf lparams nparams types isUnsafe allowPrimitive fuel hflat
-      (hann _) hnames hallow).mono
+      hallow).mono
       fun env' ⟨decl, venv', hu, hdecl, H, hq, hnp, hp⟩ => ?_
     subst hu
     cases allowPrimitive with

@@ -507,28 +507,4 @@ def eqv' : (e1 e2 : Expr) → (strict : Bool := false) → Bool
 /-- This could be an `@[implemented_by]` -/
 @[simp] axiom equal_eq (e1 e2 : Expr) : e1.equal e2 = e1.eqv' e2 (strict := true)
 
-/-- Whether a subterm of `e`, `e` included, satisfies `p`. -/
-def anySub (p : Expr → Bool) : Expr → Bool
-  | e@(.app f a) => p e || f.anySub p || a.anySub p
-  | e@(.lam _ t b _) | e@(.forallE _ t b _) => p e || t.anySub p || b.anySub p
-  | e@(.letE _ t v b _) => p e || t.anySub p || v.anySub p || b.anySub p
-  | e@(.mdata _ b) | e@(.proj _ _ b) => p e || b.anySub p
-  | e => p e
-
-/-- `Expr.find?` is implemented natively: it finds a subterm exactly when one satisfies `p`. -/
-axiom find?_isSome (p : Expr → Bool) (e : Expr) :
-    (e.find? p).isSome = e.anySub p
-
-/-- `consumeTypeAnnotations` without `partial`. -/
-def consumeTypeAnnotations' : Expr → Expr
-  | .app (.app (.const ``optParam _) A) _ => A.consumeTypeAnnotations'
-  | .app (.app (.const ``autoParam _) A) _ => A.consumeTypeAnnotations'
-  | .app (.const ``outParam _) A => A.consumeTypeAnnotations'
-  | .app (.const ``semiOutParam _) A => A.consumeTypeAnnotations'
-  | e => e
-
-/-- We cannot prove this because `consumeTypeAnnotations` is partial. -/
-axiom consumeTypeAnnotations_eq (e : Expr) :
-    e.consumeTypeAnnotations = e.consumeTypeAnnotations'
-
 end Expr

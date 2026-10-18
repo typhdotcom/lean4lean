@@ -212,15 +212,8 @@ theorem addMutual.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
 
 /-- Successful checked addition preserves well-formedness and extends every safety-indexed
 abstract environment. Inductives rest on `addInductive.WF_flat`, and nested ones are not covered
-(see `addInductive.WF`).
-
-The type annotations the kernel erases by name must be identities in the model: neither kernel
-checks this, so it is assumed, of the environment (`AnnotationsDefine`: each is undeclared or
-defined as Lean's prelude defines it) and of an inductive declaration (it does not declare them). -/
-theorem addDecl.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
-    (hann : ∀ safety, (ves.venv safety).AnnotationsDefine) (decl : Declaration)
-    (hnames : ∀ lparams nparams types isUnsafe, decl = .inductDecl lparams nparams types isUnsafe →
-      ∀ t ∈ types, t.name ∉ typeAnnotations.map (·.1)) :
+(see `addInductive.WF`). -/
+theorem addDecl.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env) (decl : Declaration) :
     (addDecl env decl (check := true) (fuel := {})).WF fun env' =>
       ∃ ves' : VEnvs, ves'.WF env' ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
   cases decl with
@@ -233,4 +226,4 @@ theorem addDecl.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
   | mutualDefnDecl vs => exact addMutual.WF wf vs
   | inductDecl lparams nparams types isUnsafe =>
     exact (Primitive.checkInductive.WF env lparams nparams types isUnsafe).bind fun allow h =>
-      addInductive.WF wf hann lparams nparams types (hnames _ _ _ _ rfl) isUnsafe allow {} h
+      addInductive.WF wf lparams nparams types isUnsafe allow {} h

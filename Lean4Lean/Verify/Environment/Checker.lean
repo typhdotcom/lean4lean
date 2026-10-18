@@ -14,18 +14,24 @@ theorem checkName.WF (mapWF : env.constants.WF) (name : Name) (allowPrimitive : 
     (Environment.checkName env name allowPrimitive).WF fun _ =>
       env.find? name = none ∧ (Environment.primitives.contains name → allowPrimitive) := by
   intro _ h
-  have hn : env.contains name = false := by
-    cases hfind : env.contains name <;> [rfl; skip]
-    simp [Environment.checkName, hfind, (· >>= ·), Except.bind] at h
-  change env.constants.contains name = false at hn
+  simp only [Environment.checkName, Kernel.Environment.contains] at h
+  split at h; · cases h
+  rename_i hn
   rw [SMap.find?_isSome] at hn
+  split at h; · cases h
   refine ⟨?_, fun ha => ?_⟩
   · rw [Kernel.Environment.find?, mapWF.find?'_eq_find?]
     cases hfind : env.constants.find? name <;> simp_all
-  · have hc : env.constants.contains name = false := by rwa [SMap.find?_isSome]
-    simpa only [Environment.checkName, Kernel.Environment.contains, hc, ↓reduceIte, ha,
-      ite_eq_left_iff, Bool.not_eq_true, reduceCtorEq, imp_false, Bool.not_eq_false,
-      show (pure PUnit.unit : Except Exception PUnit) = .ok PUnit.unit from rfl] using h
+  · cases allowPrimitive; · simp [ha] at h
+    rfl
+
+/-- `checkName` refuses the constant a kernel panic returns. -/
+theorem checkName.ne_dummy {env : Environment} {name : Name} {allowPrimitive : Bool}
+    (h : Environment.checkName env name allowPrimitive = .ok u) : name ≠ `_inhabitedExprDummy := by
+  rintro rfl
+  simp only [Environment.checkName] at h
+  split at h; · cases h
+  simp [(· >>= ·), Except.bind, throw, throwThe, MonadExceptOf.throw] at h
 
 private theorem checkNoMVar.WF (env : Environment) (name : Name) (e : Expr) :
     (Environment.checkNoMVar env name e).WF fun _ => e.hasMVar = false := by
