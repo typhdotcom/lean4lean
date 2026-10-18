@@ -1,6 +1,7 @@
 import Lean4Lean.Verify.Environment.Inductive
 import Lean4Lean.Verify.Typing.Strengthen
 import Lean4Lean.Verify.Support.Bridge
+import Lean4Lean.Verify.Typing.Zeta
 
 /-!
 # Verifying `addInductive` on a block without nested occurrences
@@ -1208,6 +1209,52 @@ inductive FieldsChecked (venv : VEnv) (d : VInductDecl) : List VExpr → Nat →
     (d.isUnsafe = false → d.Positive venv Γ k D) →
     FieldsChecked venv d (D :: Γ) (k + 1) Ds → FieldsChecked venv d Γ k (D :: Ds)
 
+/-- The types `tys` of the fields before the `k`th that are not `P`, each with the earlier ones
+that are removed: `VConstructor.keptFieldsBy` for a list of field types. -/
+noncomputable def keptTysBy (tys : List VExpr) (P : Nat → Prop) (k : Nat) : List VExpr :=
+  (VConstructor.keptIdxBy P k).map fun j => VConstructor.strippedTypeBy P j (tys[j]?.getD default)
+
+open Classical in
+theorem keptTysBy_succ (tys : List VExpr) (P : Nat → Prop) (k : Nat) :
+    keptTysBy tys P (k + 1) = keptTysBy tys P k ++
+      if P k then [] else [VConstructor.strippedTypeBy P k (tys[k]?.getD default)] := by
+  simp only [keptTysBy, VConstructor.keptIdxBy_succ, List.map_append]
+  split <;> simp
+
+theorem keptTysBy_append {tys : List VExpr} {P : Nat → Prop} {k : Nat} (h : k ≤ tys.length)
+    (more : List VExpr) : keptTysBy (tys ++ more) P k = keptTysBy tys P k := by
+  simp only [keptTysBy]
+  refine List.map_congr_left fun j hj => ?_
+  have := (VConstructor.mem_keptIdxBy.1 hj).1
+  rw [List.getElem?_append_left (by omega)]
+
+theorem _root_.Lean4Lean.VConstructor.keptFieldsBy_eq_keptTysBy (c : VConstructor)
+    (P : Nat → Prop) (k : Nat) : c.keptFieldsBy P k = keptTysBy (c.fields.map (·.type)) P k := by
+  simp [VConstructor.keptFieldsBy_eq, keptTysBy, List.getElem?_map]
+
+/-- What the kernel's checks of a constructor's `k`th field establish without the earlier fields
+`P` that no field up to the `k`th mentions: its view, the `k`th of `Vs`, is still a type over the
+parameters and the views kept, and its declared domain `D`, if it mentions none of them either, is
+still that type. -/
+def FieldKept (venv : VEnv) (U : Nat) (params : List VExpr) (D : VExpr) (Vs : List VExpr)
+    (k : Nat) : Prop :=
+  ∀ P : Nat → Prop, (∀ i ≤ k, ∀ j < i, P j → (Vs[i]?.getD default).Skips 1 (i - 1 - j)) →
+    (∃ u, venv.HasType U ((keptTysBy Vs P k).reverse ++ params.reverse)
+      (VConstructor.strippedTypeBy P k (Vs[k]?.getD default)) (.sort u)) ∧
+    ((∀ j < k, P j → D.Skips 1 (k - 1 - j)) →
+      venv.IsDefEqU U ((keptTysBy Vs P k).reverse ++ params.reverse)
+        (VConstructor.strippedTypeBy P k D) (VConstructor.strippedTypeBy P k (Vs[k]?.getD default)))
+
+theorem FieldKept.append {venv : VEnv} {U : Nat} {params : List VExpr} {D : VExpr}
+    {Vs : List VExpr} {k : Nat} (h : k < Vs.length) (more : List VExpr) :
+    FieldKept venv U params D (Vs ++ more) k ↔ FieldKept venv U params D Vs k := by
+  have e1 : ∀ i ≤ k, (Vs ++ more)[i]? = Vs[i]? := fun i hi => List.getElem?_append_left (by omega)
+  unfold FieldKept
+  refine forall_congr' fun P => ?_
+  rw [keptTysBy_append (by omega), e1 k (Nat.le_refl _)]
+  refine imp_congr_left (forall_congr' fun i => forall_congr' fun hi => ?_)
+  rw [e1 i hi]
+
 /-- What `checkConstructors` establishes about constructor `ct` of type `t`, for any translation
 of its type in `venv`: it is a type, and a telescope of parameters agreeing with the block's
 followed by fields, ending in `t` at the parameters and at indices that do not mention the
@@ -1219,7 +1266,9 @@ def CtorChecked (venv : VEnv) (U : List Name) (d : VInductDecl) (t : InductiveTy
       (VExpr.bvars d.params.length Ds.length ++ idx)) ∧
     declareConstructors.arity 0 ct.type = ps.length + Ds.length ∧
     venv.TeleDefEq U.length [] ps d.params ∧ idx.length = nidx ∧
-    idx.all (!·.mentions d.names) ∧ FieldsChecked venv d ps.reverse 0 Ds
+    idx.all (!·.mentions d.names) ∧ FieldsChecked venv d ps.reverse 0 Ds ∧
+    ∀ k D, Ds[k]? = some D → FieldKept venv U.length d.params D
+      ((Ds.zip (ct.type.domStrips.drop ps.length)).map fun p => p.1.stripN p.2) k
 
 /-- A declaration that agrees with what the checks so far have seen of the block. -/
 structure Compat (U : List Name) (params : List VExpr) (level : VLevel) (isUnsafe : Bool)
@@ -1423,7 +1472,7 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
         FieldsElab venv d d.params.reverse 0 Ds c.fields ∧ X ps Ds) :
     c.WF venv d T ∧ declareConstructors.arity 0 ct.type = nparams + c.fields.length := by
   obtain ⟨-, htr, ps, Ds, hps, hDs, hty, hfe, -⟩ := hE
-  obtain ⟨hT, ps', Ds', idx, hty', har, htele, hidx, hmen, hfc⟩ := hC _ htr
+  obtain ⟨hT, ps', Ds', idx, hty', har, htele, hidx, hmen, hfc, hKC⟩ := hC _ htr
   rw [hty] at hty'
   have ⟨h1, h2⟩ := VExpr.foralls_inj_notPi (VExpr.appN_notPi (e := .const ..) _ trivial)
     (VExpr.appN_notPi (e := .const ..) _ trivial) hty'
@@ -1437,11 +1486,9 @@ theorem ctor_WF {venv : VEnv} (henv : venv.WF) {U : List Name} {nparams : Nat} {
   simp only [List.append_nil] at hctx
   have hFW := FieldsWF.of_checked henv (by simpa using hparams.onCtx trivial)
     (hfc.defeqDFC henv.ordered hctx) hfe
-  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within⟩, ⟨hidx.trans hnidx, hmen⟩,
-    VInductDecl.FieldsWF.projFields hFW fun k i hi _ f hf =>
-      (VInductDecl.FieldsWF.kept_assumed henv hparams hFW i
-        (List.getElem?_eq_some_iff.1 hf).1
-        fun i' hi' _ hf' => c.field_skips hf' (by omega)).1 f hf⟩, by rw [har, hps, hDs]⟩
+  refine ⟨⟨hT, ⟨ps, Ds, ?_, htele, hFW, hfe.within, fun P k hk hs =>
+      VInductDecl.FieldsWF.kept_assumed henv hparams hFW (P := P) k hk hs⟩,
+    ⟨hidx.trans hnidx, hmen⟩⟩, by rw [har, hps, hDs]⟩
   rw [hty, VInductiveType.typeApp_of_none hno, hname, hU, hnp, hDs]
 
 /-- The type `run` gives the `i`th recursor, from the local variables `mkRecInfos` opened. -/

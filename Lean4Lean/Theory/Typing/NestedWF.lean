@@ -740,7 +740,7 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
     have hcW := hflat.2 c hc
     have hF := hCtor T hTm c hc
     obtain ⟨ps, B, hty, hpsl, hpsC, hBA⟩ := hF.shape
-    obtain ⟨ps₀, Ds, hty₀, hTD, hFW, hSk⟩ := hcW.shape
+    obtain ⟨ps₀, Ds, hty₀, hTD, hFW, hSk, hK⟩ := hcW.shape
     have hl₀ := hTD.length_eq
     obtain ⟨rfl, rfl⟩ := VExpr.foralls_inj (hty.symm.trans (hty₀.trans
       (VExpr.foralls_append ..))) (by rw [hpsl, hl₀])
@@ -780,7 +780,7 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
           (bvars d.params.length c.fields.length) (c.indices.map (·.restore R ren))) := by
       show c.type.restore R ren = _
       rw [hty, VExpr.restore_foralls, hpsR, VExpr.restore_foralls, hX, VExpr.foralls_append]
-    refine ⟨?_, ⟨ps, Ds.map (·.restore R ren), ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩, ?_⟩
+    refine ⟨?_, ⟨ps, Ds.map (·.restore R ren), ?_, ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩⟩
     · -- the type
       have HEps := mkHE E₀ hE₀ hQ hQP
       have := HEps.isType (Δ := []) (by simpa using hpsT.onCtx trivial) trivial hBA
@@ -802,6 +802,61 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
       rw [VConstructor.restore_fields_getElem?] at hf'
       obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.1 hf'
       exact (hF.strips ps Ds _ hty₀ hpsl k D f hD hf).restore.skips hSk'
+    · -- the fields kept past earlier ones that none of them mentions
+      intro P k hk hskip
+      have hFA : ∀ i (f : VField), c.fields[i]? = some f →
+          f.type.AuxAt R (VLevel.params d.uvars) i := fun i f hf => (hF.fields i f hf).1
+      have hlenc : (c.restore R ren cname).fields.length = c.fields.length := by
+        simp [VConstructor.restore]
+      rw [hlenc] at hk
+      have hskip₀ : ∀ i ≤ k, ∀ f : VField, c.fields[i]? = some f → ∀ j < i, P j →
+          f.type.Skips 1 (i - 1 - j) := by
+        intro i hi f hf j hj hPj
+        have := hskip i hi (f.restore R ren)
+          (by rw [VConstructor.restore_fields_getElem?, hf]; rfl) j hj hPj
+        exact (VExpr.AuxAt.restore_skips hcl (hFA i f hf) (by omega)).1 this
+      obtain ⟨hK1, hK2⟩ := hK P k hk hskip₀
+      obtain ⟨hctx, hklen⟩ := c.keptFieldsBy_ctxAuxAt hnp P hFA k
+      obtain ⟨-, hTk⟩ := hFW.keptTele (P := P) (Nat.le_of_lt hk)
+        (fun i hi _ fi hfi j hj hq => hskip₀ i (Nat.le_of_lt hi) fi hfi j hj hq)
+        fun i hi _ fi hfi => (hK P i (by omega)
+          fun i' hi' => hskip₀ i' (by omega)).1 fi hfi
+      have hΓk := hTk.onCtx hPP₁
+      have hkren : (c.keptFieldsBy P k).map (·.restore R ren) =
+          (c.keptFieldsBy P k).map (·.restore R fun _ => none) := by
+        have := restore_ren_ctx (R := R) hE₁wf hrenE₁ hΓk
+        simpa [List.map_reverse] using congrArg List.reverse this
+      have hctxk : ((c.restore R ren cname).keptFieldsBy P k).reverse =
+          (c.keptFieldsBy P k).reverse.map (·.restore R fun _ => none) := by
+        rw [VConstructor.keptFieldsBy_restore, hkren, List.map_reverse]
+      have hsA {A : VExpr} (hA : A.AuxAt R (VLevel.params d.uvars) k) :
+          (VConstructor.strippedTypeBy P k A).AuxAt R (VLevel.params d.uvars)
+            (c.keptFieldsBy P k).reverse.length := by
+        rw [List.length_reverse, hklen]
+        exact VConstructor.strippedTypeBy_auxAt hnp P hA
+      refine ⟨fun f' hf' => ?_, fun D' f' hD' hf' hD'k => ?_⟩
+      · rw [VConstructor.restore_fields_getElem?] at hf'
+        obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.1 hf'
+        have hT2 := hK1 f hf
+        have := HE.hasType (A := .sort f.level) hΓk hctx (hsA (hFA k f hf)) trivial hT2
+        have hsren := VExpr.restore_ren_none (R := R) (hE₁ren hΓk hT2).1
+        rw [← hsren, VConstructor.strippedTypeBy_restore] at this
+        rw [hparams, hctxk]
+        exact this
+      · rw [List.getElem?_map] at hD'
+        obtain ⟨D, hD, rfl⟩ := Option.map_eq_some_iff.1 hD'
+        rw [VConstructor.restore_fields_getElem?] at hf'
+        obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.1 hf'
+        have hDA' : D.AuxAt R (VLevel.params d.uvars) k := by simpa using hDA k D hD
+        have hDk : ∀ j < k, P j → D.Skips 1 (k - 1 - j) := fun j hj hPj =>
+          (VExpr.AuxAt.restore_skips hcl hDA' (by omega)).1 (hD'k j hj hPj)
+        obtain ⟨_, hDF⟩ := hK2 D f hD hf hDk
+        have := HE.isDefEqU hΓk hctx (hsA hDA') (hsA (hFA k f hf)) ⟨_, hDF⟩
+        obtain ⟨h1, h2, -⟩ := hE₁ren hΓk hDF
+        rw [← VExpr.restore_ren_none (R := R) h1, ← VExpr.restore_ren_none (R := R) h2,
+          VConstructor.strippedTypeBy_restore, VConstructor.strippedTypeBy_restore] at this
+        rw [hparams, hctxk]
+        exact this
     · simp [VConstructor.restore, VInductiveType.restore, hcW.indices.1]
     · simp only [VConstructor.restore, List.all_map, List.all_eq_true, Function.comp_apply]
       intro x hx
@@ -819,41 +874,6 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
       rw [restore_of_constsSat hxc]
       have hmx : x.mentions d.names = false := by simpa using hm
       simpa using VExpr.mentions_mono restoreNested_names_sub hmx
-    · intro k f' hf'
-      rw [VConstructor.restore_fields_getElem?] at hf'
-      obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.1 hf'
-      obtain ⟨hT1, hT2⟩ := hcW.projFields k f hf
-      have hFA : ∀ i (f : VField), c.fields[i]? = some f →
-          f.type.AuxAt R (VLevel.params d.uvars) i := fun i f hf => (hF.fields i f hf).1
-      have hrk := c.restore_keptFields (ren := ren) (cname := cname) hFA hcl k
-      obtain ⟨hctx, hklen⟩ := c.keptFieldsBy_ctxAuxAt hnp (c.Skipped k) hFA k
-      have hctx' : VExpr.CtxAuxAt R (VLevel.params d.uvars) ((c.keptFields k).reverse ++ []) := by
-        rw [List.append_nil]; exact hctx
-      have hΓk := hT1.onCtx hPP₁
-      have hkren : (c.keptFields k).map (·.restore R ren) =
-          (c.keptFields k).map (·.restore R fun _ => none) := by
-        have := restore_ren_ctx (R := R) hE₁wf hrenE₁ hΓk
-        simpa [List.map_reverse] using congrArg List.reverse this
-      have hsA : (c.strippedType k k f.type).AuxAt R (VLevel.params d.uvars)
-          (c.keptFields k).reverse.length := by
-        rw [List.length_reverse]
-        show (VConstructor.strippedTypeBy (c.Skipped k) k f.type).AuxAt _ _
-          (c.keptFieldsBy (c.Skipped k) k).length
-        rw [hklen]
-        exact VConstructor.strippedTypeBy_auxAt hnp _ (hF.fields k f hf).1
-      constructor
-      · have := HE.isTele (Δ := []) (by simpa using hPP₁) hctx' hT1
-        show E₀.IsTele d.uvars _ _
-        rw [hparams, hrk, hkren]; simpa using this
-      · have := HE.hasType (A := .sort f.level) hΓk hctx hsA trivial hT2
-        have hsren := VExpr.restore_ren_none (R := R) (hE₁ren hΓk hT2).1
-        rw [← hsren, ← c.restore_strippedType (ren := ren) (cname := cname) hFA hcl] at this
-        rw [hparams, hrk]
-        have hk' : ((c.keptFields k).map (·.restore R ren)).reverse =
-            (c.keptFields k).reverse.map (·.restore R fun _ => none) := by
-          rw [hkren, List.map_reverse]
-        rw [hk']
-        exact this
   · intro hr T' hT' c' hc' f' hf'
     rw [restoreNested_allTypes] at hT'
     obtain ⟨⟨T, j⟩, hm, rfl⟩ := List.mem_map.1 hT'

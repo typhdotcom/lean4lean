@@ -111,9 +111,18 @@ theorem primCtor_checked {venv : VEnv} {I : Name}
     rw [hdu]; exact ⟨_, primConst_isType hI⟩
   rcases hct with he | ⟨nm, bi, he⟩ <;> rw [he] <;> rw [he] at htr
   · refine ⟨[], [], [], by simp [primCtorTr, htn, hdp, VExpr.bvars, VLevel.params],
-      rfl, by rw [hdp]; exact .nil, rfl, rfl, .nil⟩
+      rfl, by rw [hdp]; exact .nil, rfl, rfl, .nil, fun _ _ h => by simp at h⟩
   · refine ⟨[], [.const I []], [], by simp [primCtorTr, htn, hdp, VExpr.bvars, VLevel.params],
-      rfl, by rw [hdp]; exact .nil, rfl, rfl, ?_⟩
+      rfl, by rw [hdp]; exact .nil, rfl, rfl, ?_, fun k D h => ?_⟩
+    rotate_left
+    · obtain ⟨rfl, rfl⟩ : k = 0 ∧ D = .const I [] := by cases k <;> simp_all
+      intro P _
+      simp only [Expr.domStrips, Expr.annStrips, List.drop_zero, List.length_nil, List.zip_cons_cons,
+        List.zip_nil_right, List.map_cons, List.map_nil, VExpr.stripN, keptTysBy,
+        VConstructor.keptIdxBy, List.range_zero, List.filter_nil, List.reverse_nil, hdp,
+        List.nil_append, List.getElem?_cons_zero, Option.getD_some, VConstructor.strippedTypeBy,
+        VExpr.subst]
+      exact ⟨⟨_, primConst_isType hI⟩, fun _ => ⟨_, primConst_isType hI⟩⟩
     refine .cons ⟨.succ .zero, by rw [hdu]; exact primConst_isType hI,
       .inr fun ls => by rw [show d.level.eval ls = (VLevel.succ .zero).eval ls from
         congrFun hlev ls]; exact Nat.le_refl _⟩ (fun _ => ?_) .nil

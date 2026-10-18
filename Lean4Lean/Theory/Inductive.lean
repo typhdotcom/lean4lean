@@ -428,6 +428,21 @@ inductive FieldsWF (env : VEnv) : List VExpr → Nat → List VExpr → List VFi
     FieldsWF env (f.type :: Γ) (k + 1) Ds fs →
     FieldsWF env Γ k (D :: Ds) (f :: fs)
 
+/-- The fields of `c`, whose declared domains are `Ds`, with any earlier fields `P` removed that
+no field up to the `k`th mentions: the `k`th field's type is still a type of its sort over the
+parameters and the fields kept, and its declared domain, if it does not mention them either, is
+still that type. `inferProj` relies on this when it lets a projection past fields. -/
+def FieldsKeptWF (env : VEnv) (c : VConstructor) (Ds : List VExpr) : Prop :=
+  ∀ (P : Nat → Prop) k, k < c.fields.length →
+    (∀ i ≤ k, ∀ f : VField, c.fields[i]? = some f → ∀ j < i, P j → f.type.Skips 1 (i - 1 - j)) →
+    (∀ f : VField, c.fields[k]? = some f →
+      env.HasType d.uvars ((c.keptFieldsBy P k).reverse ++ d.params.reverse)
+        (VConstructor.strippedTypeBy P k f.type) (.sort f.level)) ∧
+    (∀ (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      (∀ j < k, P j → D.Skips 1 (k - 1 - j)) →
+      env.IsDefEqU d.uvars ((c.keptFieldsBy P k).reverse ++ d.params.reverse)
+        (VConstructor.strippedTypeBy P k D) (VConstructor.strippedTypeBy P k f.type))
+
 end VInductDecl
 
 /-- A type former's index telescope, read off its type as the recursor reads it: in an environment
@@ -441,23 +456,18 @@ types. Its declared type is syntactically a telescope of parameters agreeing wit
 then fields, ending in `T` at the parameters and indices that do not mention the block. Each
 field's view mentions no variable its declared domain does not: the kernel reads it off the
 domain by stripping annotations, and `inferProj` decides which projections it may skip from the
-declared domains. -/
+declared domains. The fields stay types with earlier fields removed that none of them mentions
+(`FieldsKeptWF`), which `inferProj` relies on. -/
 structure VConstructor.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType)
     (c : VConstructor) : Prop where
   type : env.IsType d.uvars [] c.type
   shape : ∃ ps Ds, c.type = .foralls (ps ++ Ds) (T.typeApp (VLevel.params d.uvars)
       (VExpr.bvars d.params.length c.fields.length) c.indices) ∧
     env.TeleDefEq d.uvars [] ps d.params ∧ d.FieldsWF env d.params.reverse 0 Ds c.fields ∧
-    ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-      ∀ j, D.Skips 1 j → f.type.Skips 1 j
+    (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      ∀ j, D.Skips 1 j → f.type.Skips 1 j) ∧
+    d.FieldsKeptWF env c Ds
   indices : c.indices.length = T.indices.length ∧ c.indices.all (!·.mentions d.names)
-  /-- With the earlier fields its projection skips removed, each field's type is still a type of
-  its sort. This is the strengthening `inferProj` relies on when it lets a projection past an
-  earlier field that is not a proof but that nothing after it mentions. -/
-  projFields : ∀ k (f : VField), c.fields[k]? = some f →
-    env.IsTele d.uvars d.params.reverse (c.keptFields k) ∧
-    env.HasType d.uvars ((c.keptFields k).reverse ++ d.params.reverse)
-      (c.strippedType k k f.type) (.sort f.level)
 
 /-- What makes `T` an auxiliary type of the block `d`, standing for the occurrence `n` in `env`,
 the environment with the block's types: `n` is the `tI`th type of a block `dI` recorded there, at

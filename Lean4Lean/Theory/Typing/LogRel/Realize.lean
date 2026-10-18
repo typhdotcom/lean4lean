@@ -509,5 +509,73 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
   simp only [rfN, lft, List.map_map] at h3 ⊢
   exact List.forall₂_map_right_iff.1 (by simpa [List.map_map] using h3)
 
+
+/-- A proof's interpretations are `bot`. -/
+theorem StrongSound.proof_le_bot {U : Nat} {Γ₀ Γ : List VExpr} {ρ : Valuation} {a A : VExpr}
+    {l : VLevel} (H1 : StrongSound env U Γ a A) (H2 : StrongSound env U Γ A (.sort l))
+    (hl : l ≈ .zero) (W : Valuation.Fits env Γ₀ Γ ρ) {m : TShape} (h : LE_Interp env ρ m a) :
+    m ≤ TShape.bot := by
+  obtain ⟨_, _, a1, -, a3, a4⟩ := H1.sound W h
+  obtain ⟨_, _, b1, -, b3, b4⟩ := H2.sound W a3
+  have hr : levelRel l = false := by simp [levelRel, hl]
+  have b4' := TShape.HasType.mono_r (by simpa [hr] using b3.le_sort) .sort b4
+  exact a1.trans (b4'.proofIrrel (b4'.mono_r b1 a4))
+
+/-- A field's interpretations interpret its projection out of the constructor application. -/
+theorem projIota_ge (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT env)
+    (hle : envT ≤ env) (hO : envT.Ordered) {s : Name} {d : VInductDecl} {t : Nat}
+    {T : VInductiveType} {c : VConstructor} (hs : env.inducts s = some (d, t))
+    (hT : d.types[t]? = some T) (hcs : T.ctors = [c])
+    (hTW : T.WF envT d) (hcW : c.WF envT d T) (hPT : envT.IsTele d.uvars [] d.params)
+    (hcT : env.constants s = some ⟨d.uvars, T.type⟩)
+    (hcC : env.constants c.name = some ⟨d.uvars, c.type⟩)
+    {Γ : List VExpr} {k : Nat} {f : VField} {fs : List VExpr} {a : VExpr} {ls : List VLevel}
+    {As I : List VExpr} {u : VLevel} {U : Nat}
+    (hf : c.fields[k]? = some f) (ha : fs[k]? = some a)
+    (hls : ∀ l ∈ ls, l.WF U) (hAs : As.length = d.params.length)
+    (hfs : fs.length = c.fields.length) (hI : I.length = T.indices.length)
+    (hPA : d.ProjAllowed c ls k)
+    (hTS : StrongSound env U Γ (.appN (.const s ls) (As ++ I)) (.sort u))
+    (hCS : StrongSound env U Γ (.appN (.const c.name ls) (As ++ fs)) (.appN (.const s ls) (As ++ I)))
+    (hPT' : StrongSound env U Γ (c.projType ls s k As (.appN (.const c.name ls) (As ++ fs)))
+      (.sort (f.level.inst ls)))
+    (haS : StrongSound env U Γ a (c.projType ls s k As (.appN (.const c.name ls) (As ++ fs))))
+    {Γ₀ : List VExpr} {ρ : Valuation} (W : Valuation.Fits env Γ₀ Γ ρ) {m : TShape}
+    (hm : LE_Interp env ρ m a) :
+    LE_Interp env ρ m (.proj s k ((VExpr.const c.name ls).appN (As ++ fs))) := by
+  by_cases hP : d.PropAt ls
+  · have hz : f.level.inst ls ≈ .zero := by
+      refine ((hPA fun h => ?_).1 f hf)
+      exact h [] (by simpa [VLevel.eval] using VLevel.equiv_def.1 hP [])
+    exact LE_Interp.mono (haS.proof_le_bot hPT' hz W hm) .bot
+  -- interpretations of the arguments: `m` at the field, `bot` elsewhere
+  let ys : List TShape := As.map (fun _ => TShape.bot) ++
+    (List.range fs.length).map fun j => if j = k then m else TShape.bot
+  have hys : List.Forall₂ (fun y x => LE_Interp env ρ y x) ys (As ++ fs) := by
+    refine List.forall₂_append' ?_ ?_
+    · refine List.forall₂_of_getElem? (by simp) fun j y x hy hx => ?_
+      simp only [List.getElem?_map, Option.map_eq_some_iff] at hy
+      obtain ⟨_, -, rfl⟩ := hy
+      exact LE_Interp.bot (n := 0)
+    · refine List.forall₂_of_getElem? (by simp) fun j y x hy hx => ?_
+      have hj : j < fs.length := (List.getElem?_eq_some_iff.1 hx).1
+      simp only [List.getElem?_map, List.getElem?_range hj, Option.map_some,
+        Option.some.injEq] at hy
+      subst hy
+      split
+      · subst j; cases ha.symm.trans hx; exact hm
+      · exact LE_Interp.bot (n := 0)
+  obtain ⟨N, rf, hrf, -, hCI⟩ := ctorApp_realize hM hX hle hO hs hT (i := 0) (by simp [hcs])
+    (by simp [hcs]) hTW hcW hPT hcT hcC hls hP W hAs hfs hI hTS hCS hys
+  rw [List.drop_left' (by simp [hAs])] at hrf
+  have hk : k < fs.length := (List.getElem?_eq_some_iff.1 ha).1
+  obtain ⟨y, hy⟩ : ∃ y, rf[k]? = some y :=
+    ⟨_, List.getElem?_eq_getElem (by rw [← List.Forall₂.length_eq hrf]; simp [hk])⟩
+  have hmy : m ≤ y.T := by
+    have hyk : ((List.range fs.length).map fun j => if j = k then m else TShape.bot)[k]? =
+        some m := by simp [hk]
+    exact hrf.getElem?' hyk hy
+  exact .proj hs hT hcs hCI hy hmy
+
 end LogRel
 end Lean4Lean

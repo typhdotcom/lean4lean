@@ -198,7 +198,7 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
     ⟨argsT'.take d.params.length, argsT'.drop d.params.length, (List.take_append_drop ..).symm,
       by simp [hargsL], by simp [hargsL]⟩
   -- the constructor's declared type, at the structure's levels
-  obtain ⟨envT, ps, Ds, hTwf, hle, hP0, hcty, htele, hFW, hwithin⟩ :=
+  obtain ⟨envT, ps, Ds, hTwf, hle, hP0, hcty, htele, hFW, hwithin, hK⟩ :=
     c.Ewf.ctorShape hs ht (c := c') (by simp [hc'])
   obtain ⟨X₀, hX₀, -⟩ := hwty.instL c.Ewf (Δ := []) trivial hlsT hlvl
   have hX₀e := TrExprS.instL_eqUpTo hlsT hlvl hwty hX₀ .nil
@@ -319,12 +319,12 @@ theorem inferProj.WF' {c : VContext} {s : VState} {e ety : Expr} {e' ety' : VExp
     have hf : c'.fields[k]? = some c'.fields[k] := List.getElem?_eq_getElem hk
     obtain ⟨-, hdf, hproj⟩ := c.Ewf.projKernel hΓ hs ht hc' hTwf hle hP0 hFW hwithin hlsW hlenT'
       hA hI hx hmp (P := Qs) (fun j i' hq hji Di hDi => hq i' Di hji hDi)
-      (fun k f hf => (VInductDecl.FieldsWF.kept_assumed hTwf hP0 hFW k
+      (fun k f hf => (hK _ k
         (List.getElem?_eq_some_iff.1 hf).1 fun i _ fi hfi j hj hq => by
           have hiD : i < Ds.length := by rw [hDsl]; exact (List.getElem?_eq_some_iff.1 hfi).1
           exact hwithin i _ fi (List.getElem?_eq_getElem hiD) hfi _
             (hq i _ hj (List.getElem?_eq_getElem hiD))).1 f hf)
-      (fun k D f hD hf => (VInductDecl.FieldsWF.kept_assumed hTwf hP0 hFW k
+      (fun k D f hD hf => (hK _ k
         (List.getElem?_eq_some_iff.1 hf).1 fun i _ fi hfi j hj hq => by
           have hiD : i < Ds.length := by rw [hDsl]; exact (List.getElem?_eq_some_iff.1 hfi).1
           exact hwithin i _ fi (List.getElem?_eq_getElem hiD) hfi _

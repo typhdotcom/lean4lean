@@ -126,18 +126,18 @@ theorem VEnv.WF.ctorShape {env : VEnv} (henv : env.WF) {s : Name} {d : VInductDe
       c.type = .foralls (ps ++ Ds) (.appN (.const T.name (VLevel.params d.uvars))
         (VExpr.bvars d.params.length c.fields.length ++ c.indices)) ∧
       envT.TeleDefEq d.uvars [] ps d.params ∧ d.FieldsWF envT d.params.reverse 0 Ds c.fields ∧
-      ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-        ∀ j, D.Skips 1 j → f.type.Skips 1 j := by
+      (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+        ∀ j, D.Skips 1 j → f.type.Skips 1 j) ∧ d.FieldsKeptWF envT c Ds := by
   obtain ⟨env₀, envT, h₀, hd, hT, hle, T', hT', -⟩ := henv.inducts hs
   cases ht.symm.trans hT'
   have hcW := (hd.ctors envT hT T (List.mem_append_left _ (List.mem_of_getElem? ht))).2 c hcm
-  obtain ⟨ps, Ds, hty, htele, hFW, hwithin⟩ := hcW.shape
+  obtain ⟨ps, Ds, hty, htele, hFW, hwithin, hK⟩ := hcW.shape
   rw [VInductiveType.typeApp_of_none (hd.types T (List.mem_of_getElem? ht)).2] at hty
   have hTwf : envT.WF := VEnv.WF.addConstList h₀ (fun p hp => by
     obtain ⟨T, hT, rfl⟩ := List.mem_map.1 hp
     exact (hd.types T hT).1) hT
   exact ⟨envT, ps, Ds, hTwf, hle, hd.params.mono (VEnv.addConstList_le hT), hty, htele, hFW,
-    hwithin⟩
+    hwithin, hK⟩
 
 /-- The `k`th projection's declared domain, at the parameters and the earlier projections, is its
 type, when the earlier fields whose projections are not typed (`Q`) are mentioned by no declared

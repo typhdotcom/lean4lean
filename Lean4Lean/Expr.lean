@@ -30,6 +30,16 @@ where
     let r := k S
     if r.1 then r else (false, r.2.insert e)
 
+/-- `e` with every `let` replaced by its body at its value, structurally. -/
+def zeta : Expr → Expr
+  | .letE _ _ v b _ => (zeta b).instantiate1 (zeta v)
+  | .app f a => .app (zeta f) (zeta a)
+  | .lam n t b bi => .lam n (zeta t) (zeta b) bi
+  | .forallE n t b bi => .forallE n (zeta t) (zeta b) bi
+  | .mdata d b => .mdata d (zeta b)
+  | .proj s i b => .proj s i (zeta b)
+  | e => e
+
 namespace ReplaceImpl
 
 unsafe abbrev ReplaceT := StateT (PtrMap Expr Expr)

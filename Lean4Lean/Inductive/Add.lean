@@ -282,13 +282,21 @@ def checkConstructors (indTypes : Array InductiveType)
                 s!"arg #{i + 1} of '{n}' does not match inductive datatype parameters"
             loop (body.instantiate1 param) (i + 1) fuel
           else
-            let s ← ensureType dom
+            let s ← ensureType dom (inferOnly := false)
             unless stats.resultLevel.isAlwaysZero || stats.resultLevel.geq' s.sortLevel! do
               throw <| .other s!"universe level of type_of(arg #{i + 1}) of '{n}' \
                 is too big for the corresponding inductive datatype"
             if !isUnsafe then
               checkPositivity stats dom n i
-            withLocalDecl name bi (← consumeTypeAnnotations dom) fun arg => do
+            -- The field's type without `let`s, and its view without annotations, are checked too:
+            -- each mentions only the variables its meaning does, so a projection that skips an
+            -- earlier field can rely on it being a type without that field.
+            let full := if dom.anySubterm (·.isLet) then dom.zeta else dom
+            unless full == dom do _ ← ensureType full (inferOnly := false)
+            let view ← consumeTypeAnnotations dom
+            let view := if view.anySubterm (·.isLet) then view.zeta else view
+            unless view == full do _ ← ensureType view (inferOnly := false)
+            withLocalDecl name bi view fun arg => do
               loop (body.instantiate1 arg) (i + 1) fuel
         else if !isValidIndAppIdx stats t idx then
           throw <| .other s!"invalid return type for '{n}'"

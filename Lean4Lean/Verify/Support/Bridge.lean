@@ -1073,6 +1073,22 @@ theorem Ext.ensureType {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env
   exact TypeChecker.RecM.SS.run ((TypeChecker.Inner.ensureSortCore.SS H.agree (H.suppClosed hcl)
     (H.tdom (Ext.suppIn_iff.1 hty)) hty).mono fun _ _ _ _ => trivial) rfl
 
+/-- `ensureType` in check mode in the kernel's context, verified in `m` from the variables it
+mentions alone: a check translates its input. -/
+theorem Ext.ensureType' {m cb ρ} (H : Ext m cb ρ) (hcl : ConstMap.Closed cb.env.constants)
+    {e : Expr} (hfv : e.FVarsIn (· ∈ m.vlctx.fvars)) :
+    WF cb (monadLift (TypeChecker.ensureType e false) : M Expr) fun e1 =>
+      ∃ e', (cb.small m H.wf).TrExprS e e' ∧ ∃ u u', e1 = .sort u ∧
+        VLevel.ofLevel cb.lparams u = some u' ∧ (cb.small m H.wf).HasType e' (.sort u') := by
+  have hs : ∀ fv ∈ e.fvarsList, fv ∈ m.vlctx.fvars := (fvarsIn_iff.1 hfv).1
+  refine H.liftTC hcl (P := fun _ => True) ?_ (TypeChecker.ensureType.WF' hfv nofun)
+  refine TypeChecker.M.SS.bind (TypeChecker.RecM.SS.run
+    (TypeChecker.Inner.inferType.SS H.agree (H.suppClosed hcl) (H.tdom hs)
+      (Ext.suppIn_iff.2 hs)) rfl) fun ty _ _ hQ => ?_
+  have hty : ty.SuppIn (Ext.supp m) := hQ _ (H.suppClosed hcl) (Ext.suppIn_iff.2 hs)
+  exact TypeChecker.RecM.SS.run ((TypeChecker.Inner.ensureSortCore.SS H.agree (H.suppClosed hcl)
+    (H.tdom (Ext.suppIn_iff.1 hty)) hty).mono fun _ _ _ _ => trivial) rfl
+
 end AddInductive
 
 end Lean4Lean

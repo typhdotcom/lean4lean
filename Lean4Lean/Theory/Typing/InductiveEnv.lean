@@ -113,10 +113,13 @@ theorem VInductDecl.FieldsWF.mono (H : decl.FieldsWF env Γ k Ds fs) :
     exact .cons (h1.mono henv) (h2.mono henv) h3
       (let ⟨u, a, b⟩ := h4; ⟨u, a.mono henv, b⟩) (fun h => (h5 h).mono henv) (h6.mono henv) ih
 
+theorem VInductDecl.FieldsKeptWF.mono (H : decl.FieldsKeptWF env c Ds) :
+    decl.FieldsKeptWF env' c Ds := fun P k hk hs =>
+  (H P k hk hs).imp (fun h f hf => (h f hf).mono henv) fun h D f hD hf hD' => (h D f hD hf hD').mono henv
+
 theorem VConstructor.WF.mono (H : c.WF env decl T) : c.WF env' decl T :=
-  have ⟨ps, Ds, h1, h2, h3, h4⟩ := H.shape
-  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv, h4⟩, H.indices,
-    fun k f hf => (H.projFields k f hf).imp (·.mono henv) (·.mono henv)⟩
+  have ⟨ps, Ds, h1, h2, h3, h4, h5⟩ := H.shape
+  ⟨H.type.mono henv, ⟨ps, Ds, h1, h2.mono henv, h3.mono henv, h4, h5.mono henv⟩, H.indices⟩
 
 theorem VInductiveType.WF.mono (H : T.WF env decl) : T.WF env' decl :=
   ⟨H.indices.mono henv, H.defeq.mono henv⟩
