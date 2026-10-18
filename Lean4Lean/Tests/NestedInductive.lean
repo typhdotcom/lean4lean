@@ -111,8 +111,40 @@ def looseDecl : Declaration :=
              (.forallE `y (.bvar 2) (tree (.bvar 2)) .default) .default) .default }] }]
     false
 
+/-- An inductive type named `Name.anonymous`, which both kernels accept. A nested occurrence of it
+gets the auxiliary name `_nested_1`, outside the `_nested` namespace `checkNoNestedAux` reserves. -/
+def anonDecl : Declaration :=
+  .inductDecl [] 1
+    [{ name := .anonymous
+       type := .forallE `α (.sort 1) (.sort 1) .default
+       ctors := [{
+         name := `Anon.mk
+         type := .forallE `α (.sort 1)
+           (.forallE `a (.bvar 0) (mkApp (mkConst .anonymous []) (.bvar 1)) .default) .default }] }]
+    false
+
+/-- `AnonUse` nests the anonymous type, and `bad` names the auxiliary type the elimination makes for
+it, which restoring would turn into `«».{} AnonUse`, a type `bad` was never checked at. -/
+def anonUseDecl : Declaration :=
+  let use := mkConst `AnonUse []
+  .inductDecl [] 0
+    [{ name := `AnonUse
+       type := .sort 1
+       ctors := [
+         { name := `AnonUse.mk
+           type := .forallE `x (mkApp (mkConst .anonymous []) use) use .default },
+         { name := `AnonUse.bad
+           type := .forallE `y (mkConst (Name.mkSimple "_nested_1") []) use .default }] }]
+    false
+
 run_meta do
   let kenv := (← getEnv).toKernelEnv
+
+  -- A constructor naming an auxiliary type outside the reserved namespace is rejected.
+  let .ok kenvA := kenv.addDecl {} anonDecl | throwError "Lean's kernel rejected the anonymous type"
+  let .ok lenvA := Lean4Lean.addDecl kenv anonDecl | throwError "lean4lean rejected the anonymous type"
+  unless (kenvA.addDecl {} anonUseDecl) matches .ok _ do throwError "Lean's kernel rejected `AnonUse`"
+  if let .ok _ := Lean4Lean.addDecl lenvA anonUseDecl then throwError "`AnonUse` was accepted"
 
   -- A type with loose bound variables is rejected, flat or nested, where Lean's kernel captures
   -- them.

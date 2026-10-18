@@ -330,21 +330,22 @@ theorem LitApp.mono {c : VContext} {s s' : VState} (le : s ≤ s')
     LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) e ty :=
   H.imp fun _ _ h => h.mono le
 
-/-- Checking each of a list of terms, as `addInductive` checks its nested occurrences: each is a
-`LitApp` at the end. -/
+/-- Checking each of a list of terms, as `addInductive` checks its nested occurrences: each
+translates, and is a `LitApp` at the end. -/
 theorem checkType.forM_lit {c : VContext} {s : VState} (xs : List α) (f : α → Expr)
     (hfv : ∀ x ∈ xs, (f x).FVarsIn (· ∈ c.vlctx.fvars)) :
-    M.WF c s (xs.forM fun x => do _ ← checkType (f x)) fun _ s' => ∀ x ∈ xs, ∃ ty,
-      LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) (f x) ty := by
+    M.WF c s (xs.forM fun x => do _ ← checkType (f x)) fun _ s' => ∀ x ∈ xs,
+      (∃ e', c.TrExprS (f x) e') ∧ ∃ ty,
+        LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) (f x) ty := by
   induction xs generalizing s with
   | nil => exact .pure nofun
   | cons x xs ih =>
     show M.WF c s ((do _ ← checkType (f x)) >>= fun _ => xs.forM fun x => do _ ← checkType (f x)) _
     simp only [bind_assoc, pure_bind]
-    refine (checkType.WF_lit (hfv x (.head _))).bind fun ty s₁ _ ⟨_, H⟩ => ?_
+    refine (checkType.WF_lit (hfv x (.head _))).bind fun ty s₁ _ ⟨⟨_, _, _, he, _⟩, H⟩ => ?_
     refine (ih fun y hy => hfv y (.tail _ hy)).le fun _ s₂ le h y hy => ?_
     rcases List.mem_cons.1 hy with rfl | hy
-    · exact ⟨ty, H.mono le⟩
+    · exact ⟨⟨_, he⟩, ty, H.mono le⟩
     · exact h y hy
 
 nonrec theorem isDefEq.WF {c : VContext} {s : VState}

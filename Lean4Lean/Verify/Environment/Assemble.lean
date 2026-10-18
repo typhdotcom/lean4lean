@@ -29,7 +29,11 @@ def FlatResult (ves : VEnvs) (env : Environment) (isUnsafe allowPrimitive : Bool
         AddInduct safety env.constants venv₁ decl env'.constants venv₂ →
         venv₁.HasPrimitives → venv₂.HasPrimitives) ∧
       ∀ {n ci}, env'.find? n = some ci → Environment.primitives.contains n →
-        ci.safety = .safe ∧ ci.levelParams = [])
+        ci.safety = .safe ∧ ci.levelParams = []) ∧
+    ∀ T ∈ decl.types, ∀ c ∈ T.ctors, ∀ (ps Ds : List VExpr) (B : VExpr),
+      c.type = .foralls (ps ++ Ds) B → ps.length = decl.params.length →
+      ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      D.StripsTo f.type
 
 /-- Everything `run` established about a block without nested occurrences: the elaborated `d` is
 well formed, and the constants `run` added are an `AddInduct` step. `d` elaborates the block
@@ -265,7 +269,8 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
     henvAx hAx hC hDCc hDCnd hDCfr hc₂U hR (hc₂ ▸ hc₂U ▸ hR.elaborates) (hc₂ ▸ hR.indices) hLE hRc
     hRnd hRfr hRnames hRtr
   have hcp : c.allowPrimitive = false := hT.base.allowPrimitive
-  refine ⟨d, _, hR.isUnsafe, hdecl, hR.aux, hstep, hRq, fun _ n hn => ?_, nofun⟩
+  refine ⟨d, _, hR.isUnsafe, hdecl, hR.aux, hstep, hRq, fun _ n hn => ?_, nofun,
+    hR.elaborates.stripsTo (by rw [hR.params]; exact hT.nparams)⟩
   obtain ⟨ci, hci, rfl⟩ := hnames n hn
   refine Bool.eq_false_iff.2 fun h => ?_
   simp only [List.mem_append] at hci

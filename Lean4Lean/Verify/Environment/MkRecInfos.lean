@@ -247,29 +247,37 @@ theorem CtorDone.elab {c : VContext} {pre : List Name} {params : List VExpr}
     (hdu : d.uvars = c.lparams.length) (hdp : d.params = params)
     (htys : ∀ (i : Nat) (T : VInductiveType), d₀.types[i]? = some T →
       ∃ T' : VInductiveType, d.types[i]? = some T' ∧ T'.name = T.name ∧ T'.indices = T.indices ∧
-        T'.nested = none) :
+        T'.nested = none) (hlenT : d.types.length = d₀.types.length) :
     cv.name = ct.name ∧ TrExprS c.venv c.lparams [] ct.type cv.type ∧ ∃ ps Ds,
       ps.length = params.length ∧ Ds.length = cv.fields.length ∧
       cv.type = .foralls (ps ++ Ds) (.appN (.const types[j].name
         (VLevel.params c.lparams.length)) (VExpr.bvars params.length Ds.length ++ cv.indices)) ∧
       FieldsElab c.venv d d.params.reverse 0 Ds cv.fields ∧
+      (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f →
+        D.StripsTo f.type) ∧
       ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → cv.fields[k]? = some f → ∀ u,
         c.venv.HasType c.lparams.length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
         (u ≈ .zero ↔ f.level ≈ .zero) := by
   obtain ⟨C', ps, Ds, idx, ⟨htr, -, hsh, -, htele⟩, hout⟩ := H
   have henv : c.venv.WF := c.envAt.tr.wf
+  have hnm : d.names = d₀.names := by
+    refine List.ext_getElem (by simp [VInductDecl.names, hlenT]) fun i h1 h2 => ?_
+    simp only [VInductDecl.names, List.getElem_map]
+    obtain ⟨T', hT', hn, -⟩ := htys i _ (List.getElem?_eq_getElem (by simpa [VInductDecl.names] using h2))
+    rw [Option.some.inj ((List.getElem?_eq_getElem _).symm.trans hT'), hn]
   refine ⟨hout.name, hout.type ▸ htr, ps, Ds, htele.length_eq, hout.len.symm,
-    by rw [hout.type, hout.indices]; exact hsh, ?_, ?_⟩
+    by rw [hout.type, hout.indices]; exact hsh, ?_, hout.within, ?_⟩
   · rw [hdp]
     refine FieldsElab.of_getElem (by rw [hout.len]) fun k D f hD hf =>
-      ⟨hdu ▸ hout.defeq k D f hD hf, hout.within k D f hD hf, hdu ▸ (hout.sort k f hf).1,
+      ⟨hdu ▸ hout.defeq k D f hD hf, fun _ h => (hout.within k D f hD hf).skips h,
+        hdu ▸ (hout.sort k f hf).1,
         hdu ▸ (hout.sort k f hf).2, ?_⟩
     unfold VInductDecl.RecArgWF
     split
     · rename_i ra hra
-      obtain ⟨T, hT, hl, hdef⟩ := hout.recArg k f ra hf hra
+      obtain ⟨T, hT, hl, hdef, hbm, him⟩ := hout.recArg k f ra hf hra
       obtain ⟨T', hT', hn, hi, hno⟩ := htys _ T hT
-      refine ⟨T', VInductDecl.allTypes_getElem?_of_types hT', hi ▸ hl, ?_⟩
+      refine ⟨T', VInductDecl.allTypes_getElem?_of_types hT', hi ▸ hl, ?_, hnm ▸ hbm, hnm ▸ him⟩
       rw [VInductiveType.typeApp_of_none hno, hdu, hdp, hn, Nat.zero_add]
       simpa [List.map_take] using hdef
     · trivial
@@ -721,6 +729,14 @@ theorem spineIn_of_isRec {env : VEnv} {Us : List Name} {B : Name → Prop}
   | _, .const .., _, _, _ | _, .app .., _, _, _ | _, .lam .., _, _, _ | _, .letE .., _, _, _
   | _, .lit _, _, _, _ | _, .mdata .., _, _, _ | _, .proj .., _, _, _ => trivial
 
+/-- The names `mkRecInfos` keeps out of the inductive hypotheses' binders include the block's types. -/
+theorem blockNames_contains (types : List InductiveType) : ∀ t ∈ types,
+    (types.toArray.foldl (init := ({} : NameSet)) fun s t =>
+      t.ctors.foldl (·.insert ·.name) (s.insert t.name)).contains t.name := by
+  intro t ht
+  rw [← Array.foldl_toList]
+  exact ns_foldl_types_contains_mem (s := ({} : NS)) types ⟨t, ht, .inl rfl⟩
+
 /-- `mkRecInfos` in an environment `envCA` that has the block's constructors as axioms, beside the
 checking environment of `c`: they are new there, the names `X`, unless the block is primitive and
 `c`'s environment has them already. Its constructors' fields are read as `d`'s fields, which `run`
@@ -728,7 +744,7 @@ then builds the recursors from. -/
 theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c₁ params level typeTr)
     (hc : c.mlctx = c₁.mlctx) (hU : c.lparams = c₁.lparams) (hle : c₀.venv ≤ c.venv)
-    (henv : c.venv.WF) {isUnsafe : Bool}
+    (henv : c.venv.WF) (hNM : NotMentionsOK c.venv c.lparams stats types) {isUnsafe : Bool}
     (hC : ∀ d, Compat c.lparams params level isUnsafe types stats.nindices d →
       ∀ (j : Nat) (t : InductiveType), types[j]? = some t → ∀ ct ∈ t.ctors, ∀ nidx,
         stats.nindices[j]? = some nidx → CtorChecked c.venv c.lparams d t nidx ct)
@@ -876,8 +892,9 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
     lpnd := hpnd
     levelWF := by rw [hlp₀]; exact .of_ofLevel hT.resultLevel }
   rw [mkRecInfos]
-  refine loopInd1.WF (X := X) (hMp := hMp) (VB := venvC) (base := cb.mlctx.vlctx.fvars) hRS ?cont types.length
-    [] cb (by simp) ⟨⟨ρp, hsub⟩, ⟨ρp, hsub.ext⟩, hcbenv, hcbvenv, hcbap, by simp, by simp, by simp⟩
+  refine loopInd1.WF (X := X) (hMp := hMp) (VB := venvC) (base := cb.mlctx.vlctx.fvars) hRS
+    (blockNames_contains types) hNM ?cont types.length
+    [] cb (by simp) ⟨⟨ρp, hsub⟩, ⟨ρp, hsub.ext⟩, hcbenv, hcbvenv, hcbap, by simp, by simp, by simp, fun _ _ h => by simp at h⟩
   case cont =>
   intro tds cb₁ htds hI1
   obtain ⟨ρp₁, hsub₁⟩ := hI1.sub
@@ -1052,7 +1069,8 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
     kdfvars := rfl
     laterInfos := fun t ht _ => by simp [TyData.info]
     infoCount := fun t ht => by simp [TyData.info, flatCtors] }
-  refine loopInd2.WF (X := X) (hMp := hMp) hP hPV hBF hshape ?fin types.length 0 [] _ [] []
+  refine loopInd2.WF (X := X) (hMp := hMp) hNM (blockNames_contains types) hP hPV hBF hshape
+    ?fin types.length 0 [] _ [] []
     _ cb₁ ρp₁ ρB₁ (by simp) rfl (fun _ _ h => by simp at h) hI₀
     (fun t ht _ => by simp [TyData.info])
   case fin =>
@@ -1629,8 +1647,9 @@ theorem mkRecInfos.WF_core {c₀ c₁ c : VContext} {nparams : Nat} {types : Lis
         obtain rfl := Option.some.inj ((List.getElem?_eq_getElem hjc).symm.trans hcs)
         obtain rfl : types[j] = t := Option.some.inj ((List.getElem?_eq_getElem hj).symm.trans h1)
         refine ⟨rfl, Lean4Lean.List.Forall₂.imp (fun ct cv hcd => ?_) (hcss j hj hjc)⟩
-        obtain ⟨h1, h2, ps, Ds, h3, h4, h5, h6, h7⟩ := hcd.elab hPT rfl rfl htys
-        refine ⟨h1, h2, ps, Ds, by rw [h3, hT.nparams], h4, ?_, h6, h7⟩
+        obtain ⟨h1, h2, ps, Ds, h3, h4, h5, h6, h8, h7⟩ := hcd.elab hPT rfl rfl htys
+          (hdlen.trans hd₀len.symm)
+        refine ⟨h1, h2, ps, Ds, by rw [h3, hT.nparams], h4, ?_, h6, h8, h7⟩
         rw [h5, hT.nparams] }
     first := fun hn0 => List.forall₂_of_getElem? hdlen.symm fun j t T h1 h2 => by
       obtain ⟨t', T', td, nidx, cs, h1', -, -, -, hcs, rfl, -⟩ := hdty j T h2
@@ -1799,7 +1818,8 @@ theorem mkRecInfos.WF {c₀ c₁ c : VContext} {nparams : Nat} {types : List Ind
       (⟨c.lparams.length, C'⟩ : VConstant))) ct hct'
     obtain rfl := TrExprS.unique (TrExprS.IsUnique.all _) htr htr₁
     exact hmem
-  refine mkRecInfos.WF_core hT hc hU hle henv hC hCt hconst hB.wf₀ hB.prim₀ hB.fresh hnames
+  refine mkRecInfos.WF_core hT hc hU hle henv
+    (hB.notMentionsOK (by have := hT.indConsts; rwa [List.take_length] at this)) hC hCt hconst hB.wf₀ hB.prim₀ hB.fresh hnames
     hclosed hUs hdummy (fun _ _ _ _ _ _ t ht => hB.nonPrim t ht)
     (fun _ _ _ _ _ _ n ci h hn => henvB n ci h hn) (fun _ l hl => ?_) hVC (VEnv.addConstList_le hadd)
     (X := (· ∈ (types.flatMap (·.ctors)).map (·.name))) hXenv (fun n v hv hX => ?_)

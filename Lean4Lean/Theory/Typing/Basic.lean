@@ -38,6 +38,22 @@ theorem VEnv.EqUpToLevels.symm {U : Nat} {e e' : VExpr} (H : VEnv.EqUpToLevels U
   | forallE _ _ ih1 ih2 => exact .forallE ih1 ih2
   | proj _ ih => exact .proj ih
 
+/-- `e` is `e'` under type annotations, `optParam`, `autoParam`, `outParam` and `semiOutParam`
+applied to it: a binder's declared type and the type the kernel reads off it. -/
+inductive VExpr.StripsTo : VExpr → VExpr → Prop
+  | refl : StripsTo e e
+  | app2 {c : Lean.Name} : c = ``optParam ∨ c = ``autoParam → StripsTo A e →
+    StripsTo (.app (.app (.const c ls) A) v) e
+  | app1 {c : Lean.Name} : c = ``outParam ∨ c = ``semiOutParam → StripsTo A e →
+    StripsTo (.app (.const c ls) A) e
+
+theorem VExpr.StripsTo.skips {e e' : VExpr} (H : e.StripsTo e') {n k : Nat} (h : e.Skips n k) :
+    e'.Skips n k := by
+  induction H with
+  | refl => exact h
+  | app2 _ _ ih => simp only [VExpr.skips_iff, VExpr.Skips'] at h; exact ih (VExpr.skips_iff.2 h.1.2)
+  | app1 _ _ ih => simp only [VExpr.skips_iff, VExpr.Skips'] at h; exact ih (VExpr.skips_iff.2 h.2)
+
 namespace VConstructor
 variable (c : VConstructor)
 

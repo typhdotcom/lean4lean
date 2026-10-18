@@ -393,7 +393,8 @@ def Created (env : Environment) (lctx : LocalContext) (params As : Array Expr) (
     List.Forall₂ (fun Jc c => c.name = Jc.replacePrefix J T.name ∧ ∃ ci v', env.find? Jc = some ci ∧
         instantiateForallParams (ci.type.instantiateLevelParams ci.levelParams Ls) nI args =
           .ok v' ∧ c.type = lctx.mkForall As v')
-      Jv.ctors T.ctors
+      Jv.ctors T.ctors ∧
+    ∃ I Iv, env.find? I = some (.inductInfo Iv) ∧ J ∈ Iv.all ∧ nI = Iv.numParams
 
 /-- `s'` is `s` with auxiliary types added that were created while processing a constructor
 opened at `As` in `lctx`. -/
@@ -607,7 +608,7 @@ theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params A
         ∀ Y, result = some Y → NodeRep st.nestedAux.toList s₁.lvls params As e Y
     have hloop : LI res s₅ := by
       refine Triple.forIn_list (I := LI) ?_ s₁ res s₅ h5 ⟨.refl, nofun⟩
-      intro J_name _ result st x st' hb ⟨hE, hY⟩
+      intro J_name hJmem result st x st' hb ⟨hE, hY⟩
       · 
         obtain ⟨ci, s₆, h6, hb⟩ := bind_ok hb
         obtain ⟨hg, hs6⟩ := liftM_ok h6
@@ -648,7 +649,7 @@ theorem replaceIfNested_spec {env : Environment} {lctx : LocalContext} {params A
               subst hT₀ hK
               exact ⟨rfl, J_name, ls, e.getAppArgs, I_val.numParams, J_info, v, rfl, get_ok hg, hle,
                 fun i hi a ha => by have := hlb i hi; rwa [getElem!_def, ha] at this,
-                hfv.getAppArgs, hv, rfl, hfresh, hcs⟩
+                hfv.getAppArgs, hv, rfl, hfresh, hcs, fn, I_val, hci, hJmem, rfl⟩
             refine ⟨hE.trans hE', fun Y hYr => ?_⟩
             have hsub := hE'.sub
             rcases hres Y hYr with hY' | ⟨rfl, rfl⟩
@@ -1022,7 +1023,7 @@ theorem Created.closed {env : Environment} (henv : EnvClosed env) {cty xs lctx b
     (hty : cty.SuppIn (FVOnly fun _ => False)) (htc : cty.looseBVarRange' = 0) {params K T₀}
     (hC : Created env lctx params (xs.map .fvar).toArray K T₀) :
     TypeClosed T₀ := by
-  obtain ⟨J, Ls, args, nI, Jv, v, -, hJ, hnI, hlb, hargs, hv, hT, -, hcs⟩ := hC
+  obtain ⟨J, Ls, args, nI, Jv, v, -, hJ, hnI, hlb, hargs, hv, hT, -, hcs, -⟩ := hC
   have hargs' : ∀ a ∈ args, a.SuppIn (FVOnly (· ∈ xs)) := fun a ha =>
     Expr.SuppIn.mono (S := FVOnly (.fvar · ∈ (xs.map Expr.fvar).toArray)) (S' := FVOnly (· ∈ xs))
       ⟨fun _ h => by simpa using h, fun _ => id, fun _ => id⟩ (hargs a ha)
@@ -1066,6 +1067,7 @@ def AuxMade (env : Environment) (params : Array Expr) (nparams : Nat)
     (p : (Expr × Name) × InductiveType) : Prop :=
   p.2.name = p.1.2 ∧ ∃ cty xs lctx body, Opens {} cty xs lctx body ∧ xs.length = nparams ∧
     xs.Nodup ∧ (∀ x ∈ xs, cty.SuppIn (FVOnly (· ≠ x))) ∧ (∀ x ∈ xs, .fvar x ∉ params) ∧
+    cty.SuppIn (FVOnly fun _ => False) ∧ cty.looseBVarRange' = 0 ∧
     Created env lctx params (xs.map .fvar).toArray p.1.1 p.2
 
 /-- The constructor `c₀` as `run` leaves it: opened at fresh variables `xs`, its nested occurrences
@@ -1142,7 +1144,7 @@ theorem ctorStep_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat
     hpx, hfv, R, hty⟩
   · rw [hg]; exact le_advance
   · obtain ⟨hp1, hp2⟩ := h3 p hp
-    exact ⟨⟨hp1, _, _, lctx, body, ho, freshIds_length, hnd, hx, hpx, hp2⟩,
+    exact ⟨⟨hp1, _, _, lctx, body, ho, freshIds_length, hnd, hx, hpx, hc, hcl, hp2⟩,
       Created.closed henv ho hnd hx hc hcl hp2⟩
 
 theorem ctors_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat}
@@ -2680,7 +2682,7 @@ theorem auxMade_names {env : Environment} {params : Array Expr} {nparams : Nat} 
   | [], [], .nil => ⟨rfl, nofun⟩
   | _ :: _, T :: _, .cons h t => by
     obtain ⟨h1, h2⟩ := auxMade_names t
-    obtain ⟨hn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hfresh, _⟩ := h
+    obtain ⟨hn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hfresh, _⟩ := h
     simp only at hn hfresh
     refine ⟨by simp [← hn, h1], fun T' hT' => ?_⟩
     rcases List.mem_cons.1 hT' with rfl | h

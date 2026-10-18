@@ -1704,7 +1704,7 @@ theorem recFacts {env envT envC : VEnv} (henv : env.WF) (hdecl : d.WF env)
       have := FieldsWF.recArg hfs k f hf
       unfold RecArgWF at this
       rw [hra] at this
-      obtain ⟨T, h1, h2, h3⟩ := this
+      obtain ⟨T, h1, h2, h3, -⟩ := this
       refine ⟨T, h1, h2, ?_⟩
       have := (h3.instL hls).mono hle
       simp only [List.map_append, List.map_reverse, List.map_map, Function.comp_def, List.map_take,

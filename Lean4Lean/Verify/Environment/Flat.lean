@@ -183,6 +183,7 @@ theorem addInductive.WF_flat {env : Environment} {ves : VEnvs} (wf : ves.WF env)
     (fun res h => ⟨hflat res h, ElimNestedInductive.run_flat h rfl (hflat res h),
       ElimNestedInductive.run_ne_nil h⟩)
     fun res ⟨h1, ⟨hn, h0⟩, hne⟩ => ?_
+  refine Except.WF.bind (Q := fun _ => True) (fun _ _ => trivial) fun _ _ => ?_
   simp only [h1]
   have hne' : res.types ≠ [] := fun h => hne (by simpa [h] using hn.symm)
   have hallow' : allowPrimitive →
@@ -201,7 +202,7 @@ theorem addInductive.WF {env : Environment} {ves : VEnvs} (wf : ves.WF env)
   by_cases hflat : IsFlat env lparams nparams types fuel
   · refine (addInductive.WF_flat wf lparams nparams types isUnsafe allowPrimitive fuel hflat
       hallow).mono
-      fun env' ⟨decl, venv', hu, hdecl, haux, H, hq, hnp, hp⟩ => ?_
+      fun env' ⟨decl, venv', hu, hdecl, haux, H, hq, hnp, hp, _⟩ => ?_
     subst hu
     replace H : AddInduct (inductSafety decl.isUnsafe) env.constants
         (ves.venv (inductSafety decl.isUnsafe)) decl env'.constants venv' := by

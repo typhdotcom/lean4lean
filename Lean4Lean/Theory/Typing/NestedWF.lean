@@ -307,6 +307,46 @@ def VField.AuxAt (R : Name → Option VAuxHead) (ls₀ : List VLevel) (k : Nat) 
     (∀ i (b : VExpr), ra.binders[i]? = some b → b.AuxAt R ls₀ (k + i)) ∧
     ∀ x ∈ ra.indices, x.AuxAt R ls₀ (k + ra.binders.length)
 
+theorem VExpr.ConstsSat.foralls {p : Name → Prop} : ∀ {As : List VExpr} {B : VExpr},
+    (VExpr.foralls As B).ConstsSat p ↔ (∀ A ∈ As, A.ConstsSat p) ∧ B.ConstsSat p
+  | [], _ => by simp
+  | A :: As, B => by
+    simp only [VExpr.foralls, VExpr.ConstsSat, List.mem_cons, forall_eq_or_imp]
+    rw [VExpr.ConstsSat.foralls, and_assoc]
+
+/-- A recursive field's view has no auxiliary constant at all, where the auxiliary types are among
+the block's own and the auxiliary constructors are not constants of the environment: the view
+mentions none of the block's types, and is typed. -/
+theorem VInductDecl.RecArgWF.auxAt {R : Name → Option VAuxHead} {d : VInductDecl} {E₁ : VEnv}
+    (hE : E₁.Ordered) {Γ : List VExpr} {k : Nat} {f : VField}
+    (hΓ : OnCtx Γ (E₁.IsType d.uvars))
+    (hdom : ∀ c h, R c = some h → c ∈ d.names ∨ E₁.constants c = none)
+    (hnone : ∀ T ∈ d.allTypes, T.nested = none) (H : d.RecArgWF E₁ Γ k f) (ls₀ : List VLevel) :
+    ∀ ra, f.recArg = some ra →
+      (∀ i (b : VExpr), ra.binders[i]? = some b → b.AuxAt R ls₀ (k + i)) ∧
+      ∀ x ∈ ra.indices, x.AuxAt R ls₀ (k + ra.binders.length) := by
+  intro ra hra
+  unfold VInductDecl.RecArgWF at H
+  rw [hra] at H
+  obtain ⟨T, hT, -, ⟨_, hdef⟩, hbm, him⟩ := H
+  have hcs := (VEnv.IsDefEq.constsSat hE hdef (VEnv.OnCtx.constsSat hE hΓ)).2.1
+  rw [VExpr.ConstsSat.foralls, VInductiveType.typeApp_of_none
+    (hnone T (List.mem_of_getElem? hT)), ConstsSat.appN] at hcs
+  obtain ⟨hcb, -, hcis⟩ := hcs
+  have hfree {b : VExpr} (h1 : b.ConstsSat (E₁.constants · |>.isSome))
+      (h2 : b.mentions d.names = false) : b.ConstsSat (R · = none) :=
+    (h1.and (VExpr.constsSat_of_mentions h2)).mono fun c ⟨h1, h2⟩ => by
+      cases hR : R c with
+      | none => rfl
+      | some h =>
+        rcases hdom c h hR with h' | h'
+        · exact absurd h' h2
+        · simp [h'] at h1
+  refine ⟨fun i b hb => VExpr.AuxAt.of_constsSat (hfree (hcb b (List.mem_of_getElem? hb))
+    (by simpa using List.all_eq_true.1 hbm b (List.mem_of_getElem? hb))), fun x hx =>
+    VExpr.AuxAt.of_constsSat (hfree (hcis x (List.mem_append_right _ hx))
+      (by simpa using List.all_eq_true.1 him x hx))⟩
+
 namespace VInductDecl
 variable {R : Name → Option VAuxHead} {ren : Name → Option Name} {d : VInductDecl} {n : Nat}
   {ns : List VNested} {cname : Name → Name} {E₁ E₀ : VEnv} {F : Name → Option VExpr}
@@ -400,7 +440,7 @@ theorem RestoreSpec.fieldsWF (hdom : ∀ c, F c ≠ none ∨ R c ≠ none ∨ re
         exact ⟨_, this⟩
       have hd := HE.defeq hΓ0 (by simpa using hf0) hW
       have hP' := Positive.defeqU (d := d.restoreNested R ren n ns cname) HE.wf hΓ0 hd hP
-      have hP'' := Positive.defeqDFC (d := d.restoreNested R ren n ns cname) HE.wf
+      have hP'' := Positive.defeqDFC (d := d.restoreNested R ren n ns cname) HE.wf.ordered
         (HE.ctx_defeq hΓ hΔ).2 hP'
       rwa [← hctx, ← hfr] at hP''
     · unfold RecArgWF at h6 ⊢
@@ -410,9 +450,34 @@ theorem RestoreSpec.fieldsWF (hdom : ∀ c, F c ≠ none ∨ R c ≠ none ∨ re
       | some ra =>
         rw [hra] at h6
         obtain ⟨hb, hi⟩ := hfra ra hra
-        obtain ⟨T, hT, hTl, hdef⟩ := h6
+        obtain ⟨T, hT, hTl, hdef, hbm, him⟩ := h6
         rw [allTypes_of_aux H.flat] at hT
-        refine ⟨T.restore R ren cname (nestedAt n ns ra.typeIdx), ?_, ?_, ?_⟩
+        -- the view's binders and indices mention no constant restoring changes
+        have hfree : ∀ b : VExpr, b.ConstsSat (E₁.constants · |>.isSome) →
+            b.mentions d.names = false →
+            (b.restore R ren).mentions (d.restoreNested R ren n ns cname).names = false := by
+          intro b hb' hm
+          rw [VExpr.restore_of_constsSat ((hb'.and (VExpr.constsSat_of_mentions hm)).mono
+            fun c ⟨h1, h2⟩ => ⟨?_, ?_⟩)]
+          · exact VExpr.mentions_mono restoreNested_names_sub hm
+          · cases hR : R c with
+            | none => rfl
+            | some _ =>
+              rcases hdom c (.inr (.inl (by simp [hR]))) with h | h
+              · exact absurd h h2
+              · simp [h] at h1
+          · cases hr : ren c with
+            | none => rfl
+            | some _ =>
+              rcases hdom c (.inr (.inr (by simp [hr]))) with h | h
+              · exact absurd h h2
+              · simp [h] at h1
+        obtain ⟨_, hdef₀⟩ := id hdef
+        have hcs := (VEnv.IsDefEq.constsSat hO hdef₀ (VEnv.OnCtx.constsSat hO hΓ)).2.1
+        rw [VExpr.ConstsSat.foralls, VInductiveType.typeApp_of_none
+          (H.nested T (List.mem_of_getElem? hT)), ConstsSat.appN] at hcs
+        obtain ⟨hcb, -, hcis⟩ := hcs
+        refine ⟨T.restore R ren cname (nestedAt n ns ra.typeIdx), ?_, ?_, ?_, ?_, ?_⟩
         · rw [restoreNested_allTypes_getElem? H]
           simp only [VRecArg.restore, allTypes_of_aux H.flat, hT, Option.map_some]
         · simp [VRecArg.restore, VInductiveType.restore, hTl]
@@ -429,6 +494,15 @@ theorem RestoreSpec.fieldsWF (hdom : ∀ c, F c ≠ none ∨ R c ≠ none ∨ re
           dsimp only [VRecArg.restore, VField.restore]
           rw [List.length_map]
           exact this
+        · simp only [VRecArg.restore, List.all_map, List.all_eq_true, Function.comp_apply,
+            Bool.not_eq_eq_eq_not, Bool.not_true]
+          intro b hb'
+          exact hfree b (hcb b hb') (by simpa using List.all_eq_true.1 hbm b hb')
+        · simp only [VRecArg.restore, List.all_map, List.all_eq_true, Function.comp_apply,
+            Bool.not_eq_eq_eq_not, Bool.not_true]
+          intro b hb'
+          exact hfree b (hcis b (List.mem_append_right _ hb'))
+            (by simpa using List.all_eq_true.1 him b hb')
     · have := ih (Δ := f.type :: Δ) rfl ⟨hΓ, _, h2⟩ ⟨by simpa using hf0, hΔ⟩
         (fun i D' h => by simpa [Nat.add_assoc, Nat.add_comm 1] using hD (i + 1) D' h)
         (fun i f' h => by simpa [Nat.add_assoc, Nat.add_comm 1] using hf (i + 1) f' h) rfl
@@ -436,17 +510,30 @@ theorem RestoreSpec.fieldsWF (hdom : ∀ c, F c ≠ none ∨ R c ≠ none ∨ re
 
 end VInductDecl
 
-theorem VExpr.ConstsSat.foralls {p : Name → Prop} : ∀ {As : List VExpr} {B : VExpr},
-    (VExpr.foralls As B).ConstsSat p ↔ (∀ A ∈ As, A.ConstsSat p) ∧ B.ConstsSat p
-  | [], _ => by simp
-  | A :: As, B => by
-    simp only [VExpr.foralls, VExpr.ConstsSat, List.mem_cons, forall_eq_or_imp]
-    rw [VExpr.ConstsSat.foralls, and_assoc]
-
 theorem VEnv.IsTele.teleDefEq_self {env : VEnv} {U : Nat} :
     ∀ {Γ As : List VExpr}, env.IsTele U Γ As → env.TeleDefEq U Γ As As
   | _, [], .nil => .nil
   | _, _ :: _, .cons ⟨_, hA⟩ t => .cons ⟨_, hA⟩ t.teleDefEq_self
+
+/-- Restoring keeps a declared domain's relation to the type the kernel reads off it, where the
+annotations are neither auxiliary nor renamed. -/
+theorem VExpr.StripsTo.restore {R : Name → Option VAuxHead} {ren : Name → Option Name}
+    (hR : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
+      R c = none ∧ ren c = none)
+    {e e' : VExpr} (H : e.StripsTo e') : (e.restore R ren).StripsTo (e'.restore R ren) := by
+  induction H with
+  | refl => exact .refl
+  | @app2 A _ ls v c hc _ ih =>
+    obtain ⟨h1, h2⟩ := hR c (by rcases hc with rfl | rfl <;> simp)
+    have : (VExpr.app (.app (.const c ls) A) v).restore R ren =
+        .app (.app (.const c ls) (A.restore R ren)) (v.restore R ren) := by
+      simp [VExpr.restore, VExpr.restoreAux, VExpr.constSpine?, h1, h2]
+    rw [this]; exact .app2 hc ih
+  | @app1 A _ ls c hc _ ih =>
+    obtain ⟨h1, h2⟩ := hR c (by rcases hc with rfl | rfl <;> simp)
+    have : (VExpr.app (.const c ls) A).restore R ren = .app (.const c ls) (A.restore R ren) := by
+      simp [VExpr.restore, VExpr.restoreAux, VExpr.constSpine?, h1, h2]
+    rw [this]; exact .app1 hc ih
 
 /-- What the restoration needs to know of a constructor of the translated block `d`, beyond its
 check: its declared type's parameter binders mention no auxiliary or renamed constant and its body
@@ -460,9 +547,9 @@ structure VConstructor.RestoreFacts (R : Name → Option VAuxHead) (ren : Name �
     B.AuxAt R (VLevel.params d.uvars) 0
   fields : ∀ k (f : VField), c.fields[k]? = some f → f.AuxAt R (VLevel.params d.uvars) k
   indices : ∀ x ∈ c.indices, x.ConstsSat fun y => R y ≠ none ∨ ren y ≠ none → y ∈ d.names
-  skips : ∀ ps Ds B, c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
-    ∀ k (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ j, k ≤ j →
-      (D.restore R ren).Skips 1 j → (f.type.restore R ren).Skips 1 j
+  strips : ∀ ps Ds B, c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
+    ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      D.StripsTo f.type
 
 namespace VInductDecl
 variable {R : Name → Option VAuxHead} {ren : Name → Option Name} {d : VInductDecl} {n : Nat}
@@ -483,7 +570,9 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
     (hAux : ∀ T ∈ (d.restoreNested R ren n ns cname).aux, ∃ o, T.nested = some o ∧
       ∀ env', venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some env' →
         T.AuxWF env' (d.restoreNested R ren n ns cname) o)
-    (hCtor : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.RestoreFacts R ren d) :
+    (hCtor : ∀ T ∈ d.types, ∀ c ∈ T.ctors, c.RestoreFacts R ren d)
+    (hAnn : ∀ c : Name, c = ``optParam ∨ c = ``autoParam ∨ c = ``outParam ∨ c = ``semiOutParam →
+      R c = none ∧ ren c = none) :
     (d.restoreNested R ren n ns cname).WF venv := by
   have hO := henv.ordered
   have hfr {e : VExpr} (he : e.ConstsSat (venv.constants · |>.isSome)) :
@@ -695,13 +784,7 @@ theorem RestoreSpec.wf (henv : venv.WF) (H : d.RestoreSpec R ren n ns cname) (hd
       obtain ⟨D, hD, rfl⟩ := Option.map_eq_some_iff.1 hD'
       rw [VConstructor.restore_fields_getElem?] at hf'
       obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.1 hf'
-      by_cases hjk : j < k
-      · have hD0 := hDA k D hD
-        have hf0 := (hF.fields k f hf).1
-        rw [Nat.zero_add] at hD0
-        exact (VExpr.AuxAt.restore_skips hcl hf0 hjk).2
-          (hSk k D f hD hf j ((VExpr.AuxAt.restore_skips hcl hD0 hjk).1 hSk'))
-      · exact hF.skips ps Ds _ hty₀ hpsl k D f hD hf j (by omega) hSk'
+      exact ((hF.strips ps Ds _ hty₀ hpsl k D f hD hf).restore hAnn).skips hSk'
     · simp [VConstructor.restore, VInductiveType.restore, hcW.indices.1]
     · simp only [VConstructor.restore, List.all_map, List.all_eq_true, Function.comp_apply]
       intro x hx

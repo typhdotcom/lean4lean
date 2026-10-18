@@ -383,7 +383,8 @@ def loopArgs1 (stats : InductiveStats) (type : Expr) (i : Nat) (indices : Array 
     else
       k type i indices
 
-variable (stats : InductiveStats) (indTypes : Array InductiveType) (elimLevel : Level) in
+variable (stats : InductiveStats) (blockNames : NameSet) (indTypes : Array InductiveType)
+  (elimLevel : Level) in
 def loopInd1 (dIdx : Nat) (recInfos : Array RecInfo) (k : Array RecInfo → M α) : M α := do
   if _h : dIdx < indTypes.size then
     let ctx ← readThe Context
@@ -392,6 +393,11 @@ def loopInd1 (dIdx : Nat) (recInfos : Array RecInfo) (k : Array RecInfo → M α
     unless r.isSort && nparams == stats.params.size &&
         some indices.size == stats.nindices[dIdx]? do
       throw <| .other "invalid inductive datatype declaration, its type changed shape"
+    let lctx ← getLCtx
+    for x in indices do
+      if let some d := lctx.findFVar? x then
+        if d.type.anySubterm fun | .const c _ => blockNames.contains c | _ => false then
+          throw <| .other "invalid inductive datatype declaration, its indices mention the block"
     let tTy := mkAppN (mkAppN stats.indConsts[dIdx]! stats.params) indices
     withLocalDecl `t .default (← consumeTypeAnnotations tTy) fun major => do
     let lctx ← getLCtx
@@ -491,10 +497,11 @@ end mkRecInfos
 
 def mkRecInfos (stats : InductiveStats) (indTypes : Array InductiveType)
     (elimLevel : Level) (k : Array RecInfo → M α) : M α :=
-  mkRecInfos.loopInd1 stats indTypes elimLevel 0 #[] fun recInfos =>
-  -- The block's types and constructors, which no inductive hypothesis's binders mention.
+  -- The block's types and constructors, which no index's or inductive hypothesis's binders
+  -- mention.
   let blockNames := indTypes.foldl (init := {}) fun s t =>
     t.ctors.foldl (·.insert ·.name) (s.insert t.name)
+  mkRecInfos.loopInd1 stats blockNames indTypes elimLevel 0 #[] fun recInfos =>
   mkRecInfos.loopInd2 stats blockNames indTypes 0 recInfos k
 
 def getRecLevels (elimLevel : Level) (levels : List Level) : List Level :=
@@ -887,6 +894,17 @@ def Environment.addInductive (env : Environment) (lparams : List Name) (nparams 
       checkNoNestedAux ctor.name ctor.type
   let res ← ElimNestedInductive.run fuel.inductiveFuel nparams types env
     |>.run' { lvls := lparams.map .param, newTypes := types.toArray }
+  -- A constructor may not name an auxiliary type or constructor the elimination made: the
+  -- `_nested` prefix `checkNoNestedAux` rejects does not cover every auxiliary name.
+  let auxNames : NameSet := (res.types.drop types.length).foldl (init := {}) fun s t =>
+    t.ctors.foldl (·.insert ·.name) (s.insert t.name)
+  for indType in types do
+    for ctor in indType.ctors do
+      if ctor.type.anySubterm fun
+          | .const c _ => auxNames.contains c
+          | .proj s _ _ => auxNames.contains s
+          | _ => false then
+        throw <| .other s!"invalid declaration '{ctor.name}', it uses an auxiliary nested type"
   let numNested := res.aux2nested.size
   let safety := if isUnsafe then .unsafe else .safe
   let env' ← AddInductive.run nparams res.types numNested

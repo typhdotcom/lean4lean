@@ -388,13 +388,15 @@ noncomputable def iotaRules : List VDefEq :=
     d.iotaRule d.recLevels d.motiveLevel (VLevel.params d.recUVars) q j c
 
 /-- The view of a recursive field the kernel's `isRecArg` takes, which the recursor's inductive
-hypothesis is built from. `k` fields precede it, under the parameters. A field the kernel does not
-see as recursive gets no inductive hypothesis, which only weakens the recursor. -/
+hypothesis is built from. `k` fields precede it, under the parameters. Its binders and indices do
+not mention the block's types, as positivity asks of the field. A field the kernel does not see as
+recursive gets no inductive hypothesis, which only weakens the recursor. -/
 def RecArgWF (env : VEnv) (Γ : List VExpr) (k : Nat) (f : VField) : Prop :=
   match f.recArg with
   | some ra => ∃ T, d.allTypes[ra.typeIdx]? = some T ∧ ra.indices.length = T.indices.length ∧
     env.IsDefEqU d.uvars Γ f.type (.foralls ra.binders <| T.typeApp (VLevel.params d.uvars)
-      (bvars d.params.length (k + ra.binders.length)) ra.indices)
+      (bvars d.params.length (k + ra.binders.length)) ra.indices) ∧
+    ra.binders.all (!·.mentions d.names) ∧ ra.indices.all (!·.mentions d.names)
   | none => True
 
 /-- Strict positivity, the kernel's `checkPositivity`, up to definitional equality: under `Γ`,

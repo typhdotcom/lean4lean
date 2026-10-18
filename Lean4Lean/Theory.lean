@@ -15,3 +15,4 @@ import Lean4Lean.Theory.Typing.Nested
 import Lean4Lean.Theory.Typing.NestedDecl
 import Lean4Lean.Theory.Typing.NestedEnv
 import Lean4Lean.Theory.Typing.NestedWF
+import Lean4Lean.Theory.Typing.NestedAux

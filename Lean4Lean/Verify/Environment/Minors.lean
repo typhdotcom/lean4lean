@@ -504,8 +504,7 @@ structure CtorArgsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
       TrExprS cT.venv cT.lparams Mf.vlctx t (.foralls (Ds.drop fvs.length) R))
   fields : ∀ j D fty, Ds[j]? = some D → ftys[j]? = some fty →
     cT.venv.IsDefEqU cT.lparams.length ((ftys.take j).reverse ++ params.reverse) D fty
-  within : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty →
-    ∀ i, D.Skips 1 i → fty.Skips 1 i
+  within : ∀ (j : Nat) (D fty : VExpr), Ds[j]? = some D → ftys[j]? = some fty → D.StripsTo fty
   /-- The view `N₀` of the kernel's context, with the fields pushed. -/
   comp : ∃ N ρN, Ext N cb ρN ∧
     VLCtx.FVLift' (Mf.instL (VLevel.shift pre.length cT.lparams.length)).vlctx N.vlctx 0
@@ -713,7 +712,7 @@ theorem loopCtorArgs.loop.WF {cT : VContext} {X : Name → Prop} {pre : List Nam
           have hfl : ftys.length = fvs.length := by
             have := hI.tele.length_eq; simp [hlenp] at this; omega
           rw [hfl, List.getElem?_eq_getElem hn] at hD; cases hD
-          exact fun i h => hwty 1 i h
+          exact hwty
       · have hfl : ftys.length = fvs.length := by
           have := hI.tele.length_eq; simp [hlenp] at this; omega
         have := hNT.vlam (fv := ⟨cb.ngen.curr⟩) (name := name) (ty := dom.consumeTypeAnnotations')
@@ -1523,7 +1522,8 @@ def _root_.Lean4Lean.VInductDecl.RecArgAt (d : VInductDecl) (env : VEnv) (U : Na
   ∃ T, d.types[ra.typeIdx]? = some T ∧ ra.indices.length = T.indices.length ∧
     env.IsDefEqU U ((ftys.take k).reverse ++ params.reverse) fty
       (.foralls ra.binders (.appN (.const T.name (VLevel.params U))
-        (VExpr.bvars params.length (k + ra.binders.length) ++ ra.indices)))
+        (VExpr.bvars params.length (k + ra.binders.length) ++ ra.indices))) ∧
+    ra.binders.all (!·.mentions d.names) ∧ ra.indices.all (!·.mentions d.names)
 
 /-- An inductive hypothesis' type in a minor premise, as `minorType` states it: over the views of
 the `k`th field's binders, the motive of its type applied to the view's indices and to the field
@@ -1586,7 +1586,9 @@ theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
     (hWf : ∃ hk', VLCtx.FVLift' (Mf.instL (VLevel.shift pre.length cT.lparams.length)).vlctx
       (E.dropN r hk').vlctx 0 ((Lift.skipN .refl (types.length + q)).consN fvs.length) 0)
     {recInfos : Array RecInfo} {blockNames : NameSet}
-    (hrec : ∀ t (ht : t < types.length), recInfos[t]!.motive = .fvar (motfvs[t]'(hmot ▸ ht))) :
+    (hrec : ∀ t (ht : t < types.length), recInfos[t]!.motive = .fvar (motfvs[t]'(hmot ▸ ht)))
+    (hNM : NotMentionsOK cT.venv cT.lparams stats types)
+    (hBN : ∀ t ∈ types, blockNames.contains t.name) :
     WF cb (mkRecInfos.loopUArgs (.fvar fvs[k]) fun uiTy xs => do
       let (itIdx, itIndices) ← getIIndices stats uiTy
       let lctx ← getLCtx
@@ -1883,17 +1885,80 @@ theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
   refine WF.bind (Q := (· = cbx.lctx)) (fun _ h => by cases h; rfl) fun lctx hl => ?_
   subst hl
   rw [← Array.forIn_toList]
-  refine WF.bind (WF.forIn_list (P := fun _ => True) fun x _ _ => ?_) fun _ _ => ?_
+  refine WF.bind (WF.forIn_list (P := fun x => ∀ d, cbx.lctx.findFVar? x = some d →
+      (d.type.anySubterm fun | .const c _ => blockNames.contains c | _ => false) = false)
+    fun x _ _ => ?_) fun _ hfree => ?_
   · split
-    · split
+    · next d hd =>
+      split
       · exact WF.throw
-      · exact WF.pure ⟨trivial, _, rfl⟩
-    · exact WF.pure ⟨trivial, _, rfl⟩
+      · next hc =>
+        refine WF.pure ⟨fun d' hd' => ?_, _, rfl⟩
+        rw [hd] at hd'; cases hd'; simpa using hc
+    · next hd => exact WF.pure ⟨fun d' hd' => (hd d' hd').elim, _, rfl⟩
+  have hdnames : d₀.names = types.map (·.name) := by
+    refine List.ext_getElem (by simp [VInductDecl.names, hd₀T]) fun i h1 h2 => ?_
+    obtain ⟨T'', hT'', hn, -⟩ := hd₀t i (by simpa using h2)
+    simp only [VInductDecl.names, List.getElem_map]
+    rw [Option.some.inj ((List.getElem?_eq_getElem _).symm.trans hT''), hn]
+  -- what the kernel checks of a term rules out the block's types in it
+  have hocc_of {e : Expr} (h : e.anySub (blockP blockNames) = false) :
+      hasIndOcc stats.indConsts e = false := by
+    rw [hasIndOcc_eq]
+    refine anySub_mono (fun x hx => ?_) h
+    obtain ⟨c, us, rfl, hc⟩ := (indOccP_spec hind).1 x hx
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hc
+    exact hBN t ht
   rw [hrec itIdx hitT, show itIndices = itIndices.toList.toArray by simp]
-  refine WF.pure ⟨ra, hC', ⟨T', hT', hisl', ?_⟩, rfl, ?_, hty2, ?_, hk2, ?_, ?_⟩
+  refine WF.pure ⟨ra, hC', ⟨T', hT', hisl', ?_, ?_, ?_⟩, rfl, ?_, hty2, ?_, hk2, ?_, ?_⟩
   · rw [hfty, hT'n]
     rw [hV₀, ← hxl, List.reverse_append, hlenp] at hrel₀
     exact hrel₀
+  · -- the binders: the kernel checked their declarations
+    rw [hdnames]
+    refine List.all_eq_true.2 fun b hb => ?_
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hb
+    have hix : i < xfvs.length := by have : i < xtys.length := hi; omega
+    have hkf : k ≤ fvs.length := Nat.le_of_lt hk
+    have e1 : (pfvs ++ fvs.take k ++ xfvs)[pfvs.length + (k + i)]'(by simp; omega) =
+        xfvs[i] := by
+      rw [List.getElem_append_right (by simp; omega)]
+      congr 1; simp; omega
+    have e2 : (params ++ ftys.take k ++ xtys)[pfvs.length + (k + i)]'(by simp; omega) =
+        xtys[i] := by
+      rw [List.getElem_append_right (by simp; omega)]
+      congr 1; simp; omega
+    have := hI.tele.not_mentions hNM hMx (pfvs.length + (k + i)) (by simp; omega)
+      (by simp; omega) fun d hd => ?_
+    · rw [e2] at this; simpa using this
+    rw [e1] at hd
+    have hag' := hI.sub.lctx xfvs[i] (by
+      show xfvs[i] ∈ Mx.vlctx.fvars; rw [hI.tele.fvars]; simp)
+    change (cbx.lctx.find? xfvs[i]).map LocalDecl.erase = (Mx.lctx.find? xfvs[i]).map _ at hag'
+    rw [hd] at hag'
+    obtain ⟨d', hd', he⟩ : ∃ d', cbx.lctx.find? xfvs[i] = some d' ∧ d'.erase = d.erase := by
+      cases h : cbx.lctx.find? xfvs[i] <;> rw [h] at hag' <;> simp_all
+    have hf := hfree (.fvar xfvs[i]) (by simp) d' (by
+      simp only [LocalContext.findFVar?, Expr.fvarId!, hd'])
+    have hf' := (anySubterm_blockP blockNames d'.type).symm.trans hf
+    rw [(LocalDecl.erase_type he).1] at hf'
+    exact hocc_of hf'
+  · -- the indices: the kernel checked the type's arguments
+    rw [hdnames]
+    refine List.all_eq_true.2 fun b hb => ?_
+    obtain ⟨a, ha, htr⟩ := Lean4Lean.List.Forall₂.forall_exists_r hisTr b hb
+    have hpsz : stats.params.size = pfvs.length := by
+      rw [← Array.length_toList, hpar, List.length_map]
+    obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem ha
+    rw [List.getElem_drop] at htr
+    have hlt : pfvs.length + j < uiTy.getAppArgs.size := by
+      rw [← Array.length_toList, Expr.getAppArgs_toList]; simp at hj; omega
+    have := (isValidIndAppIdx_true hvalI).2.2.2 (pfvs.length + j) (by omega) hlt
+    have harg : uiTy.getAppArgs[pfvs.length + j] = uiTy.getAppArgsList[pfvs.length + j]'(by
+        rw [← Expr.getAppArgs_toList]; simpa using hlt) := by
+      simp only [← Expr.getAppArgs_toList, Array.getElem_toList]
+    rw [getElem!_pos uiTy.getAppArgs (pfvs.length + j) hlt, harg] at this
+    simpa using hNM hMx.tr.wf hI.tele.vlam_entries htr this
   · rw [heq3, hspec]
     have := htr3
     rw [TypeChecker.MLCtx.dropN_congr rfl hk3 (by rw [hNT.length]; simp; omega), hNb', hvenvx,
@@ -2082,6 +2147,8 @@ theorem loopU.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre
     (hpar : stats.params.toList = pfvs.map .fvar) (hlev : stats.levels = cT.lparams.map .param)
     {types : List InductiveType}
     (hind : stats.indConsts.toList = types.map fun T => .const T.name stats.levels)
+    (hNM : NotMentionsOK cT.venv cT.lparams stats types)
+    (hBN : ∀ t ∈ types, blockNames.contains t.name)
     (hUs : cT.lparams.Nodup) {d₀ : VInductDecl} (hd₀p : d₀.params = params)
     (hd₀T : d₀.types.length = types.length)
     (hd₀t : ∀ t (ht : t < types.length), ∃ T', d₀.types[t]? = some T' ∧
@@ -2140,7 +2207,7 @@ theorem loopU.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre
         c).length = i := by simp [ihsOf, hrl]
     refine WF.bind (ihInfo.WF hMpT hpar hlev hind hUs hd₀p hd₀T hd₀t (ml := ml)
       (hPB cb hI.pred) hI.ctor hMfT hI.types hI.sub hk hfk hq hmot hmin hI.len hihl hI.ext
-      hI.tele hI.lift hrec) fun ⟨viTy, ihI⟩ ⟨ra, hC', hRA, hidx, htr, hisT, hstrip, hkI, hpcs⟩ => ?_
+      hI.tele hI.lift hrec hNM hBN) fun ⟨viTy, ihI⟩ ⟨ra, hC', hRA, hidx, htr, hisT, hstrip, hkI, hpcs⟩ => ?_
     dsimp only
     refine WF.bind (Q := fun _ => True) (fun _ _ => trivial) fun _ _ => ?_
     refine WF.bind (Q := (· = viTy)) (fun a h => by
@@ -2428,9 +2495,9 @@ structure CtorOut (cT : VContext) (pre : List Name) (params : List VExpr) (d₀ 
   defeq : ∀ k D f, Ds[k]? = some D → c.fields[k]? = some f →
     cT.venv.IsDefEqU cT.lparams.length
       (((c.fields.take k).map (·.type)).reverse ++ params.reverse) D f.type
-  /-- A field's view mentions no variable its declared domain does not. -/
+  /-- A field's view is its declared domain with annotations stripped. -/
   within : ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
-    ∀ j, D.Skips 1 j → f.type.Skips 1 j
+    D.StripsTo f.type
   sort : ∀ k f, c.fields[k]? = some f →
     cT.venv.HasType cT.lparams.length
       (((c.fields.take k).map (·.type)).reverse ++ params.reverse) f.type (.sort f.level) ∧
@@ -2493,6 +2560,8 @@ theorem MinorKDOK.extend {cT Mp pfvs params cb k c} (H : MinorKDOK cT Mp pfvs pa
 theorem ctorMinor.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
+    (hNM : NotMentionsOK cT.venv cT.lparams stats types)
+    (hBN : ∀ t ∈ types, blockNames.contains t.name)
     {d₀ : VInductDecl} {motfvs : List FVarId} {heads : List (Array Expr × Expr)} {recInfos : Array RecInfo}
     (hS : MinorsSetup cT pre Mp pfvs params stats types d₀ motfvs heads recInfos) {ml : VLevel}
     {j : Nat} (hj : j < types.length) {ct : Constructor} (hct : ct ∈ types[j].ctors)
@@ -2735,7 +2804,7 @@ theorem ctorMinor.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} 
         ihsOf (VLevel.shift pre.length cT.lparams.length) types.length q fvs.length c₀) := by
     rw [ihsOf, hrec₀, VExpr.liftTele_eq_liftTele', VExpr.liftTele'_eq_zipIdx]
     simpa [List.zipIdx_map, Function.comp_def] using hNT
-  refine loopU.WF hMpT hS.par hS.lev hS.ind hS.lpnd hS.d₀params hS.d₀len hS.d₀types (ml := ml)
+  refine loopU.WF hMpT hS.par hS.lev hS.ind hNM hBN hS.lpnd hS.d₀params hS.d₀len hS.d₀types (ml := ml)
     (j := itIdx) hI.tele (rs := rs) hks1 hks2 hks4 hq hS.motlen hmin hS.motives
     (F₀ := cb₁.mlctx.vlctx.fvars) (E₀ := N) (c₀ := c₀) (P := fun cb' => P cb' ∧
       (∃ ρ, Ext Mmin cb' ρ) ∧ ∀ fv d, cb.lctx.find? fv = some d → cb'.lctx.find? fv = some d)
@@ -3135,6 +3204,8 @@ structure CtorsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
 theorem loopCtors.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
+    (hNM : NotMentionsOK cT.venv cT.lparams stats types)
+    (hBN : ∀ t ∈ types, blockNames.contains t.name)
     {d₀ : VInductDecl} {motfvs : List FVarId} {heads : List (Array Expr × Expr)} {ml : VLevel} {P : VContext → Prop}
     (hP : ∀ cb name ty ty' bi h1 h2, P cb → P (cb.push name ty ty' bi h1 h2))
     {VB : VEnv} {UB : Nat} (hPV : ∀ cb, P cb → cb.venv = VB ∧ cb.lparams.length = UB)
@@ -3167,7 +3238,7 @@ theorem loopCtors.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} 
     rw [mkRecInfos.loopCtors]
     have hct : ct ∈ types[dIdx].ctors := by rw [hdone]; simp
     obtain ⟨C', ps, Ds, idx, ⟨hctr, hC'T, hsh, har, htele⟩, hcon⟩ := hshape ct hct
-    refine ctorMinor.WF hI.setup hd hct hctr hC'T hsh har htele (by simp) hI.minlen hI.tele
+    refine ctorMinor.WF hNM hBN hI.setup hd hct hctr hC'T hsh har htele (by simp) hI.minlen hI.tele
       hI.lift
       hP (fun cb' h => (hPV cb' h).1 ▸ (hPV cb' h).2 ▸ hPB)
       (fun cb' h => (hPV cb' h).1 ▸ hcon) ?step hI.sub hI.ext hI.pred
@@ -3356,6 +3427,8 @@ theorem CtorsInv.weaken {cT X pre Mp hMp pfvs params stats types d₀ motfvs hea
 theorem loopInd2.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
+    (hNM : NotMentionsOK cT.venv cT.lparams stats types)
+    (hBN : ∀ t ∈ types, blockNames.contains t.name)
     {d₀ : VInductDecl} {motfvs : List FVarId} {heads : List (Array Expr × Expr)} {ml : VLevel} {P : VContext → Prop}
     (hP : ∀ cb name ty ty' bi h1 h2, P cb → P (cb.push name ty ty' bi h1 h2))
     {VB : VEnv} {UB : Nat} (hPV : ∀ cb, P cb → cb.venv = VB ∧ cb.lparams.length = UB)
@@ -3393,7 +3466,7 @@ theorem loopInd2.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {
     have hI0 : CtorsInv cT X pre Mp hMp pfvs params stats types d₀ motfvs heads ml P dIdx recInfos
         (flatCtors css ++ ([] : List VConstructor).map (dIdx, ·)) minfvs kds F₁ Mmin cb ρp ρmin := by
       simpa using hI
-    refine loopCtors.WF hP hPV hPB hd (hshape dIdx hd) ?_ types[dIdx].ctors [] [] recInfos minfvs
+    refine loopCtors.WF hNM hBN hP hPV hPB hd (hshape dIdx hd) ?_ types[dIdx].ctors [] [] recInfos minfvs
       kds Mmin cb ρp ρmin (by simp) .nil hI0
     intro recInfos' cs minfvs' kds' Mmin' cb' ρp' ρmin' hI' hcs'
     refine ih (dIdx + 1) (css ++ [cs]) recInfos' minfvs' kds' Mmin' cb' ρp' ρmin' (by omega)

@@ -356,6 +356,8 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
           c.type = .foralls (ps ++ Ds) (.appN (.const type.name (VLevel.params ([] : List Name).length))
             (VExpr.bvars 0 Ds.length ++ c.indices)) ∧
           FieldsElab venvAx d d.params.reverse 0 Ds c.fields ∧
+          (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+            D.StripsTo f.type) ∧
           ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvAx.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
             (u ≈ .zero ↔ f.level ≈ .zero)) cts cvs →
@@ -369,6 +371,8 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
           c.type = .foralls (ps ++ Ds) (.appN (.const type.name (VLevel.params ([] : List Name).length))
             (VExpr.bvars 0 Ds.length ++ c.indices)) ∧
           FieldsElab venvT d d.params.reverse 0 Ds c.fields ∧
+          (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+            D.StripsTo f.type) ∧
           ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
             venvT.HasType ([] : List Name).length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
             (u ≈ .zero ↔ f.level ≈ .zero)) cts cvs := by
@@ -378,13 +382,13 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
     | @cons ct cv cts cvs h ht ih =>
       cases h2 with | cons hf2 ht2 => ?_
       refine .cons ?_ (ih (fun c hc => hp c (.tail _ hc)) ht2)
-      obtain ⟨hn, htrA, ps, Ds, hps, hDs, hsh, hFE, hlv⟩ := h
+      obtain ⟨hn, htrA, ps, Ds, hps, hDs, hsh, hFE, hstr, hlv⟩ := h
       have hpc := hp ct (.head _)
       obtain ⟨htrT, -, -⟩ := primCtor_tr hIT hpc
       obtain ⟨-, -, huA⟩ := primCtor_tr hIAx hpc
       have hcv := huA _ htrA
       obtain rfl : ps = [] := List.eq_nil_of_length_eq_zero hps
-      refine ⟨hn, hcv ▸ htrT, [], Ds, rfl, hDs, hsh, ?_,
+      refine ⟨hn, hcv ▸ htrT, [], Ds, rfl, hDs, hsh, ?_, hstr,
         fun k D f h1 h2 u h3 => hlv k D f h1 h2 u (h3.mono hle)⟩
       rcases hpc with he | ⟨nm, bi, he⟩
       · -- no field
@@ -427,7 +431,7 @@ theorem elaborates_prim {venvT venvAx : VEnv} {I : Name} (hle : venvT ≤ venvAx
                 rw [VInductDecl.allTypes_of_aux hda, hT] at hT'
                 simpa using (List.getElem?_eq_some_iff.1 hT').2.symm
               have hri : ra.indices = [] := List.eq_nil_of_length_eq_zero (by rw [hil, hTi]; rfl)
-              refine ⟨T', hT', hil, ?_⟩
+              refine ⟨T', hT', hil, ?_, by rw [hb]; rfl, by rw [hri]; rfl⟩
               rw [VInductiveType.typeApp_of_none (hdn T' (by rw [hT]; exact .head _)), hfty, hb, hri,
                 hdu, hTn, htn, hdp]
               exact ⟨_, primConst_isType hIT⟩
@@ -683,8 +687,29 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
       simp [isRec, isRec.loop, hc, AddInductive.hasIndOcc_eq, Expr.anySub, AddInductive.indOccP,
         Expr.constName!] at hrec
       exact absurd hn hrec
+  -- a translation mentions the type only where the term does: literals are of other types
+  have hNM : AddInductive.NotMentionsOK cAx.venv cAx.lparams stats [type] := by
+    have hind' : stats.indConsts.toList = [type].map fun T => .const T.name stats.levels := by
+      have := hT.indConsts; rwa [List.take_length] at this
+    obtain ⟨hp, hns⟩ := AddInductive.indOccP_spec hind'
+    intro Δ a a' hΔ hvl ha hocc
+    rw [AddInductive.hasIndOcc_eq] at hocc
+    refine TrExprS.not_mentions (hcAxv ▸ wfAx.tr.wf) hns (fun l _ => ?_) (fun n b hbi hn => ?_)
+      ha hΔ (fun x hx => ?_) hocc
+    · refine l.toConstructor_anySub fun e he => ?_
+      obtain ⟨c', us, rfl, hc'⟩ := hp e he
+      simp only [List.map_cons, List.map_nil, List.mem_singleton] at hc'
+      subst hc'
+      rcases hI with h | h <;> rw [h] <;> exact ⟨_, _, rfl, by decide, fun _ => by decide⟩
+    · simp only [List.map_cons, List.map_nil, List.mem_singleton] at hn
+      subst hn
+      rw [hcAxv, VEnv.addConstList_inducts hAx₁, VEnv.addConstList_inducts hT₁, hb.venv] at hbi
+      obtain ⟨_, h⟩ := henv₀.constants_of_inducts hbi
+      cases h.symm.trans (hfresh₀ type (.head _))
+    · obtain ⟨-, A, hA⟩ := hvl x hx
+      rw [hA]; rfl
   refine AddInductive.mkRecInfos.WF_core (c := cAx) hT hcAxm hcAxl (hcAxv ▸ hle₀)
-    (hcAxv ▸ wfAx.tr.wf) (by rw [hcAxv, hcAxl]; exact hchk venvAx hIAx) hCt hconst henv₀
+    (hcAxv ▸ wfAx.tr.wf) hNM (by rw [hcAxv, hcAxl]; exact hchk venvAx hIAx) hCt hconst henv₀
     c₀.envAt.hasPrimitives hfresh₀ (by simp) (by rw [hcAxenv]; exact hclosed)
     (by rw [hcAxl, hcl]; exact .nil) (by simpa using hdum)
     (fun t ht ct hct' hsp har => ((hnoguard ct (by simpa using hct')) ⟨hsp, har⟩).elim)
@@ -846,6 +871,7 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     rw [Kernel.Environment.find?, ← hcenv, c.envAt.tr.map_wf.find?'_eq_find?]; exact hf
   refine ⟨d, env₂, hR.isUnsafe, hdecl, hR.aux, hstep, by rw [hRq, hDC'.2.1, hDq, hcenv], nofun,
     fun _ => ⟨fun safety venv₁ venv₂ H hp =>
-      hpres hp (Primitive.AddsConsts.of_addInduct H hcs' hrecs'), hsafe⟩⟩
+      hpres hp (Primitive.AddsConsts.of_addInduct H hcs' hrecs'), hsafe⟩,
+    hR.elaborates.stripsTo (by rw [hR.params]; exact hT.nparams)⟩
 
 end Lean4Lean

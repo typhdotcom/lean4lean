@@ -67,10 +67,8 @@ theorem _root_.Lean.Literal.toConstructor_anySub {p : Expr → Bool} (l : Litera
 /-- A translation mentions a constant only if the expression does, or through a literal or a
 projection's type, which is a type a block was recorded for. For the names a block adds, neither
 brings them in. -/
-theorem TrExprS.not_mentions {venv₀ venv : VEnv} {Us : List Name} {p : Expr → Bool}
+theorem TrExprS.not_mentions {venv : VEnv} {Us : List Name} {p : Expr → Bool}
     {ns : List Name} (henv : venv.WF)
-    (hfresh : ∀ n ∈ ns, venv₀.constants n = none)
-    (hnew : ∀ n, venv.constants n ≠ none → venv₀.constants n = none → n ∈ ns)
     (hns : ∀ c us, p (.const c us) = false → c ∉ ns)
     (hlit : ∀ l, venv.ContainsLits l → l.toConstructor.anySub p = false)
     (hind : ∀ n b, venv.inducts n = some b → n ∉ ns)
@@ -512,7 +510,7 @@ theorem BlockFresh.not_mentions {venv₀ venv : VEnv} {types : List InductiveTyp
     intro n hn; obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn; exact H.fresh t ht
   have hnp' : ∀ n ∈ types.map (·.name), Environment.primitives.contains n = false := by
     intro n hn; obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hn; exact H.nonPrim t ht
-  refine TrExprS.not_mentions H.wf hfresh' H.new hns
+  refine TrExprS.not_mentions H.wf hns
     (Literal.toConstructor_anySub_of_fresh H.wf₀ H.prim₀ hfresh' H.new hnp' hp)
     (fun n b hb hn => ?_) ha hΔ (fun x hx => ?_) (hasIndOcc_eq _ _ ▸ hocc)
   · obtain ⟨_, h⟩ := H.wf₀.constants_of_inducts (H.inducts ▸ hb)
@@ -1483,7 +1481,7 @@ theorem isLargeEliminator.WF {c₀ c : VContext} {nparams : Nat} {types : List I
         rw [hd.uvars, hd.params, hU₀]; exact hT.params_tele.mono hle
       obtain ⟨-, har⟩ := ctor_WF henv hd.uvars hpar hps hTn (hd.nested T (by simp [hT1])) rfl
         (hC d hd 0 t rfl ct (by simp [hct]) _ (hd.indices 0 T (by simp [hT1]))) hrel
-      obtain ⟨-, htr, ps, Ds, hpsl, hDs, hty, -, hlvl⟩ := hrel
+      obtain ⟨-, htr, ps, Ds, hpsl, hDs, hty, -, -, hlvl⟩ := hrel
       refine .inr ⟨T, hT1, hd.aux, .inr ⟨c, hc1, ?_⟩⟩
       have hsize : stats.params.size = nparams := params_size hT
       have key : AddInductive.WF c' (do

@@ -167,6 +167,72 @@ theorem TrEnv'.inductInfo {safety C Q venv} (H : TrEnv' safety C Q venv) {n v}
   subst hlp'
   exact ⟨_, t, T, hi.1 ▸ HA.inducts ht, ht, hi, hlp⟩
 
+/-- An inductive type a model can see is recorded with its block, and its declared type translates
+to the type's, in an environment before the block, where the declared type's literal parameter
+binders agree with the block's parameters. -/
+theorem TrEnv'.inductInfo_type {safety C Q venv} (H : TrEnv' safety C Q venv) {n v}
+    (h : C.find? n = some (.inductInfo v)) (hs : safety ≤ (ConstantInfo.inductInfo v).safety) :
+    ∃ d t T venv₀, venv.inducts v.name = some (d, t) ∧ d.types[t]? = some T ∧
+      TrInductVal d v.levelParams T v ∧ v.levelParams.length = d.uvars ∧ venv₀ ≤ venv ∧
+      TrExprS venv₀ v.levelParams [] v.type T.type ∧
+      (d.params.length ≤ v.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
+        ps.length = d.params.length → venv₀.TeleDefEq d.uvars [] ps d.params) := by
+  refine H.inductLike (P := fun venv ci => ∀ v, ci = .inductInfo v → ∃ d t T venv₀,
+      venv.inducts v.name = some (d, t) ∧ d.types[t]? = some T ∧
+      TrInductVal d v.levelParams T v ∧ v.levelParams.length = d.uvars ∧ venv₀ ≤ venv ∧
+      TrExprS venv₀ v.levelParams [] v.type T.type ∧
+      (d.params.length ≤ v.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
+        ps.length = d.params.length → venv₀.TeleDefEq d.uvars [] ps d.params))
+    (fun hle H v hv => let ⟨d, t, T, v₀, a, b, c, e, f, g⟩ := H v hv
+      ⟨d, t, T, v₀, hle.inducts a, b, c, e, f.trans hle, g⟩)
+    (fun H₀ _ HA hn h v hv => ?_) h hs trivial v rfl
+  subst hv
+  have hle := HA.le
+  have HA' := HA
+  obtain @⟨lp, _, _, _, types, ctors, recs, hlp, hty, -, -, hnd, hfr, ⟨_, hp, rfl⟩, -⟩ := HA
+  rcases insertConsts_find?_perm H₀.map_wf hfr hnd hp h with h' | ⟨hm, -⟩
+  · cases hn ▸ h'
+  simp only [inductConsts, List.mem_append, List.mem_map] at hm
+  obtain (⟨v', hv, hvv⟩ | ⟨_, _, ⟨⟩⟩) | ⟨_, _, ⟨⟩⟩ := hm
+  cases hvv
+  obtain ⟨T, hT, hi, htr, hag⟩ := Lean4Lean.List.Forall₂.forall_exists_l hty v hv
+  obtain ⟨t, ht⟩ := List.mem_iff_getElem?.1 hT
+  have hlp' := hi.2.1
+  subst hlp'
+  exact ⟨_, t, T, _, hi.1 ▸ HA'.inducts ht, ht, hi, hlp, hle, htr.2.2, hag⟩
+
+/-- A constructor a model can see belongs to the block its model records for its type, and its
+declared type translates to the constructor's, in an environment before the block's
+recursors. -/
+theorem TrEnv'.ctorInfo_type {safety C Q venv} (H : TrEnv' safety C Q venv) {n w}
+    (h : C.find? n = some (.ctorInfo w)) (hs : safety ≤ (ConstantInfo.ctorInfo w).safety) :
+    ∃ d t c venv₀, venv.inducts w.induct = some (d, t) ∧ TrCtorVal d w.levelParams t c w ∧
+      (t, c) ∈ d.ctors ∧ w.levelParams.length = d.uvars ∧ venv₀ ≤ venv ∧
+      TrExprS venv₀ w.levelParams [] w.type c.type := by
+  refine H.inductLike (P := fun venv ci => ∀ w, ci = .ctorInfo w → ∃ d t c venv₀,
+      venv.inducts w.induct = some (d, t) ∧ TrCtorVal d w.levelParams t c w ∧
+      (t, c) ∈ d.ctors ∧ w.levelParams.length = d.uvars ∧ venv₀ ≤ venv ∧
+      TrExprS venv₀ w.levelParams [] w.type c.type)
+    (fun hle H w hw => let ⟨d, t, c, v₀, a, b, c', e, f, g⟩ := H w hw
+      ⟨d, t, c, v₀, hle.inducts a, b, c', e, f.trans hle, g⟩)
+    (fun H₀ _ HA hn h w hw => ?_) h hs trivial w rfl
+  subst hw
+  have HA' := HA
+  obtain @⟨lp, envT, envC, envR, types, ctors, recs, hlp, -, hct, -, hnd, hfr, ⟨_, hp, rfl⟩, -,
+    hC, hR, hB⟩ := HA
+  rcases insertConsts_find?_perm H₀.map_wf hfr hnd hp h with h' | ⟨hm, -⟩
+  · cases hn ▸ h'
+  simp only [inductConsts, List.mem_append, List.mem_map] at hm
+  obtain (⟨_, _, ⟨⟩⟩ | ⟨w', hw, hww⟩) | ⟨_, _, ⟨⟩⟩ := hm
+  cases hww
+  obtain ⟨⟨j, c⟩, hc, hi, htr⟩ := Lean4Lean.List.Forall₂.forall_exists_l hct w hw
+  have hi' := hi
+  obtain ⟨T, hT, -, -, hlp', hind, -⟩ := hi'
+  subst hlp'
+  have hle : envT ≤ _ := (VEnv.addConstList_le hC).trans <| (VEnv.addConstList_le hR).trans <|
+    VEnv.addDefEqList_le.trans (VEnv.addBlock_le hB)
+  exact ⟨_, j, c, envT, hind ▸ HA'.inducts hT, hi, hc, hlp, hle, htr.2.2⟩
+
 /-- A recursor a model can see is recorded with its block, under the block's first type. -/
 theorem TrEnv'.recInfo {safety C Q venv} (H : TrEnv' safety C Q venv) {n v}
     (h : C.find? n = some (.recInfo v)) (hs : safety ≤ (ConstantInfo.recInfo v).safety) :

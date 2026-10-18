@@ -704,6 +704,89 @@ structure RecSetup (cT : VContext) (pre : List Name) (Mp : TypeChecker.MLCtx)
   lpnd : (pre ++ cT.lparams).Nodup
   levelWF : level.WF cT.lparams.length
 
+/-- What `mkRecInfos` looks for in an inductive hypothesis' binders. -/
+def blockP (S : NameSet) : Expr → Bool
+  | .const c _ => S.contains c
+  | _ => false
+
+theorem anySubterm_blockP (S : NameSet) (e : Expr) :
+    (e.anySubterm fun | .const c _ => S.contains c | _ => false) = e.anySub (blockP S) := by
+  refine (anySubterm_eq (fun a b h => ?_) e).trans (congrArg (Expr.anySub · e) ?_)
+  · cases a <;> cases b <;>
+      simp only [(· == ·), Expr.eqv_eq, Expr.eqv', Bool.and_eq_true, reduceCtorEq] at h <;>
+      try rfl
+    all_goals
+      rename_i n₁ _ n₂ _
+      have : n₁ = n₂ := eq_of_beq (h.1 : (n₁ == n₂) = true)
+      subst this; rfl
+  · funext x; cases x <;> rfl
+
+theorem anySub_mono {p q : Expr → Bool} (h : ∀ e, q e = true → p e = true) :
+    ∀ {e : Expr}, e.anySub p = false → e.anySub q = false := by
+  have hq (e) (he : p e = false) : q e = false := by
+    cases hq : q e; · rfl
+    rw [h e hq] at he; cases he
+  intro e he
+  induction e with
+  | app f a ih1 ih2 | lam _ f a _ ih1 ih2 | forallE _ f a _ ih1 ih2 =>
+    simp only [Expr.anySub, Bool.or_eq_false_iff] at he ⊢
+    exact ⟨⟨hq _ he.1.1, ih1 he.1.2⟩, ih2 he.2⟩
+  | letE _ t v b _ ih1 ih2 ih3 =>
+    simp only [Expr.anySub, Bool.or_eq_false_iff] at he ⊢
+    exact ⟨⟨⟨hq _ he.1.1.1, ih1 he.1.1.2⟩, ih2 he.1.2⟩, ih3 he.2⟩
+  | mdata _ b ih | proj _ _ b ih =>
+    simp only [Expr.anySub, Bool.or_eq_false_iff] at he ⊢
+    exact ⟨hq _ he.1, ih he.2⟩
+  | _ => simp only [Expr.anySub] at he ⊢; exact hq _ he
+
+/-- In `venv`, a term the kernel finds none of the block's types in translates, in a context of
+variables, to one that mentions none either: what a block's freshness gives. -/
+def NotMentionsOK (venv : VEnv) (Us : List Name) (stats : InductiveStats)
+    (types : List InductiveType) : Prop :=
+  ∀ {Δ : VLCtx} {a : Expr} {a' : VExpr}, Δ.WF venv Us.length →
+    (∀ x ∈ Δ, x.1.isSome ∧ ∃ A, x.2 = .vlam A) → TrExprS venv Us Δ a a' →
+    hasIndOcc stats.indConsts a = false → a'.mentions (types.map (·.name)) = false
+
+theorem BlockFresh.notMentionsOK {venv₀ venv : VEnv} {types : List InductiveType}
+    (H : BlockFresh venv₀ venv types) {stats : InductiveStats}
+    (hind : stats.indConsts.toList = types.map fun T => .const T.name stats.levels)
+    {Us : List Name} : NotMentionsOK venv Us stats types :=
+  fun hΔ hvl ha hocc => H.not_mentions hind hΔ hvl ha hocc
+
+/-- A variable's type in a telescope, where the kernel's declaration of it mentions none of the
+block's types, translates to a term that mentions none either. -/
+theorem _root_.Lean4Lean.TypeChecker.MLCtx.IsTele.not_mentions {env : VEnv}
+    {Us : List Name} {types : List InductiveType} {stats : InductiveStats}
+    (hNM : NotMentionsOK env Us stats types)
+    {m : TypeChecker.MLCtx} {fvs tys} (h : m.IsTele fvs tys) (hwf : m.WF env Us) :
+    ∀ i (hi : i < fvs.length) (hi' : i < tys.length),
+      (∀ d, m.lctx.find? fvs[i] = some d → hasIndOcc stats.indConsts d.type = false) →
+      tys[i].mentions (types.map (·.name)) = false := by
+  induction h with
+  | nil => intro i hi; simp at hi
+  | @vlam m fvs tys fv name ty ty' bi h ih =>
+    obtain ⟨hwf', hfv, htr, -⟩ := hwf
+    have hl := h.length_eq
+    have hfind (x) : (TypeChecker.MLCtx.vlam fv name ty ty' bi m).lctx.find? x =
+        if fv == x then some (.cdecl m.lctx.decls.size fv name ty bi .default)
+        else m.lctx.find? x := LocalContext.find?_mkLocalDecl hwf'.tr.1 hfv
+    intro i hi hi' hocc
+    rcases Nat.lt_or_ge i tys.length with h1 | h1
+    · rw [List.getElem_append_left h1]
+      refine ih hwf' i (by omega) h1 fun d hd => ?_
+      have hne : fv ≠ fvs[i] := fun e => by rw [← e, hfv] at hd; cases hd
+      refine hocc d ?_
+      rw [hfind, List.getElem_append_left (by omega), if_neg (by simpa using hne)]
+      exact hd
+    · obtain rfl : i = tys.length := by simp at hi'; omega
+      have e1 : (fvs ++ [fv])[tys.length]'hi = fv := by
+        rw [List.getElem_append_right (by omega)]; simp [hl]
+      have e2 : (tys ++ [ty'])[tys.length]'hi' = ty' := by
+        rw [List.getElem_append_right (Nat.le_refl _)]; simp
+      rw [e2]
+      have := hocc _ (by rw [e1, hfind, if_pos (by simp)])
+      exact hNM hwf'.tr.wf h.vlam_entries htr this
+
 /-- What `loopInd1` opened for a type. -/
 structure TyData where
   fvs : List FVarId
@@ -766,19 +849,24 @@ structure Ind1Inv (cT : VContext) (X : Name → Prop) (pre : List Name) (Mp : Ty
   mtr : ∀ (j : Nat) (td : TyData), tds[j]? = some td → ∃ t, types[j]? = some t ∧
     td.mtr = motiveTy t.name cT.lparams.length params.length
       (VLevel.shift pre.length cT.lparams.length) td.idx ml
+  /-- The kernel checked that no index mentions the block. -/
+  idxFree : ∀ (j : Nat) (td : TyData), tds[j]? = some td → ∀ x ∈ td.idx,
+    x.mentions (types.map (·.name)) = false
 
 theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {level ml : VLevel} {types : List InductiveType} {typeTr : List VExpr}
     {stats : InductiveStats} {elimLevel : Level} {env : Environment} {VB : VEnv}
     {base : List FVarId} (hS : RecSetup cT pre Mp pfvs params level ml types typeTr stats elimLevel env)
+    {blockNames : NameSet} (hBN : ∀ t ∈ types, blockNames.contains t.name)
+    (hNM : NotMentionsOK cT.venv cT.lparams stats types)
     {k : Array RecInfo → M α} {Q}
     (H : ∀ tds cb, tds.length = types.length →
       Ind1Inv cT X pre Mp hMp pfvs params level ml types typeTr stats env VB base tds cb →
       WF cb (k (tds.map TyData.info).toArray) Q) :
     ∀ n tds cb, tds.length + n = types.length →
       Ind1Inv cT X pre Mp hMp pfvs params level ml types typeTr stats env VB base tds cb →
-      WF cb (mkRecInfos.loopInd1 stats types.toArray elimLevel tds.length
+      WF cb (mkRecInfos.loopInd1 stats blockNames types.toArray elimLevel tds.length
         (tds.map TyData.info).toArray k) Q := by
   intro n
   induction n with
@@ -859,6 +947,47 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
             (fvs.map .fvar).toArray =
             mkAppN (.const types[tds.length].name stats.levels) ((pfvs ++ fvs).map .fvar).toArray := by
           rw [hic, hpar', mkAppN_append]; simp
+        -- the kernel checks that the indices mention none of the block
+        refine WF.bind (Q := (· = cb'.lctx)) (fun _ h => by cases h; rfl) fun lctx hl => ?_
+        subst hl
+        rw [← Array.forIn_toList]
+        refine WF.bind (WF.forIn_list (P := fun x => ∀ d, cb'.lctx.findFVar? x = some d →
+            (d.type.anySubterm fun | .const c _ => blockNames.contains c | _ => false) = false)
+          fun x _ _ => ?_) fun _ hfree => ?_
+        · split
+          · next d hd =>
+            split
+            · exact WF.throw
+            · next hc =>
+              refine WF.pure ⟨fun d' hd' => ?_, _, rfl⟩
+              rw [hd] at hd'; cases hd'; exact Bool.eq_false_iff.2 hc
+          · next hd => exact WF.pure ⟨fun d' hd' => (hd d' hd').elim, _, rfl⟩
+        have hidxFree : ∀ x ∈ idx, x.mentions (types.map (·.name)) = false := by
+          intro x hx
+          obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+          have hi' : i < fvs.length := by omega
+          have e1 : (pfvs ++ fvs)[pfvs.length + i]'(by simp; omega) = fvs[i] := by
+            rw [List.getElem_append_right (by simp)]; congr 1; simp
+          have e2 : (params ++ idx)[pfvs.length + i]'(by simp; omega) = idx[i] := by
+            rw [List.getElem_append_right (by omega)]; congr 1; omega
+          have := hA.tele.not_mentions hNM hm (pfvs.length + i) (by simp; omega)
+            (by simp; omega) fun d hd => ?_
+          · rw [e2] at this; exact this
+          rw [e1] at hd
+          have hag := hA.sub.lctx fvs[i] (by
+            show fvs[i] ∈ m.vlctx.fvars; rw [hA.tele.fvars]; simp)
+          change (cb'.lctx.find? fvs[i]).map LocalDecl.erase = (m.lctx.find? fvs[i]).map _ at hag
+          rw [hd] at hag
+          obtain ⟨d', hd', he⟩ : ∃ d', cb'.lctx.find? fvs[i] = some d' ∧ d'.erase = d.erase := by
+            cases h : cb'.lctx.find? fvs[i] <;> rw [h] at hag <;> simp_all
+          have hf := hfree (.fvar fvs[i]) (by simp) d' (by
+            simp only [LocalContext.findFVar?, Expr.fvarId!, hd'])
+          rw [anySubterm_blockP, (LocalDecl.erase_type he).1] at hf
+          rw [hasIndOcc_eq]
+          refine anySub_mono (fun x hx => ?_) hf
+          obtain ⟨c, us, rfl, hc⟩ := (indOccP_spec hS.indConsts).1 x hx
+          obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hc
+          exact hBN t ht
         rw [htTy]
         refine WF.bind (Q := (· = mkAppN (.const types[tds.length].name stats.levels)
           ((pfvs ++ fvs).map .fvar).toArray))
@@ -1017,7 +1146,8 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
           allowPrimitive := show cb₂.allowPrimitive = _ by rw [← hcb₂]; exact hA.pred.1.2.2
           fvars := ?_
           recs := ?_
-          mtr := ?_ }
+          mtr := ?_
+          idxFree := ?_ }
         · simpa [TyData.info, td, motName] using this
         · show VLCtx.fvars (_ :: cb₂.mlctx.vlctx) = _
           have hcf : cb₂.mlctx.vlctx.fvars = ⟨cb'.ngen.curr⟩ :: cb'.mlctx.vlctx.fvars := by
@@ -1046,6 +1176,14 @@ theorem loopInd1.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
               cases h : j - tds.length <;> simp_all
             obtain rfl : j = tds.length := by omega
             exact ⟨_, List.getElem?_eq_getElem hj, rfl⟩
+        · intro j td' hj'
+          rcases Nat.lt_or_ge j tds.length with hlt' | hge'
+          · rw [List.getElem?_append_left hlt'] at hj'
+            exact hI.idxFree j td' hj'
+          · rw [List.getElem?_append_right hge'] at hj'
+            obtain ⟨hj0, rfl⟩ : j - tds.length = 0 ∧ td = td' := by
+              cases h : j - tds.length <;> simp_all
+            exact hidxFree
       · exact WF.bind (Q := fun _ => False) .throw fun _ h => h.elim
     · have := hS.MpT.toCtx
       simp only [List.length_nil, List.drop_zero, List.reverse_nil, List.nil_append,

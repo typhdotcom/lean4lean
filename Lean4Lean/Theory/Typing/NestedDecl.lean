@@ -882,22 +882,6 @@ theorem Positive.defeqU {env : VEnv} (henv : env.WF) {Γ k t t'}
   | pi h1 h2 h3 => exact .pi (h.symm.trans henv hΓ h1) h2 h3
   | app h1 h2 h3 h4 => exact .app h1 h2 (h.symm.trans henv hΓ h3) h4
 
-/-- Strict positivity is up to definitional equality of the context. -/
-theorem Positive.defeqDFC {env : VEnv} (henv : env.WF) {Γ₀ Γ₁ Γ₂ : List VExpr}
-    (hΓ : VEnv.IsDefEqCtx env d.uvars Γ₀ Γ₁ Γ₂) {k t} (H : d.Positive env Γ₁ k t) :
-    d.Positive env Γ₂ k t := by
-  induction H generalizing Γ₂ with
-  | none h1 h2 => exact .none (h1.defeqDFC henv.ordered hΓ) h2
-  | pi h1 h2 h3 ih =>
-    rename_i A _ _
-    obtain ⟨_, h1'⟩ := h1
-    have hAB := h1'.hasType.2
-    obtain ⟨⟨u, hA⟩, -⟩ := VEnv.HasType.forallE_inv henv.ordered hAB
-    have h1'' : env.IsDefEqU d.uvars Γ₂ _ _ :=
-      VEnv.IsDefEqU.defeqDFC henv.ordered hΓ ⟨_, h1'⟩
-    exact .pi h1'' h2 (ih (.succ hΓ hA))
-  | app h1 h2 h3 h4 => exact .app h1 h2 (h3.defeqDFC henv.ordered hΓ) h4
-
 end VInductDecl
 
 end Lean4Lean

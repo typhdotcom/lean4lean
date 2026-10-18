@@ -97,7 +97,7 @@ theorem VEnv.TeleDefEq.mono (H : env.TeleDefEq U Γ As Bs) : env'.TeleDefEq U Γ
 theorem VInductDecl.RecArgWF.mono (H : decl.RecArgWF env Γ k f) : decl.RecArgWF env' Γ k f := by
   unfold VInductDecl.RecArgWF at *
   cases h : f.recArg <;> simp only [h] at H ⊢
-  obtain ⟨T, h1, h2, h3⟩ := H; exact ⟨T, h1, h2, h3.mono henv⟩
+  obtain ⟨T, h1, h2, h3, h4⟩ := H; exact ⟨T, h1, h2, h3.mono henv, h4⟩
 
 theorem VInductDecl.Positive.mono {t} (H : decl.Positive env Γ k t) : decl.Positive env' Γ k t := by
   induction H with
@@ -142,6 +142,18 @@ theorem VInductDecl.WF.mono (H : decl.WF env) : decl.WF env' where
   largeElim := H.largeElim
 
 end
+
+/-- Strict positivity is up to definitional equality of the context. -/
+theorem VInductDecl.Positive.defeqDFC {d : VInductDecl} {venv : VEnv} (henv : venv.Ordered)
+    {Γ₀ Γ₁ Γ₂} (hΓ : VEnv.IsDefEqCtx venv d.uvars Γ₀ Γ₁ Γ₂) {k t} (H : d.Positive venv Γ₁ k t) :
+    d.Positive venv Γ₂ k t := by
+  induction H generalizing Γ₂ with
+  | none h hA => exact .none (h.defeqDFC henv hΓ) hA
+  | pi h hA _ ih =>
+    obtain ⟨_, h'⟩ := h
+    obtain ⟨⟨_, hAu⟩, -⟩ := h'.hasType.2.forallE_inv henv
+    exact .pi (VEnv.IsDefEqU.defeqDFC henv hΓ ⟨_, h'⟩) hA (ih (.succ hΓ hAu))
+  | app hT hlen h his => exact .app hT hlen (h.defeqDFC henv hΓ) his
 
 theorem VEnv.WF.addConstList : ∀ {env env' : VEnv} {cs : List (Name × VConstant)},
     env.WF → (∀ p ∈ cs, p.2.WF env) → env.addConstList cs = some env' → env'.WF

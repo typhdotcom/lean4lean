@@ -56,6 +56,18 @@ theorem Aligned.find?_iff (H : Aligned safety C venv) :
   | block _ h ih => rw [VEnv.addBlock_constants h]; exact ih
   | perm _ _ h ih => simp only [h]; exact ih
 
+/-- A constant is found under its own name. -/
+theorem Aligned.find?_name (H : Aligned safety C venv) {n ci} (h : C.find? n = some ci) :
+    ci.name = n := by
+  induction H generalizing n with
+  | empty => simp [SMap.find?] at h
+  | ignoreConst H _ _ eq ih | const H _ _ _ eq ih =>
+    rw [H.map_wf.find?_insert] at h; split at h
+    · rename_i e; cases h; simpa using eq.trans (by simpa using e)
+    · exact ih h
+  | defeq _ ih | block _ _ ih => exact ih h
+  | perm _ _ hC ih => exact ih (by rwa [← hC])
+
 theorem Aligned.addQuot1 {Q : Prop}
     (H1 : ∀ c env, Aligned safety c env → P c env → Q)
     (C env) (wf : Aligned safety C env) (H2 : AddQuot1 n k ci P C env) : Q := by

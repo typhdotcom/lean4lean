@@ -228,17 +228,6 @@ end VExpr
 namespace VInductDecl
 variable {d : VInductDecl} {venv : VEnv}
 
-theorem Positive.defeqDFC (henv : venv.Ordered) {Γ₀ Γ₁ Γ₂}
-    (hΓ : VEnv.IsDefEqCtx venv d.uvars Γ₀ Γ₁ Γ₂) {k t} (H : d.Positive venv Γ₁ k t) :
-    d.Positive venv Γ₂ k t := by
-  induction H generalizing Γ₂ with
-  | none h hA => exact .none (h.defeqDFC henv hΓ) hA
-  | pi h hA _ ih =>
-    obtain ⟨_, h'⟩ := h
-    obtain ⟨⟨_, hAu⟩, -⟩ := h'.hasType.2.forallE_inv henv
-    exact .pi (VEnv.IsDefEqU.defeqDFC henv hΓ ⟨_, h'⟩) hA (ih (.succ hΓ hAu))
-  | app hT hlen h his => exact .app hT hlen (h.defeqDFC henv hΓ) his
-
 theorem Positive.defeq (henv : venv.WF) {Γ} (hΓ : OnCtx Γ (venv.IsType d.uvars)) {k t t'}
     (H : d.Positive venv Γ k t) (h : venv.IsDefEqU d.uvars Γ t t') : d.Positive venv Γ k t' := by
   cases H with
@@ -1343,9 +1332,43 @@ structure Elaborates (venv : VEnv) (U : List Name) (nparams : Nat) (level : VLev
         c.type = .foralls (ps ++ Ds) (.appN (.const t.name (VLevel.params U.length))
           (VExpr.bvars nparams Ds.length ++ c.indices)) ∧
         FieldsElab venv d d.params.reverse 0 Ds c.fields ∧
+        (∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+          D.StripsTo f.type) ∧
         ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f → ∀ u,
           venv.HasType U.length ((Ds.take k).reverse ++ ps.reverse) D (.sort u) →
           (u ≈ .zero ↔ f.level ≈ .zero)) t.ctors T.ctors) types d.types
+
+theorem VExpr.foralls_getElem_eq : ∀ {As As' : List VExpr} {B B' : VExpr},
+    VExpr.foralls As B = VExpr.foralls As' B' →
+    ∀ k (h : k < As.length) (h' : k < As'.length), As[k] = As'[k]
+  | _ :: _, _ :: _, _, _, e, 0, _, _ => by
+    simp only [VExpr.foralls, VExpr.forallE.injEq] at e; simp [e.1]
+  | _ :: _, _ :: _, _, _, e, k + 1, h, h' => by
+    simp only [VExpr.foralls, VExpr.forallE.injEq] at e
+    exact foralls_getElem_eq e.2 k (by simpa using h) (by simpa using h')
+
+/-- A constructor's declared domains strip to its fields' types, at any split of its type past the
+parameters. -/
+theorem Elaborates.stripsTo {venv : VEnv} {U : List Name} {nparams : Nat} {level : VLevel}
+    {types : List InductiveType} {d : VInductDecl} (H : Elaborates venv U nparams level types d)
+    (hp : d.params.length = nparams) :
+    ∀ T ∈ d.types, ∀ c ∈ T.ctors, ∀ (ps Ds : List VExpr) (B : VExpr),
+      c.type = .foralls (ps ++ Ds) B → ps.length = d.params.length →
+      ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      D.StripsTo f.type := by
+  intro T hT c hc ps Ds B hty hps k D f hD hf
+  obtain ⟨t, -, -, hcs⟩ := Lean4Lean.List.Forall₂.forall_exists_r H.types T hT
+  obtain ⟨ct, -, hct⟩ := Lean4Lean.List.Forall₂.forall_exists_r hcs c hc
+  obtain ⟨-, -, ps', Ds', hps', hDs', hty', -, hstr, -⟩ := hct
+  have hk : k < Ds.length := (List.getElem?_eq_some_iff.1 hD).1
+  have hkf : k < c.fields.length := (List.getElem?_eq_some_iff.1 hf).1
+  have hk' : k < Ds'.length := by omega
+  have e := VExpr.foralls_getElem_eq (hty.symm.trans hty') (ps.length + k) (by simp; omega)
+    (by simp; omega)
+  rw [List.getElem_append_right (by omega), List.getElem_append_right (by omega)] at e
+  simp only [Nat.add_sub_cancel_left, hps, hp, ← hps'] at e
+  rw [List.getElem?_eq_getElem hk] at hD; cases hD
+  exact e ▸ hstr k _ f (by simp [hk']) hf
 
 theorem FieldsChecked.defeqDFC {venv : VEnv} {d : VInductDecl} (henv : venv.Ordered) {Γ₀ Γ₁ Γ₂}
     (hΓ : VEnv.IsDefEqCtx venv d.uvars Γ₀ Γ₁ Γ₂) {k Ds} (H : FieldsChecked venv d Γ₁ k Ds) :
@@ -1728,5 +1751,45 @@ theorem ctorVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveT
   · exact hrel.2.1
 
 end AddInductive
+
+/-- `NameSet` as the tree set it is. -/
+abbrev NS := Std.TreeSet Name Name.quickCmp
+
+theorem ns_contains_insert_of {s : NS} {k c : Name} (h : s.contains c) : (s.insert k).contains c := by
+  rw [Std.TreeSet.contains_insert, h]; simp
+
+theorem ns_contains_insert_self {s : NS} {k : Name} : (s.insert k).contains k := by
+  rw [Std.TreeSet.contains_insert]; simp
+
+theorem ns_foldl_ctors_contains_of {c : Name} :
+    ∀ (cs : List Constructor) {s : NS}, s.contains c → (cs.foldl (·.insert ·.name) s).contains c
+  | [], _, h => h
+  | _ :: cs, _, h => ns_foldl_ctors_contains_of cs (ns_contains_insert_of h)
+
+theorem ns_foldl_ctors_contains_mem {c : Name} :
+    ∀ (cs : List Constructor) {s : NS}, c ∈ cs.map (·.name) → (cs.foldl (·.insert ·.name) s).contains c
+  | [], _, h => by cases h
+  | x :: cs, _, h => by
+    rcases List.mem_cons.1 h with rfl | h
+    · exact ns_foldl_ctors_contains_of cs ns_contains_insert_self
+    · exact ns_foldl_ctors_contains_mem cs h
+
+theorem ns_foldl_types_contains_of {c : Name} : ∀ (ts : List InductiveType) {s : NS},
+    s.contains c → (ts.foldl (fun s t => t.ctors.foldl (·.insert ·.name) (s.insert t.name)) s).contains c
+  | [], _, h => h
+  | t :: ts, _, h => ns_foldl_types_contains_of ts
+    (ns_foldl_ctors_contains_of t.ctors (ns_contains_insert_of h))
+
+theorem ns_foldl_types_contains_mem {c : Name} : ∀ (ts : List InductiveType) {s : NS},
+    (∃ t ∈ ts, c = t.name ∨ c ∈ t.ctors.map (·.name)) →
+    (ts.foldl (fun s t => t.ctors.foldl (·.insert ·.name) (s.insert t.name)) s).contains c
+  | [], _, ⟨_, h, _⟩ => by cases h
+  | t :: ts, _, ⟨t', ht', h⟩ => by
+    rcases List.mem_cons.1 ht' with rfl | ht'
+    · refine ns_foldl_types_contains_of ts ?_
+      rcases h with rfl | h
+      · exact ns_foldl_ctors_contains_of _ ns_contains_insert_self
+      · exact ns_foldl_ctors_contains_mem _ h
+    · exact ns_foldl_types_contains_mem ts ⟨t', ht', h⟩
 
 end Lean4Lean

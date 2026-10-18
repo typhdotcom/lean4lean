@@ -103,6 +103,15 @@ theorem Environment.addInductive_eq (env : Environment) (lparams : List Name) (n
           checkNoNestedAux ctor.name ctor.type
       let res ← ElimNestedInductive.run fuel.inductiveFuel nparams types env
         |>.run' { lvls := lparams.map .param, newTypes := types.toArray }
+      let auxNames : NameSet := (res.types.drop types.length).foldl (init := {}) fun s t =>
+        t.ctors.foldl (·.insert ·.name) (s.insert t.name)
+      for indType in types do
+        for ctor in indType.ctors do
+          if ctor.type.anySubterm fun
+              | .const c _ => auxNames.contains c
+              | .proj s _ _ => auxNames.contains s
+              | _ => false then
+            throw <| .other s!"invalid declaration '{ctor.name}', it uses an auxiliary nested type"
       let env' ← AddInductive.run nparams res.types res.aux2nested.size
         { env, allowPrimitive, lparams, fuel, safety := if isUnsafe then .unsafe else .safe }
       if res.aux2nested.size = 0 then return env'
@@ -636,46 +645,6 @@ renaming. -/
 def IsAuxName (res : ElimNestedInductive.Result) (types : List InductiveType)
     (recNames' : List Name) (c : Name) : Prop :=
   c ∈ recNames' ∨ ∃ t ∈ res.types.drop types.length, c = t.name ∨ c ∈ t.ctors.map (·.name)
-
-/-- `NameSet` as the tree set it is. -/
-abbrev NS := Std.TreeSet Name Name.quickCmp
-
-theorem ns_contains_insert_of {s : NS} {k c : Name} (h : s.contains c) : (s.insert k).contains c := by
-  rw [Std.TreeSet.contains_insert, h]; simp
-
-theorem ns_contains_insert_self {s : NS} {k : Name} : (s.insert k).contains k := by
-  rw [Std.TreeSet.contains_insert]; simp
-
-theorem ns_foldl_ctors_contains_of {c : Name} :
-    ∀ (cs : List Constructor) {s : NS}, s.contains c → (cs.foldl (·.insert ·.name) s).contains c
-  | [], _, h => h
-  | _ :: cs, _, h => ns_foldl_ctors_contains_of cs (ns_contains_insert_of h)
-
-theorem ns_foldl_ctors_contains_mem {c : Name} :
-    ∀ (cs : List Constructor) {s : NS}, c ∈ cs.map (·.name) → (cs.foldl (·.insert ·.name) s).contains c
-  | [], _, h => by cases h
-  | x :: cs, _, h => by
-    rcases List.mem_cons.1 h with rfl | h
-    · exact ns_foldl_ctors_contains_of cs ns_contains_insert_self
-    · exact ns_foldl_ctors_contains_mem cs h
-
-theorem ns_foldl_types_contains_of {c : Name} : ∀ (ts : List InductiveType) {s : NS},
-    s.contains c → (ts.foldl (fun s t => t.ctors.foldl (·.insert ·.name) (s.insert t.name)) s).contains c
-  | [], _, h => h
-  | t :: ts, _, h => ns_foldl_types_contains_of ts
-    (ns_foldl_ctors_contains_of t.ctors (ns_contains_insert_of h))
-
-theorem ns_foldl_types_contains_mem {c : Name} : ∀ (ts : List InductiveType) {s : NS},
-    (∃ t ∈ ts, c = t.name ∨ c ∈ t.ctors.map (·.name)) →
-    (ts.foldl (fun s t => t.ctors.foldl (·.insert ·.name) (s.insert t.name)) s).contains c
-  | [], _, ⟨_, h, _⟩ => by cases h
-  | t :: ts, _, ⟨t', ht', h⟩ => by
-    rcases List.mem_cons.1 ht' with rfl | ht'
-    · refine ns_foldl_types_contains_of ts ?_
-      rcases h with rfl | h
-      · exact ns_foldl_ctors_contains_of _ ns_contains_insert_self
-      · exact ns_foldl_ctors_contains_mem _ h
-    · exact ns_foldl_types_contains_mem ts ⟨t', ht', h⟩
 
 /-- Every auxiliary name is in the set the final phase checks for. -/
 theorem auxNameSet_contains {res : ElimNestedInductive.Result} {types : List InductiveType}
