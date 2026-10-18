@@ -145,7 +145,7 @@ theorem quotMk_realize (hM : ModelEnv env) (hq : env.defeqs quotDefEq)
   have hnQ : ¬AxInterp.dom ``Quot := fun h => hM.domRole h (ConstArity.quotTy hq rfl)
   have hnM : ¬AxInterp.dom ``Quot.mk := fun h => hM.domRole h (ConstArity.quotMk hq rfl)
   have hnL : ¬AxInterp.dom ``Quot.lift := fun h => hM.domRole h (ConstArity.quotLift hq rfl)
-  have hrel : levelRel u = true := by simpa [levelRel] using hP
+  have hrel : (levelRel u).rel = true := by simpa [levelRel] using hP
   have hQf := quotMkTele_facts hM (env := env) hu
   have hccl : (quotMkConst.type.instL [u]).ClosedN := (hM.closed.constType hmk).instL
   have hTSc := (MSpine.spine hM (Qs := quotMkTele u)
@@ -230,10 +230,9 @@ theorem quotMk_realize (hM : ModelEnv env) (hq : env.defeqs quotDefEq)
         rw [hLp] at hx; exact List.mem_of_mem_take hx)
       simpa [params, lft, List.map_map] using this
     · rw [hrel, List.reverse_reverse]; exact .rfl
-  have hsortI : LE_Interp env ρ (WShape.sort (n := K+2) true).T (.sort u) := by
+  have hsortI : LE_Interp env ρ (WShape.sort (n := K+2) (levelRel u)).T (.sort u) := by
     refine .sort ?_
-    rw [hrel]
-    have := (TShape.lift_eqv (a := TShape.sort true) (m := K+2) (Nat.zero_le _)).1
+    have := (TShape.lift_eqv (a := TShape.sort (levelRel u)) (m := K+2) (Nat.zero_le _)).1
     simpa [TShape.sort, WShape.lift_sort] using this
   have hTS : MSpine env Γ ((VExpr.const ``Quot [u]).appN [α, r]) (.sort u) := by
     have := MSpine.ofTele hM hQc rfl (Γ := Γ) (Qs := (quotMkTele u).take 2) (R := .sort u)
@@ -249,7 +248,8 @@ theorem quotMk_realize (hM : ModelEnv env) (hq : env.defeqs quotDefEq)
   have hTyI : LE_Interp env ρ (WShape.indTy true hd (params ++ [ctyK])).T
       ((VExpr.const ``Quot [u]).appN [α, r]) := by
     rw [← spine_eq_appN] at hTS ⊢
-    exact LE_Interp.apps_realize hM W (WShape.HasType.T hindTy) hsortI hTS
+    exact LE_Interp.apps_realize hM W
+      (WShape.HasType.T ((WShape.HasType.sort_congr (r := true) hrel.symm).1 hindTy)) hsortI hTS
       ((List.Forall₂.reverse).2 hPa) hCT
   -- the constructor application
   have hCC : Const env ``Quot.mk [u] (LE_Interp env ρ) (params ++ rfN).reverse
@@ -333,7 +333,7 @@ theorem quot_body_ge (hM : ModelEnv env) (hq : env.defeqs quotDefEq)
       have := hTS.typed 2 (.bvar 1) (.bvar 0) rfl rfl
       simpa [VExpr.subst, VExpr.Subst.consList_apply] using this
     have haBot : a.T ≤ TShape.bot := (bvar_iff.1 ha').trans
-      (hat.le_bot hα (by simp [levelRel, hu0]) W (.bvar .rfl))
+      (hat.le_bot hα (levelRel_eq_false.2 hu0) W (.bvar .rfl))
     let K := max (ρ 1).1 (max (ρ 2).1 (max (ρ 3).1 (max (ρ 4).1 (ρ 5).1)))
     have h1 : (ρ 1).1 ≤ K := by omega
     have h2 : (ρ 2).1 ≤ K := by omega

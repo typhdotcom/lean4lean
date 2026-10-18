@@ -10,6 +10,8 @@ shape whose field telescope the fields fit. The telescope is built here as a pi 
 single point per binder (`piTele`), at the shapes of a valuation fitting the constructor's type.
 -/
 
+noncomputable section
+
 namespace Lean4Lean
 open VExpr
 namespace LogRel
@@ -371,7 +373,7 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
       LE_Interp env ρ (WShape.ctor' c.name rf).T ((VExpr.const c.name ls).appN (As ++ fs)) := by
   -- the sort of the inductive type is relevant
   obtain ⟨-, hsort⟩ := typeSpine hM hX hle hO hTW hPT hcT hls (by simp [hAs, hI]) hTS
-  have hrel : levelRel u = true := by
+  have hrel : (levelRel u).rel = true := by
     rw [SoundEq.sort.1 hsort]; simpa [levelRel, VInductDecl.PropAt] using hP
   -- the constructor's telescope
   obtain ⟨Ps, Ds, hcty, hPD, hFW, -⟩ := hcW.shape
@@ -499,15 +501,15 @@ theorem ctorApp_realize (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT e
       · rw [if_neg hji]
         exact ⟨_, .bot, (PiAppS.bot _).mono_m TShape.bot_eqv.1⟩
     · rw [hrel', hlT, List.reverse_reverse]; exact .rfl
-  have hsortI : LE_Interp env ρ (WShape.sort (n := K+2) true).T (.sort u) := by
+  have hsortI : LE_Interp env ρ (WShape.sort (n := K+2) (levelRel u)).T (.sort u) := by
     refine .sort ?_
-    rw [hrel]
-    have := (TShape.lift_eqv (a := TShape.sort true) (m := K+2) (Nat.zero_le _)).1
+    have := (TShape.lift_eqv (a := TShape.sort (levelRel u)) (m := K+2) (Nat.zero_le _)).1
     simpa [TShape.sort, WShape.lift_sort] using this
   have hTyI : LE_Interp env ρ (WShape.indTy true hd (params ++ idx ++ ctys)).T
       ((VExpr.const s ls).appN (As ++ I)) := by
     rw [← spine_eq_appN] at hTS ⊢
-    exact LE_Interp.apps_realize hM W (WShape.HasType.T hindTy) hsortI hTS
+    exact LE_Interp.apps_realize hM W
+      (WShape.HasType.T ((WShape.HasType.sort_congr (r := true) hrel.symm).1 hindTy)) hsortI hTS
       ((List.Forall₂.reverse).2 (List.forall₂_append' hPa hIa)) hCT
   -- the constructor application
   have hCC : Const env c.name ls (LE_Interp env ρ) (params ++ rfN).reverse
@@ -537,7 +539,7 @@ theorem StrongSound.proof_le_bot {U : Nat} {Γ₀ Γ : List VExpr} {ρ : Valuati
     m ≤ TShape.bot := by
   obtain ⟨_, _, a1, -, a3, a4⟩ := H1.sound W h
   obtain ⟨_, _, b1, -, b3, b4⟩ := H2.sound W a3
-  have hr : levelRel l = false := by simp [levelRel, hl]
+  have hr : levelRel l = false := levelRel_eq_false.2 hl
   have b4' := TShape.HasType.mono_r (by simpa [hr] using b3.le_sort) .sort b4
   exact a1.trans (b4'.proofIrrel (b4'.mono_r b1 a4))
 

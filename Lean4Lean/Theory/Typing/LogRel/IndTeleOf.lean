@@ -10,6 +10,8 @@ relation at depth `n+1` relates a pi type's codomains at arguments of depth `n`,
 `TeleRel` at depth `n` quantifies over, and each codomain goes back up a depth by `LR.TyDefEq.lift`.
 -/
 
+noncomputable section
+
 namespace Lean4Lean
 open VExpr
 

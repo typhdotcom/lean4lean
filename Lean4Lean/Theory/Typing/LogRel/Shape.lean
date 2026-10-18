@@ -5,11 +5,12 @@ import Lean4Lean.Theory.Typing.Lemmas
 
 Finite approximations of the values a term can take, ordered by information: the semantic
 domain of the logical relation that proves the injectivity of the type theory's type formers
-(`Theory/Typing/Injectivity.lean`). A shape at depth `n` is a sort (recording only whether it is
-`Prop`), a pi type, a function given by finitely many argument–result pairs, a constructor
-applied to argument shapes, an inductive type applied to argument shapes, or nothing (`bot`).
+(`Theory/Typing/Injectivity.lean`). A shape at depth `n` is a sort (recording whether it is `Prop`
+and its level's value at every assignment of the level parameters), a pi type, a function given
+by finitely many argument–result pairs, a constructor applied to argument shapes, an inductive
+type applied to argument shapes, or nothing (`bot`).
 
-Ported from `Experimental/ShapeLogRel.lean`, without universe levels.
+Ported from `Experimental/ShapeLogRel.lean`. Typing reads a sort only for whether it is `Prop`.
 -/
 
 /-
@@ -18,6 +19,8 @@ the proofs about them `simp` through the exact term that notation elaborates to.
 `do` elaborator here until the proofs are migrated (digama0/lean4lean#31).
 -/
 set_option backward.do.legacy true
+
+noncomputable section
 
 namespace Lean4Lean
 open Lean4Lean
@@ -28,11 +31,31 @@ whose constructor shape carries no information when all its fields' shapes are `
 class ShapeEnv where
   isStruct : Name → Bool
 
+/-- What a sort shape records of its level: whether it is relevant (not `Prop`), and its value
+at every assignment of the level parameters, so that sorts of inequivalent levels have different
+shapes. -/
+structure SortTag where
+  rel : Bool
+  lv : List Nat → Nat
+
+open Classical in
+noncomputable instance : DecidableEq SortTag := inferInstance
+
+/-- `false` is `Prop`'s level, `true` the level one above it. -/
+def SortTag.ofBool (b : Bool) : SortTag := ⟨b, fun _ => if b then 1 else 0⟩
+
+instance : Coe Bool SortTag := ⟨SortTag.ofBool⟩
+
+@[simp] theorem SortTag.rel_ofBool : (SortTag.ofBool b).rel = b := rfl
+
+theorem SortTag.ofBool_inj : SortTag.ofBool b = SortTag.ofBool b' ↔ b = b' :=
+  ⟨fun h => by simpa using congrArg SortTag.rel h, (· ▸ rfl)⟩
+
 variable [ShapeEnv]
 
 inductive Shape0 : Type where
   | bot : Shape0
-  | sort (rel : Bool) : Shape0
+  | sort (rel : SortTag) : Shape0
 
 /-- What an inductive type's shape records besides argument shapes: the type's name, how many
 of the argument shapes are the type's arguments, and its constructors' names and numbers of
@@ -51,7 +74,7 @@ def IndHead.arityOK (h : IndHead) (c : Name) (k : Nat) : Bool :=
 
 inductive ShapeS (Shape : Type) : Type where
   | bot : ShapeS Shape
-  | sort (rel : Bool) : ShapeS Shape
+  | sort (rel : SortTag) : ShapeS Shape
   | forallE : Shape → List (Shape × Shape) → ShapeS Shape
   | lam : List (Shape × Shape) → ShapeS Shape
   /-- A constructor applied to the shapes of its fields (not its parameters). -/
@@ -71,7 +94,7 @@ abbrev ShapeFun (n) := List (Shape n × Shape n)
   | 0 => Shape0.bot
   | _+1 => ShapeS.bot
 
-@[match_pattern] def Shape.sort (rel : Bool) : ∀ {n}, Shape n
+@[match_pattern] def Shape.sort (rel : SortTag) : ∀ {n}, Shape n
   | 0 => Shape0.sort rel
   | _+1 => ShapeS.sort rel
 
@@ -997,7 +1020,7 @@ def WShapeFun.NonZero (f : WShapeFun n) := f.1.NonZero
 instance {f : WShapeFun n} : Decidable f.NonZero := inferInstanceAs (Decidable f.1.NonZero)
 
 def WShape.bot : WShape n := ⟨.bot, .bot⟩
-def WShape.sort (r : Bool) : WShape n := ⟨.sort r, .sort⟩
+def WShape.sort (r : SortTag) : WShape n := ⟨.sort r, .sort⟩
 abbrev WShape.type : WShape n := .sort true
 abbrev WShape.prop : WShape n := .sort false
 def WShape.forallE (s : WShape n) (f : WShapeFun n) : WShape (n + 1) := ⟨.forallE s.1 f.1, s.2, f.2⟩
@@ -1904,7 +1927,7 @@ theorem TShape.LE.le_lam {f : WShapeFun n} {hl} {f' : WShapeFun n'} {hl'}
   rw [WShapeFun.lift_val le₁, WShapeFun.lift_val le₂]; exact h_raw
 
 def TShape.bot : TShape := WShape.T (n := 0) .bot
-def TShape.sort (r : Bool) : TShape := WShape.T (n := 0) (.sort r)
+def TShape.sort (r : SortTag) : TShape := WShape.T (n := 0) (.sort r)
 def TShape.type : TShape := .sort true
 
 nonrec theorem TShape.LE.rfl {a : TShape} : a ≤ a := WShape.LE.rfl
@@ -2541,11 +2564,11 @@ def Shape.hasType : ∀ {n}, Shape n → Shape n → Bool
   | _+1, .forallE a b, .sort r => hasType.core hasType b a fun _ => .sort r
   | 0, .bot, _ | _+1, .bot, .bot | _+1, .bot, .sort _ => true
   | _+1, .bot, .indTy _ h as => ctysOK hasType h as
-  | 0, .sort _, .sort j | _+1, .sort _, .sort j => j
+  | 0, .sort _, .sort j | _+1, .sort _, .sort j => j.rel
   | _+1, .lam f, .forallE a b =>
     hasType.core hasType b a (fun _ => .type) && hasType.core hasType f a (ShapeFun.app b)
   | _+1, .ctor c l, .indTy r h as => r && ctorOK hasType h as c l
-  | _+1, .indTy r h as, .sort j => (j || !r) && ctysOK hasType h as
+  | _+1, .indTy r h as, .sort j => (j.rel || !r) && ctysOK hasType h as
   | _, _, _ => false
 
 def Shape.HasType : Shape n → Shape n → Prop := (hasType · ·)
@@ -2553,7 +2576,7 @@ def Shape.HasType : Shape n → Shape n → Prop := (hasType · ·)
 def Shape.HasDom (f : ShapeFun n) (a : Shape n) :=
   ∀ x y, (x, y) ∈ f → ∃ x' y', (x', y') ∈ f ∧ x' ≤ x ∧ y ≤ y' ∧ x'.HasType a
 
-def Shape.HasTypePi (b : ShapeFun n) (a : Shape n) (rel : Bool) :=
+def Shape.HasTypePi (b : ShapeFun n) (a : Shape n) (rel : SortTag) :=
   Shape.HasDom b a ∧ ∀ x y, (x, y) ∈ b → y.HasType (.sort rel)
 
 def Shape.HasTypeLam (f : ShapeFun n) (a : Shape n) (b : ShapeFun n) :=
@@ -2566,12 +2589,12 @@ theorem Shape.hasType.core.iff {a : Shape n} :
 
 inductive Shape.HasTypeU : ∀ {n}, Shape n → Shape n → Prop
   | bot : HasType x .type → HasTypeU .bot x
-  | sort : HasTypeU (.sort r) .type
+  | sort : j.rel = true → HasTypeU (.sort r) (.sort j)
   | forallE : HasTypePi (n := n) b a r → HasTypeU (n := n+1) (.forallE a b) (.sort r)
   | lam : HasTypeLam (n := n) f a b → HasTypeU (n := n+1) (.lam f) (.forallE a b)
   | ctor {h : IndHead} {as : List (Shape n)} {c : Name} {l : List (Shape n)} :
     ctorOK hasType h as c l = true → HasTypeU (n := n+1) (.ctor c l) (.indTy true h as)
-  | indTy {h : IndHead} {as : List (Shape n)} : j = true ∨ r = false →
+  | indTy {h : IndHead} {as : List (Shape n)} : j.rel = true ∨ r = false →
     ctysOK hasType h as = true → HasTypeU (n := n+1) (.indTy r h as) (.sort j)
 
 omit [ShapeEnv] in
@@ -2591,11 +2614,10 @@ theorem Shape.HasType.unfold_iff {m a : Shape n} : HasType m a ↔ HasTypeU m a 
   refine ⟨(·.unfold), fun h => ?_⟩
   cases h with
   | bot h =>
-    cases h.unfold with
-    | bot | sort => cases n <;> rfl
-    | indTy _ h' => simpa [HasType, hasType] using h'
-    | forallE => simpa [HasType, hasType] using h
-  | sort => cases n <;> rfl
+    cases n with
+    | zero => rfl
+    | succ n => cases a <;> first | rfl | simpa [HasType, hasType] using h
+  | sort h => cases n <;> exact h
   | forallE H => simpa [HasType, hasType, hasType.core.iff, HasTypePi] using H
   | lam H => simp [HasType, hasType, hasType.core.iff]; exact H
   | ctor h => simp [HasType, hasType, h]
@@ -2719,7 +2741,7 @@ omit [ShapeEnv] in
 protected theorem Shape.HasType.bot {a : Shape n} (H : HasType a .type) : HasType .bot a :=
   unfold_iff.2 (.bot H)
 omit [ShapeEnv] in
-protected theorem Shape.HasType.sort : HasType (n := n) (.sort rel) .type := unfold_iff.2 .sort
+protected theorem Shape.HasType.sort : HasType (n := n) (.sort rel) .type := unfold_iff.2 (.sort rfl)
 omit [ShapeEnv] in
 protected theorem Shape.HasType.forallE (H : HasTypePi (n := n) b a r) :
     HasType (n := n+1) (.forallE a b) (.sort r) := unfold_iff.2 (.forallE H)
@@ -2728,7 +2750,7 @@ protected theorem Shape.HasType.lam (H : HasTypeLam (n := n) f a b) :
     HasType (n := n+1) (.lam f) (.forallE a b) := unfold_iff.2 (.lam H)
 omit [ShapeEnv] in
 protected theorem Shape.HasType.indTy {I : IndHead} {as : List (Shape n)}
-    (h : j = true ∨ r = false) (h' : ctysOK hasType I as = true) :
+    (h : j.rel = true ∨ r = false) (h' : ctysOK hasType I as = true) :
     HasType (n := n+1) (.indTy r I as) (.sort j) := unfold_iff.2 (.indTy h h')
 omit [ShapeEnv] in
 protected theorem Shape.HasType.ctor {I : IndHead} {as l : List (Shape n)}
@@ -2758,7 +2780,21 @@ omit [ShapeEnv] in
 theorem Shape.HasTypePi.toType (H : HasTypePi b a r) : HasTypePi b a true :=
   ⟨H.1, fun _ _ h => (H.2 _ _ h).toType⟩
 
+/-- Typing at a sort reads only whether the sort is relevant. -/
+theorem Shape.HasType.sort_congr {m : Shape n} {r r' : SortTag} (h : r.rel = r'.rel) :
+    HasType m (.sort r) ↔ HasType m (.sort r') := by
+  induction n with
+  | zero => cases m <;> simp [HasType, hasType, h]
+  | succ n ih =>
+    simp only [HasType] at ih
+    cases m <;> simp only [HasType, hasType, sort, h, hasType.core.iff] <;>
+      first | rfl | exact and_congr_right fun _ => forall_congr' fun _ => forall_congr' fun _ =>
+        imp_congr_right fun _ => ih
+
 def WShape.HasType (m a : WShape n) : Prop := Shape.HasType m.1 a.1
+
+theorem WShape.HasType.sort_congr {m : WShape n} {r r' : SortTag} (h : r.rel = r'.rel) :
+    HasType m (.sort r) ↔ HasType m (.sort r') := Shape.HasType.sort_congr h
 def WShape.HasDom (f : WShapeFun n) (a : WShape n) := Shape.HasDom f.1 a.1
 def WShape.HasTypePi (b : WShapeFun n) (a : WShape n) := Shape.HasTypePi b.1 a.1
 def WShape.HasTypeLam (f : WShapeFun n) (a : WShape n) (b : WShapeFun n) :=
@@ -3316,14 +3352,14 @@ theorem WShape.HasTypeLam.lift (le : n ≤ m) :
 
 inductive WShape.HasTypeU : ∀ {n}, WShape n → WShape n → Prop
   | bot : HasType x .type → HasTypeU .bot x
-  | sort : HasTypeU (.sort r) .type
+  | sort : j.rel = true → HasTypeU (.sort r) (.sort j)
   | forallE : HasTypePi (n := n) b a r → HasTypeU (n := n+1) (.forallE a b) (.sort r)
   | lam : HasTypeLam (n := n) f a b → HasTypeU (n := n+1) (.lam' f) (.forallE a b)
   | ctor {I : IndHead} {as l : List (WShape n)} {c : Name}
     {wf : IsStruct c = true → WShape.ListNonZero l} :
     Shape.ctorOK Shape.hasType I (as.map (·.1)) c (l.map (·.1)) = true →
     HasTypeU (n := n+1) (.ctor c l wf) (.indTy true I as)
-  | indTy {I : IndHead} {as : List (WShape n)} : j = true ∨ r = false →
+  | indTy {I : IndHead} {as : List (WShape n)} : j.rel = true ∨ r = false →
     Shape.ctysOK Shape.hasType I (as.map (·.1)) = true →
     HasTypeU (n := n+1) (.indTy r I as) (.sort j)
 
@@ -3332,7 +3368,7 @@ theorem WShape.HasType.unfold {m a : WShape n} (H : HasType m a) : HasTypeU m a 
   dsimp only [HasType] at H
   cases H.unfold with
   | bot h => exact .bot h
-  | sort => exact .sort
+  | sort h => exact .sort h
   | forallE h => exact .forallE (a := ⟨_, mwf.1⟩) (b := ⟨_, mwf.2⟩) h
   | lam h =>
     have := HasTypeU.lam (f := ⟨_, mwf.1⟩) (a := ⟨_, awf.1⟩) (b := ⟨_, awf.2⟩) h
@@ -3349,7 +3385,7 @@ theorem WShape.HasType.unfold_iff {m a : WShape n} : HasType m a ↔ HasTypeU m 
   refine ⟨(·.unfold), fun h => ?_⟩
   cases h with
   | bot h => exact .bot h
-  | sort => exact .sort
+  | sort h => exact Shape.HasType.unfold_iff.2 (.sort h)
   | forallE h => exact .forallE h
   | @lam _ f a b h => unfold lam'; split <;> [exact .lam h; exact .bot (.forallE h.1)]
   | ctor H => exact Shape.HasType.ctor H
@@ -3357,12 +3393,12 @@ theorem WShape.HasType.unfold_iff {m a : WShape n} : HasType m a ↔ HasTypeU m 
 
 theorem WShape.HasType.bot' : HasType (n := n) x .type → HasType .bot x :=
   (unfold_iff.2 <| .bot ·)
-theorem WShape.HasType.sort : HasType (n := n) (.sort r) .type := unfold_iff.2 .sort
+theorem WShape.HasType.sort : HasType (n := n) (.sort r) .type := unfold_iff.2 (.sort rfl)
 theorem WShape.HasType.forallE : HasTypePi (n := n) b a r →
     HasType (n := n+1) (.forallE a b) (.sort r) := (unfold_iff.2 <| .forallE ·)
 theorem WShape.HasType.lam : HasTypeLam (n := n) f a b →
     HasType (n := n+1) (.lam' f) (.forallE a b) := (unfold_iff.2 <| .lam ·)
-theorem WShape.HasType.indTy {n : Nat} {as : List (WShape n)} (h : j = true ∨ r = false)
+theorem WShape.HasType.indTy {n : Nat} {as : List (WShape n)} (h : j.rel = true ∨ r = false)
     (h' : Shape.ctysOK Shape.hasType I (as.map (·.1)) = true) :
     HasType (n := n+1) (.indTy r I as) (.sort j) := unfold_iff.2 (.indTy h h')
 theorem WShape.HasType.ctor {as : List (WShape n)}
@@ -3673,6 +3709,11 @@ theorem TShape.HasType.sort_T : HasType (WShape.T (n := n) (.sort r)) .type :=
 theorem TShape.HasType.sort_r {x : WShape n} : x.T.HasType (.sort r) ↔ x.HasType (.sort r) :=
   .trans ⟨mono_r TShape.sort_eqv.2 .sort_T, mono_r TShape.sort_eqv.1 .sort⟩ WShape.HasType.T_iff
 
+theorem TShape.HasType.sort_congr {x : TShape} {r r' : SortTag} (h : r.rel = r'.rel) :
+    HasType x (.sort r) ↔ HasType x (.sort r') := by
+  obtain ⟨n, x⟩ := x
+  exact sort_r.trans <| (WShape.HasType.sort_congr h).trans sort_r.symm
+
 theorem TShape.HasType.bot_T (H : HasType x (.sort r)) : HasType (WShape.T (n := n) .bot) x :=
   H.bot.mono_l bot_eqv.2 bot_eqv.1
 theorem TShape.HasType.bot_T' (H : HasType x .type) : HasType (WShape.T (n := n) .bot) x := H.bot_T
@@ -3689,9 +3730,12 @@ theorem TShape.HasType.join {m₁ m₂ a : TShape} (hJ : m₁.Compat m₂)
 
 theorem WShape.HasType.proofIrrel
     (ha : HasType (n := n) a .prop) (hx : HasType x a) : x = .bot := by
-  cases n with | zero => cases ha.unfold; exact hx.bot_r | succ n
+  cases n with
+  | zero => cases ha.unfold with | bot => exact hx.bot_r | sort h => cases h
+  | succ n
   cases ha.unfold with
   | bot => exact hx.bot_r
+  | sort h => cases h
   | indTy h =>
     obtain rfl : _ = false := h.resolve_left nofun
     generalize eq : WShape.indTy .. = t at hx
@@ -3824,7 +3868,7 @@ theorem WShape.HasType.indTy_not_forallE {l : List (WShape n)} {a : WShape n} {f
     ¬HasType (n := n+1) (WShape.indTy r c l) (.forallE a f) := nofun
 
 theorem WShape.HasType.indTy_inv {l : List (WShape n)} {a : WShape (n+1)}
-    (H : HasType (WShape.indTy r c l) a) : ∃ j, a = .sort j ∧ (j = true ∨ r = false) := by
+    (H : HasType (WShape.indTy r c l) a) : ∃ j, a = .sort j ∧ (j.rel = true ∨ r = false) := by
   generalize eq : WShape.indTy r c l = m at H
   cases H.unfold with
   | indTy h => obtain ⟨rfl, -, -⟩ := WShape.indTy.inj.1 eq; exact ⟨_, rfl, h⟩

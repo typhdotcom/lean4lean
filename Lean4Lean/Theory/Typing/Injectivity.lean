@@ -3,15 +3,15 @@ import Lean4Lean.Theory.Typing.Strong
 import Lean4Lean.Theory.Typing.LogRel.ModelInv
 
 /-!
-Structural theorems of the type theory. `sort_forallE_inv` follows from the soundness of the shape
-model (`Theory/Typing/LogRel`); the others are not proved yet.
+Structural theorems of the type theory. `sort_inv` and `sort_forallE_inv` follow from the soundness
+of the shape model (`Theory/Typing/LogRel`); the others are not proved yet.
 -/
 
 namespace Lean4Lean
 namespace VEnv
 
 theorem IsDefEqU.sort_inv (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
-    (h1 : env.IsDefEqU U Γ (.sort u) (.sort v)) : u ≈ v := sorry
+    (h1 : env.IsDefEqU U Γ (.sort u) (.sort v)) : u ≈ v := henv.sort_inv hΓ h1
 
 theorem IsDefEqU.forallE_inv_stratified (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
     (h1 : env.IsDefEqU U Γ (.forallE A B) (.forallE A' B'))

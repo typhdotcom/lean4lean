@@ -136,10 +136,10 @@ theorem SoundEq.forallE (hA : SoundTy env Γ A (.sort u))
 
 omit [ShapeEnv] in
 theorem levelRel_congr {a b : VLevel} (h : a ≈ b) : levelRel a = levelRel b := by
-  unfold levelRel; congr 2; exact propext (VLevel.equiv_congr_left h)
+  unfold levelRel; rw [show a.eval = b.eval from h, VLevel.equiv_congr_left h]
 
 omit [ShapeEnv] in
-theorem levelRel_succ {l : VLevel} : levelRel (.succ l) = true := by
+theorem levelRel_succ {l : VLevel} : (levelRel (.succ l)).rel = true := by
   unfold levelRel
   have : ¬VLevel.succ l ≈ .zero := fun h => by
     have := congrFun (VLevel.equiv_def'.1 h) []; simp [VLevel.eval] at this
@@ -147,7 +147,18 @@ theorem levelRel_succ {l : VLevel} : levelRel (.succ l) = true := by
 
 omit [ShapeEnv] in
 theorem levelRel_zero : levelRel .zero = false := by
-  unfold levelRel; simp [show (VLevel.zero ≈ VLevel.zero) from rfl]
+  unfold levelRel; simp only [show (VLevel.zero ≈ VLevel.zero) from rfl, decide_true, Bool.not_true]
+  rfl
+
+omit [ShapeEnv] in
+theorem levelRel_eq_false {l : VLevel} : levelRel l = false ↔ l ≈ .zero :=
+  ⟨fun h => VLevel.equiv_def'.2 <| funext fun ls => by
+    simpa [levelRel, SortTag.ofBool, VLevel.eval] using congrFun (congrArg (·.lv) h) ls,
+   fun h => (levelRel_congr h).trans levelRel_zero⟩
+
+open Classical in
+omit [ShapeEnv] in
+theorem levelRel_rel {l : VLevel} : (levelRel l).rel = !decide (l ≈ .zero) := rfl
 
 /-- A variable's interpretation is typed at an interpretation of its type. -/
 theorem LE_Interp.Valuation.Fits.lookup (hM : ModelEnv env) (W : Valuation.Fits env Γ₀ Γ ρ)
@@ -555,7 +566,7 @@ theorem strongSound_of (hM : ModelEnv env) (hE : E ≤ env) (hL : LevelInv env)
     have hD : env.IsDefEq U Γ _ _ _ := .sortDF h1 h2 h3
     have hS {Γ l} : SoundTy env Γ (.sort l) (.sort (.succ l)) := fun _ _ W _ h => by
       refine .mk h.le_sort .sort' .sort' ?_
-      rw [levelRel_succ]; exact TShape.HasType.sort
+      exact (TShape.HasType.sort_congr (r' := true) levelRel_succ).2 TShape.HasType.sort
     refine ⟨hD, (SoundEq.sort.2 (levelRel_congr h3)), ⟨hD.hasType.1, hS, .sort, .rfl⟩,
       ⟨hD.hasType.2, hS.defeq_l (SoundEq.sort.2 (levelRel_congr h3)), .sort, .rfl⟩⟩
   | @constDF c ci ls ls' u Γ h1 h2 h3 h4 h5 _ _ _ _ ih2 =>

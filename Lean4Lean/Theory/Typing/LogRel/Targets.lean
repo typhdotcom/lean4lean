@@ -15,12 +15,12 @@ open VExpr
 namespace LogRel
 open LE_Interp
 
-theorem WShape.HasType.sort_l_inv [ShapeEnv] {n} {r : Bool} {a : WShape n}
-    (h : (WShape.sort r).HasType a) : a = .type := by
+theorem WShape.HasType.sort_l_inv [ShapeEnv] {n} {r : SortTag} {a : WShape n}
+    (h : (WShape.sort r).HasType a) : ∃ j, a = .sort j ∧ j.rel = true := by
   have := h.unfold
   generalize hs : WShape.sort r = s at this
   cases this with
-  | sort => rfl
+  | sort h' => exact ⟨_, rfl, h'⟩
   | bot => have := congrArg (·.1) hs; cases n <;> cases this
   | forallE => have := congrArg (·.1) hs; cases this
   | lam => have := congrArg (·.1) hs; unfold WShape.lam' at this; split at this <;> cases this
@@ -51,7 +51,7 @@ theorem sort_inv_of {env : VEnv} (henvW : env.WF) {U : Nat} {Γ : List VExpr} {u
   obtain ⟨_, m', a, -, le_m, hm', ha, hty⟩ :=
     ((hS H).left.sound W.fits (LE_Interp.sort' (l := u) (ρ := .nil))).out
   cases sort_shape_of_le hm' le_m
-  cases WShape.HasType.sort_l_inv hty
+  obtain ⟨_, rfl, -⟩ := WShape.HasType.sort_l_inv hty
   have R := (LR.adequacy_of (henvW.modelEnv AxOK.none nofun) .rfl hS hΓ hH H hΓ hm' ha hty).2 W
   simp only [subst_id] at R
   rcases (LR _ _ _).sort_iff.1 R with ⟨u', v', h1, h2, h⟩ | ⟨h1, -⟩

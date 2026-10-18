@@ -624,7 +624,7 @@ theorem AdeqStmt.quotLift (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx �
       simpa [quotTailCtx, List.map_reverse, VExpr.instL, VLevel.inst, VExpr.liftN] using this
     have S0 := hS (IsDefEq.weak_closed hE₀o onBs D0 Γ)
     have SQ := hS (IsDefEq.weak_closed hE₀o onBs DQ Γ)
-    have hr : levelRel u = false := by simp [levelRel, hp]
+    have hr : levelRel u = false := levelRel_eq_false.2 hp
     exact TShape.le_bot.1 (StrongSound.proof_le_bot' S0.left SQ.left hr W.fits hm)
   have key : AdeqStmt (U := U) henv hU Γ₀ Γ (.const ``Quot.lift [u, v]) (.const ``Quot.lift ls')
       (quotLiftConst.type.instL [u, v]) :=

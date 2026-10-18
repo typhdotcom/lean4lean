@@ -18,6 +18,8 @@ fails typed.
 Ported from `Experimental/ShapeLogRel.lean`, with the pattern rules there replaced by the steps.
 -/
 
+noncomputable section
+
 namespace Lean4Lean
 open Lean4Lean VExpr
 namespace LogRel
@@ -60,11 +62,12 @@ noncomputable def _root_.Lean4Lean.VInductDecl.rel (d : VInductDecl) (ls : List 
   !decide (d.PropAt ls)
 
 open Classical in
-/-- Whether a sort is relevant (not `Prop`). -/
-noncomputable def levelRel (l : VLevel) : Bool := !decide (l ≈ .zero)
+/-- What a sort's shape records of its level: whether it is relevant (not `Prop`), and its
+value. -/
+noncomputable def levelRel (l : VLevel) : SortTag := ⟨!decide (l ≈ .zero), l.eval⟩
 
-theorem levelRel_imax {u v : VLevel} : levelRel (.imax u v) = levelRel v := by
-  unfold levelRel; congr 2; exact propext VLevel.imax_eq_zero
+theorem levelRel_imax {u v : VLevel} : (levelRel (.imax u v)).rel = (levelRel v).rel := by
+  unfold levelRel; dsimp only; congr 2; exact propext VLevel.imax_eq_zero
 
 /-- `AppS h as m`: `m` approximates the shape `h` applied to the shapes `as` in turn. -/
 inductive AppS : TShape → List TShape → TShape → Prop
@@ -223,7 +226,7 @@ inductive LE_Interp.Const : ∀ {n}, List (WShape n) → TShape → Prop
     env.defeqs quotDefEq → c = ``Quot → ls = [u] → rargs.length = 2 →
     env.constants ``Quot.mk = some ci → R h (ci.type.instL ls) →
     PiAppS h (rargs.reverse.map (·.T)) cty.T →
-    m ≤ (WShape.indTy (n := n) (levelRel u) ⟨c, 2, [``Quot.mk], [1]⟩ (rargs.reverse ++ [cty])).T →
+    m ≤ (WShape.indTy (n := n) (levelRel u).rel ⟨c, 2, [``Quot.mk], [1]⟩ (rargs.reverse ++ [cty])).T →
     (hnd : ¬AxInterp.dom c := by assumption) → Const rargs m
   /-- `Quot.mk`, where the quotient is not a proposition. -/
   | quotMk {a r α : WShape n} : env.defeqs quotDefEq → c = ``Quot.mk → ls = [u] →
@@ -2092,7 +2095,7 @@ theorem sound_forallE (hM : ModelEnv env)
       refine hi1 _ z'ht |>.mono z'app.T |>.mono_l <| Valuation.LE.push.2 ⟨.rfl, ?_⟩
       exact z'le.T.trans <| (TShape.LE.lift_l le₂).2 d1
     · apply (TShape.HasType.def (Nat.le_refl _) (Nat.zero_le _)).2
-      simp only [WShape.lift_self, TShape.sort, WShape.lift_sort, levelRel_imax]
+      simp only [WShape.lift_self, TShape.sort, WShape.lift_sort]
       have b2' := WShape.lift_lift (.inl le) ▸ b2'
       have := (TShape.HasType.def le₁ (Nat.zero_le k)).1 c3
       refine .forallE <| WShape.HasTypePi.iff.2 ⟨b2'.mono_r ?_ this, fun x hx => ?_⟩
@@ -2102,7 +2105,8 @@ theorem sound_forallE (hM : ModelEnv env)
       have ⟨e2, e3⟩ := WShapeFun.app_of_mem e1
       refine eq ▸ WShape.lift_sort.symm ▸ (WShape.HasType.lift le₂).2 (.mono_l e2 e3 ?_)
       have ⟨y, d1, d2, d3⟩ := WShape.HasDom.iff.1 hd1 x'
-      exact (hi2 _ d2).mono_l (WShapeFun.app_mono_r d1) d3
+      exact (WShape.HasType.sort_congr levelRel_imax).2
+        ((hi2 _ d2).mono_l (WShapeFun.app_mono_r d1) d3)
   intro fl H
   induction fl with
   | nil =>

@@ -460,7 +460,7 @@ theorem quotRule_adeq (henvW : env.WF) (hM : ModelEnv env) {E E' : VEnv} (hEE : 
         refine .bvar ?_; rw [hBsr]; exact .succ (.succ (.succ (.succ (.succ .zero))))
       have S0 := hS ((IsDefEq.weak_closed hEo onBs D0 Γ).mono hEE)
       have S5 := hS ((IsDefEq.weak_closed hEo onBs D5 Γ).mono hEE)
-      have hr : levelRel u = false := by simp [levelRel, hp]
+      have hr : levelRel u = false := levelRel_eq_false.2 hp
       exact TShape.le_bot.1 (StrongSound.proof_le_bot' S0.left S5.left hr W.fits hm)
     have shiftW {σ σ' ρ} (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' (Bs.reverse ++ Γ) ρ) :
         LR.SubstWF (U := U) henv hU Γ₀ σ σ' (.bvar 4 :: ([Hh, .forallE (.bvar 2) (.bvar 1),

@@ -12,6 +12,8 @@ shape, and at an inductive type shape it relates the two ends' arguments along t
 telescope (`IndRel`), from which the projections' types are equal (`projType_congr`).
 -/
 
+noncomputable section
+
 namespace Lean4Lean
 open VExpr
 
@@ -43,12 +45,12 @@ theorem seedShape_interp (hM : ModelEnv env) {envT : VEnv} (hX : SoundHyps envT 
     (W : Valuation.Fits env Γ₀ Γ ρ) {Args : List VExpr} {u : VLevel}
     (hn : Args.length = d.params.length + T.indices.length)
     (hTS : MSpine env Γ ((VExpr.const s ls).appN Args) (.sort u)) :
-    levelRel u = d.rel ls ∧
+    (levelRel u).rel = d.rel ls ∧
     (seedShape (d.rel ls) s d T Args).HasType (WShape.sort (levelRel u)) ∧
     LE_Interp env ρ (seedShape (d.rel ls) s d T Args).T ((VExpr.const s ls).appN Args) := by
   obtain ⟨-, hsort⟩ := typeSpine hM hX hle hO hTW hPT hcT hls (As := Args) (I := [])
     (by simpa using hn) (by simpa using hTS)
-  have hrel : levelRel u = d.rel ls := by
+  have hrel : (levelRel u).rel = d.rel ls := by
     rw [SoundEq.sort.1 hsort]; simp only [levelRel, VInductDecl.rel, VInductDecl.PropAt]
     congr 1
   have hty : (seedShape (d.rel ls) s d T Args).HasType (WShape.sort (levelRel u)) := by

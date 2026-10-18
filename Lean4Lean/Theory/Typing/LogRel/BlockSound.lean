@@ -744,7 +744,7 @@ theorem iotaRuleSound_block (hM : ModelEnv env) (henv : env.WF) {E₁ E₂ : VEn
         have hPT : envT.IsTele d.uvars [] d.params := hd.params.mono (VEnv.addConstList_le hTs)
         have hrel := aux_levelRel (U := U) hM hXT hleT hOT hTW hPT hTIW hPI hTIty hpsD hTjty
           hps'D.length_eq hY hargl hargs hidxI hlsB
-        have hdl : levelRel (d.level.inst (d.recLevels.map (·.inst ls))) = true := by
+        have hdl : (levelRel (d.level.inst (d.recLevels.map (·.inst ls)))).rel = true := by
           simp only [levelRel, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_false_iff_not]
           intro h
           have := VLevel.equiv_def.1 h []

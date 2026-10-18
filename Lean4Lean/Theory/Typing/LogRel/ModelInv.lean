@@ -4,7 +4,8 @@ import Lean4Lean.Theory.Typing.LogRel.QuotSound
 # Consequences of the model's soundness
 
 A well-formed context has a valuation fitting it, so terms the type theory equates have the same
-interpretations: a sort is never definitionally equal to a pi type.
+interpretations: a sort is never definitionally equal to a pi type, and sorts it equates have
+equivalent levels.
 -/
 
 namespace Lean4Lean
@@ -44,6 +45,19 @@ theorem _root_.Lean4Lean.VEnv.WF.sort_forallE_inv {env : VEnv} (henv : env.WF) {
   | forallE _ _ _ _ hle =>
     subst hm
     exact TShape.sort_not_le_forallE hle
+
+/-- Sorts the type theory equates have equivalent levels: the model reads a sort's level off its
+shape. -/
+theorem _root_.Lean4Lean.VEnv.WF.sort_inv {env : VEnv} (henv : env.WF) {U : Nat}
+    {Γ : List VExpr} {u v : VLevel} (hΓ : OnCtx Γ (env.IsType U))
+    (H : env.IsDefEqU U Γ (.sort u) (.sort v)) : u ≈ v := by
+  obtain ⟨_, H⟩ := H
+  letI := env.shapeEnv
+  obtain ⟨ρ, W⟩ := henv.exists_fits hΓ
+  have h := ((henv.modelSound (H.strong henv.ordered hΓ)).sound W).1 (LE_Interp.sort' (l := u))
+  have h := WShape.LE.of_T (n := 0) h.le_sort
+  have := Shape0.sort.inj (congrArg (·.1) (WShape.sort_le.1 h))
+  exact VLevel.equiv_def'.2 (congrArg SortTag.lv this)
 
 end LogRel
 end Lean4Lean

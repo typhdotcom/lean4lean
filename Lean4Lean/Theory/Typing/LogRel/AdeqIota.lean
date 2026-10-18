@@ -301,7 +301,7 @@ theorem iotaRule_adeq (henvW : env.WF) (hM : ModelEnv env) {E E₂ : VEnv} (hEE 
           obtain ⟨A', hA', hS'⟩ := bvar_type_sound hM hX hEenv hEo onBs hT'
           cases hA'.uniq hL; exact hS'.symm.le) (.sort w₃) (hCTe ▸ hAw)
       have := levelRel_of_le hle' W'
-      rw [this, hv]; simp [levelRel]; exact VLevel.equiv_def.2 fun _ => rfl
+      rw [this, hv]; exact levelRel_zero
     intro ρ n m a hm ha hmem
     have hbot {σ σ'} (W : LR.SubstWF (U := U) henv hU Γ₀ σ σ' (Bs.reverse ++ Γ) ρ) :
         m = .bot := by
