@@ -35,15 +35,18 @@ structure Agree (S : Supp) (c₁ c₂ : Context) : Prop where
   quotInit : c₂.env.quotInit = c₁.env.quotInit
   safety : c₂.safety = c₁.safety
   eagerReduce : c₂.eagerReduce = c₁.eagerReduce
-  lparams : c₂.lparams = c₁.lparams
+  lparams : ∀ n, S.lvl n → n ∈ c₁.lparams → n ∈ c₂.lparams
   fuel : c₂.fuel = c₁.fuel
 
 theorem Agree.refl {S : Supp} {c : Context} (wf : c.lctx.WF) : Agree S c c :=
-  ⟨fun _ _ => rfl, fun _ _ => rfl, wf, fun _ => id, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨fun _ _ => rfl, fun _ _ => rfl, wf, fun _ => id, rfl, rfl, rfl, fun _ _ => id, rfl⟩
 
 theorem Agree.mono {S S' : Supp} {c₁ c₂ : Context} (H : Agree S' c₁ c₂) (h : S ≤ S') :
     Agree S c₁ c₂ :=
-  { H with env := fun n hn => H.env n (h.const n hn), lctx := fun fv hfv => H.lctx fv (h.fv fv hfv) }
+  { H with
+    env := fun n hn => H.env n (h.const n hn)
+    lctx := fun fv hfv => H.lctx fv (h.fv fv hfv)
+    lparams := fun n hn => H.lparams n (h.lvl n hn) }
 
 /-- A successful run of `x₁` in `c₁` is a successful run of `x₂` in `c₂`, from the same state. -/
 def M.Sim (c₁ c₂ : Context) (s : State) (x₁ x₂ : M α) : Prop :=

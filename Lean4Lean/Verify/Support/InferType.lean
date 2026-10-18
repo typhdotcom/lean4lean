@@ -292,7 +292,7 @@ theorem inferProj.SWF {c : Context} {s : State} {struct structType : Expr}
   split
   · rename_i I_name I_levels heq
     have hI S (hS : S.Closed c) (h : (Expr.proj typeName idx struct).SuppIn S) : type.SuppIn S :=
-      htype S hS (hst S hS h.2)
+      htype S hS (hst S hS h)
     split; · exact .failBind
     refine (M.SWF.liftExcept envGet.SWF).lift.bind fun ci _ _ hci => ?_
     split
@@ -331,7 +331,7 @@ theorem inferProj.SWF {c : Context} {s : State} {struct structType : Expr}
           · rename_i dom b _
             have hdom : P dom := fun S hS h => (hx S hS (hr S hS h)).1
             have hb : P (b.instantiate1 (.proj I_name i struct)) := fun S hS h =>
-              Expr.SuppIn.inst1 ⟨(hfacts S hS h).1, h.2⟩ (hx S hS (hr S hS h)).2
+              Expr.SuppIn.inst1 h (hx S hS (hr S hS h)).2
             split
             · split
               · refine (isProp.SWF (hP wf hdom)).bind fun _ _ _ _ => ?_

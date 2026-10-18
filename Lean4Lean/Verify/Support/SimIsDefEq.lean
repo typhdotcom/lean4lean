@@ -207,7 +207,7 @@ theorem tryEtaStructCore.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : A
     fun _ _ _ _ => ?_
   · dsimp only
     refine (isDefEq.SS hA hS (show Dom c₁ (.proj _ _ e₁) from h₁) (hargs _ (Array.getElem_mem _))
-      ⟨hind, hs₁⟩ (hs₂.getAppArgs _ (Array.getElem_mem _))).bind fun _ _ _ _ => ?_
+      hs₁ (hs₂.getAppArgs _ (Array.getElem_mem _))).bind fun _ _ _ _ => ?_
     split <;> exact .pure trivial
   · dsimp only; split <;> exact .pure trivial
 
@@ -477,7 +477,7 @@ theorem isDefEqCore'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree
       refine (show RecM.SS c₁ c₂ _ (lazyDeltaProjReduction _ _ _)
           (lazyDeltaProjReduction _ _ _) fun _ _ => True by
         unfold lazyDeltaProjReduction; refine .readThe ?_; rw [hA.fuel]
-        exact lazyDeltaProjReduction.loop.SS hA hS c1 d1 c2.2 d2.2).bind fun _ _ _ _ => ?_
+        exact lazyDeltaProjReduction.loop.SS hA hS c1 d1 c2 d2).bind fun _ _ _ _ => ?_
       split <;> [exact .pure trivial; exact this]
     · exact this
   intro; unfold F3

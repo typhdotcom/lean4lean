@@ -1,2 +1,2 @@
 import Lean4Lean.Verify.Environment
-import Lean4Lean.Verify.Support.SimIsDefEq
+import Lean4Lean.Verify.Support.Bridge

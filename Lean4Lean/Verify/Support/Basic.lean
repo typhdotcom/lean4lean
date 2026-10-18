@@ -50,7 +50,9 @@ def Literal.SuppIn (C : Name → Prop) : Literal → Prop
   | .strVal _ => C ``String ∧ C ``String.ofList ∧ C ``Char ∧ C ``Char.ofNat ∧ C ``List.nil ∧
     C ``List.cons ∧ C ``Nat ∧ C ``Nat.zero ∧ C ``Nat.succ
 
-/-- Every free variable, level parameter and constant `e` mentions is allowed by `S`. -/
+/-- Every free variable, level parameter and constant `e` mentions is allowed by `S`. A
+projection's structure name is not a mention: the kernel only compares it with the head of the
+structure's type, and never looks it up. -/
 def Expr.SuppIn (S : Supp) : Expr → Prop
   | .bvar _ | .mvar _ => True
   | .fvar fv => S.fv fv
@@ -61,7 +63,7 @@ def Expr.SuppIn (S : Supp) : Expr → Prop
   | .lam _ d b _ | .forallE _ d b _ => d.SuppIn S ∧ b.SuppIn S
   | .letE _ t v b _ => t.SuppIn S ∧ v.SuppIn S ∧ b.SuppIn S
   | .mdata _ e => e.SuppIn S
-  | .proj s _ e => S.const s ∧ e.SuppIn S
+  | .proj _ _ e => e.SuppIn S
 
 namespace Level
 
@@ -120,6 +122,39 @@ theorem LParamsIn.substParams' {P Q : Name → Prop} {s : Name → Level}
     · exact ⟨LParamsIn.substParams' hs h1, LParamsIn.substParams' hs h2⟩
   | .param n, _, h => hs n h
 
+theorem LParamsIn.of_hasParam' {P : Name → Prop} : ∀ {l : Level}, l.hasParam' = false → l.LParamsIn P
+  | .zero, _ | .mvar _, _ => trivial
+  | .succ l, h => LParamsIn.of_hasParam' (l := l) h
+  | .max a b, h | .imax a b, h => by
+    simp only [hasParam', Bool.or_eq_false_iff] at h
+    exact ⟨LParamsIn.of_hasParam' h.1, LParamsIn.of_hasParam' h.2⟩
+  | .param _, h => by cases h
+
+theorem getUndefParam_eq_none_iff {l : Level} {ps : List Name} :
+    l.getUndefParam ps = none ↔ l.LParamsIn (· ∈ ps) := by
+  suffices ∀ s, ((l.forEach (getUndefParam.F ps)).run s).run.snd = none ↔
+      s = none ∧ l.LParamsIn (· ∈ ps) from (this none).trans (by simp)
+  intro s
+  induction l generalizing s with
+  | succ l ih =>
+    rw [Level.forEach]; simp only [getUndefParam.F]
+    cases s <;> by_cases h : l.succ.hasParam' <;> simp [h, ih, LParamsIn]
+    exact LParamsIn.of_hasParam' (by simpa [hasParam'] using h)
+  | max a b iha ihb =>
+    rw [Level.forEach]; simp only [getUndefParam.F]
+    cases s <;> by_cases h : (a.max b).hasParam' <;> simp [h, iha, ihb, LParamsIn]
+    simp only [hasParam', Bool.not_eq_true, Bool.or_eq_false_iff] at h
+    exact ⟨LParamsIn.of_hasParam' h.1, LParamsIn.of_hasParam' h.2⟩
+  | imax a b iha ihb =>
+    rw [Level.forEach]; simp only [getUndefParam.F]
+    cases s <;> by_cases h : (a.imax b).hasParam' <;> simp [h, iha, ihb, LParamsIn]
+    simp only [hasParam', Bool.not_eq_true, Bool.or_eq_false_iff] at h
+    exact ⟨LParamsIn.of_hasParam' h.1, LParamsIn.of_hasParam' h.2⟩
+  | param n =>
+    rw [Level.forEach]; simp only [getUndefParam.F]
+    cases s <;> simp [hasParam', LParamsIn]; split <;> simp_all
+  | _ => rw [Level.forEach]; cases s <;> simp [getUndefParam.F, hasParam', LParamsIn]
+
 end Level
 
 namespace Literal
@@ -140,7 +175,6 @@ theorem SuppIn.mono {S S' : Supp} (H : S ≤ S') {e : Expr} (h : e.SuppIn S) : e
   · exact h.mono H.lvl
   · exact ⟨H.const _ h.1, fun u hu => (h.2 u hu).mono H.lvl⟩
   · exact h.mono H.const
-  · exact H.const _ h.1
 
 theorem SuppIn.liftLooseBVars {S : Supp} :
     ∀ {e : Expr} {s d}, e.SuppIn S → (e.liftLooseBVars' s d).SuppIn S := by

@@ -122,7 +122,7 @@ def TrCtorVal (j : Nat) (c : VConstructor) (v : ConstructorVal) : Prop :=
 each rule's right-hand side, which translates to that of `VEnv.addInduct`'s iota rule, in `env`,
 which has the recursors. The motive's level parameter, when there is one, comes first. -/
 def TrRecVal (env : VEnv) (i : Nat) (T : VInductiveType) (v : RecursorVal) : Prop :=
-  v.name = Lean.mkRecName T.name ∧
+  v.name = Lean.mkRecName T.name ∧ v.getMajorInduct = T.name ∧
   (decl.LargeElim → ∃ u, u ∉ lparams ∧ v.levelParams = u :: lparams) ∧
   (¬decl.LargeElim → v.levelParams = lparams) ∧
   v.numParams = decl.params.length ∧ v.numIndices = T.indices.length ∧

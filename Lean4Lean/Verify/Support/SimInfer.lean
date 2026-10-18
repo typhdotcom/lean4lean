@@ -30,9 +30,20 @@ theorem envGet_agree {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂) (
   rw [hA.env n hn]
   cases e : c₁.env.find? n <;> rw [e] at h <;> cases h; rfl
 
-theorem checkLevel_agree {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂) :
-    Inner.checkLevel c₂ l = Inner.checkLevel c₁ l := by
-  simp only [Inner.checkLevel, hA.lparams]
+theorem checkLevel_agree {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂)
+    (hl : l.LParamsIn S.lvl) : (Inner.checkLevel c₁ l).SimOk (Inner.checkLevel c₂ l) := by
+  intro a h
+  unfold Inner.checkLevel at h ⊢
+  split at h <;> [cases h; skip]
+  rename_i h1
+  have h2 := Level.getUndefParam_eq_none_iff.1 (Option.eq_none_iff_forall_ne_some.2 h1)
+  rw [Level.getUndefParam_eq_none_iff.2]; · rfl
+  clear h1 h
+  induction l with
+  | zero | mvar => trivial
+  | succ _ ih => exact ih hl h2
+  | max _ _ ih1 ih2 | imax _ _ ih1 ih2 => exact ⟨ih1 hl.1 h2.1, ih2 hl.2 h2.2⟩
+  | param n => exact hA.lparams n hl h2
 
 theorem inferFVar_agree {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂) (hn : S.fv n) :
     (Inner.inferFVar c₁ n).SimOk (Inner.inferFVar c₂ n) := by
@@ -50,13 +61,33 @@ theorem inferFVar_agree {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂
     simp only
     cases d <;> cases d' <;> simp [LocalDecl.erase] at this <;> simp [this, LocalDecl.type] <;> rfl
 
+theorem forIn_checkLevel_agree {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂) :
+    ∀ {ls : List Level}, (∀ l ∈ ls, l.LParamsIn S.lvl) →
+    (forIn ls PUnit.unit fun l _ => do Inner.checkLevel c₁ l; pure (ForInStep.yield PUnit.unit) :
+      Except Exception PUnit).SimOk
+    (forIn ls PUnit.unit fun l _ => do Inner.checkLevel c₂ l; pure (ForInStep.yield PUnit.unit))
+  | [], _ => .rfl
+  | l :: ls, hls => by
+    simp only [List.forIn_cons]
+    intro a h
+    cases e : Inner.checkLevel c₁ l with
+    | error => simp [e, bind, Except.bind] at h
+    | ok u =>
+      have e2 := checkLevel_agree hA (hls l (.head _)) u e
+      simp only [e, e2, bind, Except.bind, pure, Except.pure] at h ⊢
+      exact forIn_checkLevel_agree hA (fun l hl => hls l (.tail _ hl)) a h
+
 theorem inferConstant_agree {S : Supp} {c₁ c₂ : Context} (hA : Agree S c₁ c₂)
-    (hn : S.const n) : (Inner.inferConstant c₁ n ls inferOnly).SimOk
+    (hn : S.const n) (hls : ∀ l ∈ ls, l.LParamsIn S.lvl) : (Inner.inferConstant c₁ n ls inferOnly).SimOk
       (Inner.inferConstant c₂ n ls inferOnly) := by
   unfold Inner.inferConstant
   refine (envGet_agree hA hn).bind fun ci _ => ?_
-  simp only [hA.safety, checkLevel_agree hA]
-  exact .rfl
+  simp only [hA.safety]
+  have hF := forIn_checkLevel_agree hA hls
+  repeat' split
+  all_goals first
+    | exact .rfl
+    | exact hF.bind fun _ _ => .rfl
 
 theorem mkBindingList1_agree {lctx₁ lctx₂ : LocalContext}
     (H : (lctx₂.find? x).map LocalDecl.erase = (lctx₁.find? x).map LocalDecl.erase) :
@@ -390,7 +421,7 @@ theorem inferProj.SS {S : Supp} {c₁ c₂ : Context} {s : State} {struct struct
       (inferProj typeName idx struct structType) fun ty _ =>
       SuppBelow c₁ (.proj typeName idx struct) ty := by
   rw [inferProj.eq_1]
-  refine (whnf.SS hA hS hdt (hst S hS hs.2)).bind fun type _ _ htype => ?_
+  refine (whnf.SS hA hS hdt (hst S hS hs)).bind fun type _ _ htype => ?_
   rw [Expr.withApp_eq]
   refine .getEnv ?_
   dsimp only
@@ -398,7 +429,7 @@ theorem inferProj.SS {S : Supp} {c₁ c₂ : Context} {s : State} {struct struct
   · rename_i I_name I_levels heq
     have hI S (hS : S.Closed c₁) (h : (Expr.proj typeName idx struct).SuppIn S) :
         type.SuppIn S :=
-      htype S hS (hst S hS h.2)
+      htype S hS (hst S hS h)
     have hIS : S.const I_name := (heq ▸ (hI S hS hs).getAppFn : Expr.SuppIn S (.const _ _)).1
     by_cases h1 : (typeName != I_name) = true
     · rw [if_pos h1, if_pos h1]; exact .failBind
@@ -442,7 +473,7 @@ theorem inferProj.SS {S : Supp} {c₁ c₂ : Context} {s : State} {struct struct
           · rename_i dom b _
             have hdom : P dom := fun S hS h => (hx S hS (hr S hS h)).1
             have hb : P (b.instantiate1 (.proj I_name i struct)) := fun S hS h =>
-              Expr.SuppIn.inst1 ⟨(hfacts S hS h).1, h.2⟩ (hx S hS (hr S hS h)).2
+              Expr.SuppIn.inst1 h (hx S hS (hr S hS h)).2
             split
             · split
               · refine (isProp.SS hA hS (hP wf hdom) (hdom S hS hs)).bind fun _ _ _ _ => ?_
@@ -502,7 +533,7 @@ theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
     exact (inferType'.SS (e := e) hA hS he hs).bind fun _ _ _ h => hF h
   · rename_i st idx e _ _
     have he' : Dom c₁ e := he
-    refine (inferType'.SS hA hS he' hs.2).bind fun ty _ _ h => .stateWF fun wf => ?_
+    refine (inferType'.SS hA hS he' hs).bind fun ty _ _ h => .stateWF fun wf => ?_
     exact (inferProj.SS hA hS he' (h.dom wf he') h hs).bind fun _ _ _ h => hF h
   · exact .readThe <| (RecM.SS.liftExcept inferFVar.SWF (inferFVar_agree hA hs)).bind
       fun _ _ _ h => hF h
@@ -514,9 +545,9 @@ theorem inferType'.SS {S : Supp} {c₁ c₂ : Context} {s : State} {e : Expr}
     split
     · refine .readThe <| (RecM.SS.liftExcept (Q := fun _ => True) (fun _ _ => trivial)
         fun _ h => ?_).bind fun _ _ _ _ => hF H
-      rw [checkLevel_agree hA]; exact h
+      exact checkLevel_agree hA (show Level.LParamsIn S.lvl u from hs) _ h
     · exact hF H
-  · exact .readThe <| (RecM.SS.liftExcept inferConstant.SWF (inferConstant_agree hA hs.1)).bind
+  · exact .readThe <| (RecM.SS.liftExcept inferConstant.SWF (inferConstant_agree hA hs.1 hs.2)).bind
       fun _ _ _ h => hF h
   · exact (inferLambda.SS hA hS he hs).bind fun _ _ _ h => hF h
   · exact (inferForall.SS hA hS he hs).bind fun _ _ _ h => hF h

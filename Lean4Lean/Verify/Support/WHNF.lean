@@ -44,7 +44,7 @@ theorem expandEtaStruct_supp {S : Supp} {env : Environment} (hS : S.EnvClosed en
       | nil => exact fun _ h => h
       | cons a l ih =>
         intro r h; rw [List.forIn_cons]
-        exact ih _ (show Expr.SuppIn S (.app r (.proj I a e)) from ⟨h, hf.1, he⟩)
+        exact ih _ (show Expr.SuppIn S (.app r (.proj I a e)) from ⟨h, he⟩)
     exact this _ (Expr.SuppIn.mkAppRange hS.dummy ht.getAppArgs
       (show Expr.SuppIn S (.const ctor ls) from ⟨getFirstCtor_supp hS h1 hf.1, hf.2⟩))
   · exact Expr.SuppIn.default hS.dummy
@@ -326,7 +326,7 @@ theorem whnfCore'.SWF {c : Context} {s : State} (he : Dom c e) :
     have hst : Dom c st := he
     refine (reduceProj.SWF hst).bind fun _ _ _ h => ?_
     split
-    · have h : SuppBelow c (.proj tn idx st) _ := fun S hS h' => h _ rfl S hS h'.2
+    · have h : SuppBelow c (.proj tn idx st) _ := fun S hS h' => h _ rfl S hS h'
       exact .stateWF fun wf => (whnfCore.SWF (h.dom wf he)).bind fun _ _ _ h' => hsave (h.trans h')
     · exact hsave .rfl
 

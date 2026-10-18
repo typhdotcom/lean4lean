@@ -28,8 +28,8 @@ theorem List.Forall₂.append {R : α → β → Prop} :
 theorem TrRecVal.mono {env env' : VEnv} {decl : VInductDecl} {lparams : List Name} {i : Nat}
     {T : VInductiveType} {v : RecursorVal} (henv : env ≤ env')
     (H : TrRecVal decl lparams env i T v) : TrRecVal decl lparams env' i T v := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := H
-  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10,
+  obtain ⟨h1, h0, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := H
+  exact ⟨h1, h0, h2, h3, h4, h5, h6, h7, h8, h9, h10,
     Lean4Lean.List.Forall₂.imp (fun _ _ ⟨a, b, c, d⟩ => ⟨a, b, c, d.mono henv⟩) h11⟩
 
 /-- The names `AddInduct` inserts are those `VEnv.addInduct` adds constants under. -/
@@ -49,7 +49,7 @@ theorem AddInduct.names {decl : VInductDecl} (H : AddInduct safety C₁ env₁ d
     · obtain ⟨_, _, ⟨_, -, -, -, -, -, -, -, h⟩, -⟩ := hct.forall_exists_l v hv
       simp only [ConstantInfo.safety, ConstantInfo.isUnsafe, ConstantInfo.isPartial, h]
       cases decl.isUnsafe <;> rfl
-    · obtain ⟨_, _, ⟨-, -, -, -, -, -, -, -, -, h, -⟩, -⟩ := hrc.forall_exists_l v hv
+    · obtain ⟨_, _, ⟨-, -, -, -, -, -, -, -, -, -, h, -⟩, -⟩ := hrc.forall_exists_l v hv
       simp only [ConstantInfo.safety, ConstantInfo.isUnsafe, ConstantInfo.isPartial, h]
       cases decl.isUnsafe <;> rfl
   · refine List.Forall₂.map_eq (f := fun x : ConstantInfo => x.name)

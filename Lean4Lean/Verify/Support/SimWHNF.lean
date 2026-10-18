@@ -363,9 +363,9 @@ theorem whnfCore'.SS {S : Supp} {c₁ c₂ : Context} {s : State} (hA : Agree S 
       fun _ _ _ h => hsave (hr.trans h)
   · rename_i tn idx st _
     have hst : Dom c₁ st := he
-    refine (reduceProj.SS hA hS hst hs.2).bind fun _ _ _ h => ?_
+    refine (reduceProj.SS hA hS hst hs).bind fun _ _ _ h => ?_
     split
-    · have h : SuppBelow c₁ (.proj tn idx st) _ := fun S hS h' => h _ rfl S hS h'.2
+    · have h : SuppBelow c₁ (.proj tn idx st) _ := fun S hS h' => h _ rfl S hS h'
       exact .stateWF fun wf => (whnfCore.SS hA hS (h.dom wf he) (h S hS hs)).bind
         fun _ _ _ h' => hsave (h.trans h')
     · exact hsave .rfl
