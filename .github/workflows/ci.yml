@@ -2,15 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch supersedes an in-flight run; master runs are
-# never cancelled, since those are the ones that populate the build cache.
+permissions:
+  contents: read
+
+# A newer push supersedes a pull-request run. Keep mainline cache builds running.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
 jobs:
   build:
@@ -22,16 +24,16 @@ jobs:
 
       # Installs the toolchain pinned in `lean-toolchain` and runs `lake build`,
       # i.e. the `defaultTargets`: the `Lean4Lean` library, the `lean4lean` exe,
-      # `Lean4Lean.Theory`, `Lean4Lean.Verify` and `Lean4Lean.Tests`. The proofs
-      # in `Verify` deliberately contain `sorry`s, so warnings must not fail the
-      # build. `Lean4Lean.Experimental` is WIP and is not a default target.
+      # `Lean4Lean.Theory` and `Lean4Lean.Verify`. Unfinished metatheory still
+      # contains `sorry`s, while the active verification takes VEnv.Injective
+      # explicitly. Build success does not discharge that hypothesis.
       - name: Build
         uses: leanprover/lean-action@v1
         with:
           use-mathlib-cache: false
 
       # `Lean4Lean.Experimental` is WIP and deliberately not a default target, but it still has to
-      # compile. `sorry`s here are expected, as in `Verify`.
+      # compile. `sorry`s here are expected.
       - name: Build Lean4Lean.Experimental
         run: lake build Lean4Lean.Experimental
 
@@ -56,7 +58,6 @@ jobs:
       # `--fresh` instead rechecks the module *and all its imports* into an empty
       # environment -- ~43k declarations, the closest thing to an end-to-end kernel test.
       # Single-threaded and `withImportModules`-bracketed, so it stays cheap on memory.
-      # Core only: modules importing `Lean` currently fail with "type checker does not
-      # support loose bound variables" (digama0/lean4lean#17).
+      # Keep this smoke test within Init for predictable CI runtime.
       - name: Recheck Init.System.IO and its imports from scratch
         run: lake exe lean4lean --fresh Init.System.IO
