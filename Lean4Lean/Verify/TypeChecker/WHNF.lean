@@ -150,7 +150,7 @@ theorem whnfCore'.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExpr
   have hd := c.mlctx_wf.dom_of_tr he; rw [c.lctx_eq] at hd
   refine (RecM.WF.withTaintLearn (D := (· ∈ e.fvarsList))
     (Pre := fun m => ∃ e', TrExprS c.venv c.lparams m.vlctx e e')
-    (P := fun p m => WHNFClaim c.venv c.lparams e (p.1, 0, 0) m)
+    (P := fun p m => WHNFClaim c.venv c.lparams e ⟨p.1, 0, 0⟩ m)
     (R := fun p => SuppBelow c.toContext e p.1) hd
     (fun m hm S c₂ hA hS hD hl hc => whnfCoreCore.SS hA hS hfull hd
       (Lean.Expr.suppIn_of_fvars hD hl hc) m hm)
@@ -162,7 +162,7 @@ theorem whnfCore'.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExpr
   simp only
   split
   · rintro _ mwf wf a s' ⟨⟩
-    obtain ⟨lab, memo, hlab, hk⟩ := State.keyLabel_eq s.toState e l
+    obtain ⟨lab, hlab, hk⟩ := State.keyLabel_eq s.toState l
     dsimp only; rw [hk]
     refine hP ▸ ⟨_, rfl, .rfl, { wf with
       supp := { wf.supp with
@@ -218,7 +218,7 @@ theorem whnf'.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e 
   have hd := c.mlctx_wf.dom_of_tr he; rw [c.lctx_eq] at hd
   refine .readThe <| (RecM.WF.withTaintLearn (D := (· ∈ e.fvarsList))
     (Pre := fun m => ∃ e', TrExprS c.venv c.lparams m.vlctx e e')
-    (P := fun r m => WHNFClaim c.venv c.lparams e (r, 0, 0) m)
+    (P := fun r m => WHNFClaim c.venv c.lparams e ⟨r, 0, 0⟩ m)
     (R := fun r => SuppBelow c.toContext e r) hd
     (fun m hm S c₂ hA hS hD hl hc => whnfLoop.SS hA hS hd
       (Lean.Expr.suppIn_of_fvars hD hl hc) m hm)
@@ -228,7 +228,7 @@ theorem whnf'.WF [VEnv.Injective] {c : VContext} {s : VState} (he : c.TrExprS e 
         ⟨h1, h2.defeq c₂.Ewf c₂.Δwf (h₀.uniq c₂.Ewf (.refl c₂.Ewf c₂.Δwf) he'')⟩)
     (whnfLoop.WF he)).bind fun ⟨e₁, l⟩ s le ⟨⟨h1, h2⟩, hR, hL⟩ => ?_
   rintro _ mwf wf a s' ⟨⟩
-  obtain ⟨lab, memo, hlab, hk⟩ := State.keyLabel_eq s.toState e l
+  obtain ⟨lab, hlab, hk⟩ := State.keyLabel_eq s.toState l
   dsimp only; rw [hk]
   refine hP ▸ ⟨_, rfl, .rfl, { wf with
     supp := { wf.supp with whnf := CondSupp.insert wf.supp.whnf (CondSupp.of wf.supp hd hR) }

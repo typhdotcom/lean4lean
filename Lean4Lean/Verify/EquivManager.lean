@@ -229,10 +229,10 @@ theorem RecM.WF.withTaint {c : VContext} {s : VState} {x : RecM α} {Q : α → 
   rename_i v e₁
   obtain ⟨b, s₁⟩ := v
   cases e
-  obtain ⟨vs₁, h1, h2, h3, h4⟩ := h m mwf (wf.setTaint 0 s.fvLvl) _ _ e₁
+  obtain ⟨vs₁, h1, h2, h3, h4⟩ := h m mwf (wf.setTaint 0) _ _ e₁
   subst h1
   exact ⟨⟨{ vs₁.toState with taint := max s.taint vs₁.taint }⟩, rfl, h2,
-    h3.setTaint _ vs₁.fvLvl, hQ b vs₁ _ rfl h4⟩
+    h3.setTaint _, hQ b vs₁ _ rfl h4⟩
 
 /-- What a recorded equivalence of `e₁` and `e₂` asserts in a context, as a fact learned. -/
 def PairFact (env : VEnv) (Us : List Name) (e₁ e₂ : Lean.Expr) (m : MLCtx) : Prop :=
@@ -254,17 +254,11 @@ theorem _root_.Lean4Lean.TypeChecker.VState.WF.labelId_le {c : VContext} {s : VS
   · exact (wf.ids_wf _ h).2
 
 theorem _root_.Lean4Lean.TypeChecker.State.recordEquiv_eq (st : State) (t u : Lean.Expr)
-    (l : Nat) : ∃ lab memo, l ≤ lab ∧ st.recordEquiv t u l =
+    (l : Nat) : ∃ lab, l ≤ lab ∧ st.recordEquiv t u l =
       { st with
-        fvLvl := memo
         eqvPairs := st.eqvPairs.insert (t, u) (lab, st.scopeIds.labelId lab)
         eqvManager := ((ScopedEquivManager.addEquiv st.scopeIds (fun _ => 0) t u
-          st.scopeIds.size).run st.eqvManager).2 } := by
-  unfold State.recordEquiv
-  rcases h1 : fvarLevel st.scopeFV t st.fvLvl with ⟨lt, m1⟩
-  rcases h2 : fvarLevel st.scopeFV u m1 with ⟨ls, m2⟩
-  simp only [h1, h2]
-  exact ⟨_, _, Nat.le_max_left _ _, rfl⟩
+          st.scopeIds.size).run st.eqvManager).2 } := ⟨l, Nat.le_refl _, rfl⟩
 
 theorem recordEquiv.WF [VEnv.Injective] {c : VContext} {s : VState} (he₁ : c.TrExprS e₁ e') (he₂ : c.TrExpr e₂ e')
     (hL : ∀ lab, l ≤ lab → lab ≤ s.scopeIds.size → c.ceiling.all (lab ≤ ·) →
@@ -272,7 +266,7 @@ theorem recordEquiv.WF [VEnv.Injective] {c : VContext} {s : VState} (he₁ : c.T
         (PairFact c.venv c.lparams e₁ e₂)) :
     RecM.WF c s (modify (·.recordEquiv e₁ e₂ l)) fun _ _ => True := by
   rintro _ mwf wf _ _ ⟨⟩
-  obtain ⟨lab, memo, hlab, hr⟩ := State.recordEquiv_eq s.toState e₁ e₂ l
+  obtain ⟨lab, hlab, hr⟩ := State.recordEquiv_eq s.toState e₁ e₂ l
   dsimp only; rw [hr]
   have hE := ScopedEquivManager.Chain.erel c.Ewf (ScopeShape.chain wf.shape)
   have hd : EquivManager.IsDefEqE c.venv c.lparams c.vlctx e₁ e₂ := .defeq he₁ he₂

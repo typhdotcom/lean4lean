@@ -17,7 +17,14 @@ open Lean
 abbrev Scopes := Array Nat
 
 /-- A label `(l, id)` is current while its scope is open; level `0` always is. -/
-@[inline] def Scopes.valid (ids : Scopes) (l id : Nat) : Bool := l == 0 || ids[l - 1]? == some id
+@[inline] def Scopes.valid (ids : Scopes) (l id : Nat) : Bool :=
+  l == 0 || if h : l - 1 < ids.size then ids[l - 1] == id else false
+
+theorem Scopes.valid_def {ids : Scopes} {l id : Nat} :
+    ids.valid l id = (l == 0 || ids[l - 1]? == some id) := by
+  unfold valid
+  congr 1
+  split <;> simp_all
 
 /-- The id a label at level `l` gets: that of the scope open at `l`. A level beyond the open scopes
 gets an id no scope has, so its label is never current. -/

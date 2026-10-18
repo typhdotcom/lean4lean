@@ -37,22 +37,24 @@ run_meta do
   let nat := Expr.const ``Nat []
   let current (s : State) (c : InferCache) (e : Expr) : Bool :=
     match c[e]? with
-    | some (_, l, id) => s.scopeIds.valid l id
+    | some c => s.scopeIds.valid c.lvl c.id
     | none => false
-  -- What is inferred under a binder about a term mentioning its variable is current only while
-  -- the binder is open; what is inferred about `two`, which does not mention it, stays current.
-  let (inside, afterX, afterTwo) ← runM <| M.run env (x := do
+  -- What is inferred under a binder about `two`, which does not mention its variable, stays
+  -- current. An entry about a term mentioning the variable may stay too, but is never found again:
+  -- the next binder declares a different variable.
+  let (inside, afterTwo, sx, sy) ← runM <| M.run env (x := do
     let (inside, sx) ← withLocalDecl `x .default nat fun x => do
       let sx := mkApp (.const ``Nat.succ []) x
       _ ← inferType sx
       _ ← inferType two
       let s ← get
       pure ((current s s.inferTypeI sx, current s s.inferTypeI two), sx)
+    let sy ← withLocalDecl `x .default nat fun y => pure (mkApp (.const ``Nat.succ []) y)
     let s ← get
-    pure (inside, current s s.inferTypeI sx, current s s.inferTypeI two))
+    pure (inside, current s s.inferTypeI two, sx, sy))
   unless inside == (true, true) do throwError "nothing was cached under the binder: {inside}"
-  if afterX then throwError "a fact about the binder's variable outlived it"
   unless afterTwo do throwError "a fact not about the binder's variable was dropped"
+  if sx == sy then throwError "a later binder reused the variable"
   -- Two lambdas whose bodies do not mention their variable are compared under a fresh variable.
   let f := Expr.lam `x nat (mkApp (.lam `y nat (.bvar 0) .default) (.const ``Nat.zero [])) .default
   let g := Expr.lam `x nat (.const ``Nat.zero []) .default

@@ -75,7 +75,7 @@ theorem LabIds.insert [EquivBEq κ] [LawfulHashable κ] {s : State} {cache : Std
 current before. -/
 theorem valid_push_of_lt {ids : Scopes} {x l id : Nat} (hid : id < x)
     (h : Scopes.valid (ids.push x) l id = true) : Scopes.valid ids l id = true := by
-  simp only [Scopes.valid, Bool.or_eq_true, beq_iff_eq] at h ⊢
+  simp only [Scopes.valid_def, Bool.or_eq_true, beq_iff_eq] at h ⊢
   refine h.imp_right fun h => ?_
   rw [Array.getElem?_push] at h
   split at h
@@ -85,7 +85,7 @@ theorem valid_push_of_lt {ids : Scopes} {x l id : Nat} (hid : id < x)
 /-- A label current with the scopes `ids` is current with more scopes opened. -/
 theorem valid_push_of_valid {ids : Scopes} {x l id : Nat}
     (h : Scopes.valid ids l id = true) : Scopes.valid (ids.push x) l id = true := by
-  simp only [Scopes.valid, Bool.or_eq_true, beq_iff_eq] at h ⊢
+  simp only [Scopes.valid_def, Bool.or_eq_true, beq_iff_eq] at h ⊢
   refine h.imp_right fun h => ?_
   have hl := (Array.getElem?_eq_some_iff.1 h).1
   rw [Array.getElem?_push_lt hl, ← Array.getElem?_eq_getElem hl]; exact h
@@ -93,7 +93,7 @@ theorem valid_push_of_valid {ids : Scopes} {x l id : Nat}
 /-- A current label is at most the number of open scopes. -/
 theorem le_of_valid {ids : Scopes} {l id : Nat} (h : Scopes.valid ids l id = true) :
     l ≤ ids.size := by
-  simp only [Scopes.valid, Bool.or_eq_true, beq_iff_eq] at h
+  simp only [Scopes.valid_def, Bool.or_eq_true, beq_iff_eq] at h
   rcases h with rfl | h
   · omega
   · have := (Array.getElem?_eq_some_iff.1 h).1; omega

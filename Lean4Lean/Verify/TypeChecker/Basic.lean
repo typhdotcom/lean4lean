@@ -139,7 +139,7 @@ theorem RecM.WF.forIn_range {c : VContext} {Inv : Nat → β → VState → Prop
 
 theorem RecM.WF.taintWith {c : VContext} {s : VState} :
     (modify (·.taintWith l) : RecM Unit).WF c s fun _ _ => True := by
-  rintro _ _ wf _ _ ⟨⟩; exact ⟨⟨_⟩, rfl, .rfl, wf.setTaint _ s.fvLvl, trivial⟩
+  rintro _ _ wf _ _ ⟨⟩; exact ⟨⟨_⟩, rfl, .rfl, wf.setTaint _, trivial⟩
 
 theorem RecM.WF.pureBind {c : VContext} {s : VState} {f : β → RecM α} {Q}
     {x : β} (H : WF c s (f x) Q) : ((Pure.pure x : RecM β) >>= f).WF c s Q := H

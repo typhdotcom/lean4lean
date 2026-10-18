@@ -700,7 +700,7 @@ theorem inferType'.WF_lit [VEnv.Injective]
     fun ⟨ty, t⟩ s le ⟨⟨⟨e', ty', H⟩, HL⟩, hR, hL⟩ => ?_
   dsimp only at HL ⊢
   rintro _ mwf wf a s' ⟨⟩
-  obtain ⟨lab, memo, hlab, hk⟩ := State.keyLabel_eq s.toState e t
+  obtain ⟨lab, hlab, hk⟩ := State.keyLabel_eq s.toState t
   have learn (k' : Expr) (hk' : (e == k') = true) (hval : s.scopeIds.valid lab (s.scopeIds.labelId lab) = true)
       (hc : c.ceiling.all (lab ≤ ·)) : ∃ L g, g ≤ s.ngen ∧ Keeps L g s.ngen ∧ Admits L g c.lctx ∧
       Learned c.venv c.lparams (levelCtx c.mlctx s.scopeFV c.ceiling c.top lab) L g

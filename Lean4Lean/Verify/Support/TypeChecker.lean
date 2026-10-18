@@ -81,7 +81,7 @@ theorem State.checkEquiv_snd (s : State) (u : Bool) (a b : Expr) :
 
 theorem State.cached?_some' {s : State} {ceil : Option Nat}
     {o : Option Cached} {r : Expr} {l : Nat} (h : s.cached? ceil o = some (r, l)) :
-    ∃ id, o = some (r, l, id) := by
+    ∃ id, o = some ⟨r, l, id⟩ := by
   unfold State.cached? at h
   split at h
   · split at h

@@ -184,7 +184,7 @@ theorem WF.mono {ids' : Scopes} {R' : Nat → Nat → Nat → Prop} (wf : m.WF i
 
 theorem Scopes.valid_pop {ids : Scopes} {l i : Nat} (h : Scopes.valid ids.pop l i = true) :
     ids.valid l i = true := by
-  simp only [Scopes.valid, Bool.or_eq_true, beq_iff_eq] at h ⊢
+  simp only [Scopes.valid_def, Bool.or_eq_true, beq_iff_eq] at h ⊢
   refine h.imp_right fun h => ?_
   rw [Array.getElem?_pop] at h
   split at h
@@ -193,7 +193,7 @@ theorem Scopes.valid_pop {ids : Scopes} {l i : Nat} (h : Scopes.valid ids.pop l 
 
 theorem Scopes.labelId_of_valid {ids : Scopes} {l i : Nat} (h : ids.valid l i = true)
     (hl : l ≠ 0) : ids.labelId l = i := by
-  simp only [Scopes.valid, Bool.or_eq_true, beq_iff_eq] at h
+  simp only [Scopes.valid_def, Bool.or_eq_true, beq_iff_eq] at h
   simp only [Scopes.labelId, beq_iff_eq, hl, ↓reduceIte]
   rcases h with h | h
   · exact absurd h hl
@@ -624,7 +624,7 @@ theorem WFE.mono_valid {ids' : Scopes} {E' : Nat → Expr → Expr → Prop} {B'
 /-- Opening a scope whose id no link records keeps the current links as they were. -/
 theorem linkOK_push {ids : Scopes} {x n : Nat} (hx : m.sid[n]?.getD 0 ≠ x)
     (h : m.linkOK (ids.push x) n = true) : m.linkOK ids n = true := by
-  simp only [linkOK, Scopes.valid, Bool.or_eq_true, beq_iff_eq] at h ⊢
+  simp only [linkOK, Scopes.valid_def, Bool.or_eq_true, beq_iff_eq] at h ⊢
   refine h.imp_right fun h => ?_
   rw [Array.getElem?_push] at h
   split at h

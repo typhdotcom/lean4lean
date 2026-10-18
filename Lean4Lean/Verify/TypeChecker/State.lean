@@ -79,14 +79,14 @@ class VState.WF (c : VContext) (s : VState) where
   ids_wf : ∀ i ∈ s.scopeIds, 0 < i ∧ i ≤ s.ngen.idx := by simp
   /-- The recorded pairs hold at their levels. -/
   pairs_wf : LabHolds c s.toState s.eqvPairs id (PairClaim c.venv c.lparams)
-  inferTypeI_wf : LabHolds c s.toState s.inferTypeI (·.2) (InferClaimI c.venv c.lparams)
-  inferTypeC_wf : LabHolds c s.toState s.inferTypeC (·.2) (InferClaimC c.env c.venv c.lparams)
-  whnfCore_wf : LabHolds c s.toState s.whnfCoreCache (·.2) (WHNFClaim c.venv c.lparams)
-  whnf_wf : LabHolds c s.toState s.whnfCache (·.2) (WHNFClaim c.venv c.lparams)
+  inferTypeI_wf : LabHolds c s.toState s.inferTypeI Cached.lab (InferClaimI c.venv c.lparams)
+  inferTypeC_wf : LabHolds c s.toState s.inferTypeC Cached.lab (InferClaimC c.env c.venv c.lparams)
+  whnfCore_wf : LabHolds c s.toState s.whnfCoreCache Cached.lab (WHNFClaim c.venv c.lparams)
+  whnf_wf : LabHolds c s.toState s.whnfCache Cached.lab (WHNFClaim c.venv c.lparams)
   /-- The entries record ids of scopes the name generator has made. -/
-  ids_made : LabIds s.toState s.eqvPairs id ∧ LabIds s.toState s.inferTypeI (·.2) ∧
-    LabIds s.toState s.inferTypeC (·.2) ∧ LabIds s.toState s.whnfCoreCache (·.2) ∧
-    LabIds s.toState s.whnfCache (·.2)
+  ids_made : LabIds s.toState s.eqvPairs id ∧ LabIds s.toState s.inferTypeI Cached.lab ∧
+    LabIds s.toState s.inferTypeC Cached.lab ∧ LabIds s.toState s.whnfCoreCache Cached.lab ∧
+    LabIds s.toState s.whnfCache Cached.lab
   unfold_wf : UnfoldCache.WF c s.unfold
   /-- The open scopes' variables are declared in the context, in order. -/
   shape : ScopeShape c.mlctx s.scopeFV c.ceiling c.top
@@ -133,16 +133,16 @@ theorem VState.WF.ectx_transfer [VEnv.Injective] {c c₂ : VContext} {s : VState
       (levelCtx_transfer wf.shape c.mlctx_wf wf₂ hl hvis hb htop hvis₂).fvlift
     exact (h hcl).weak' c.Ewf W hwf₂
 
-/-- The taint and the memo of free variables' levels carry no invariant. -/
-theorem VState.WF.setTaint {s : VState} (wf : s.WF c) (t : Nat) (f : ExprMap Nat) :
-    VState.WF c ⟨{ s.toState with taint := t, fvLvl := f }⟩ :=
+/-- The taint carries no invariant. -/
+theorem VState.WF.setTaint {s : VState} (wf : s.WF c) (t : Nat) :
+    VState.WF c ⟨{ s.toState with taint := t }⟩ :=
   ⟨wf.trctx, wf.supp.setAux rfl rfl rfl rfl rfl rfl, wf.ectx, wf.ids_wf, wf.pairs_wf,
     wf.inferTypeI_wf, wf.inferTypeC_wf, wf.whnfCore_wf, wf.whnf_wf, wf.ids_made, wf.unfold_wf,
     wf.shape, wf.fv_size, wf.ceil_lt⟩
 
 theorem _root_.Lean4Lean.TypeChecker.State.cached?_some {s : State} {ceil : Option Nat}
     {o : Option Cached} {r : Expr} {l : Nat} (h : s.cached? ceil o = some (r, l)) :
-    ∃ id, o = some (r, l, id) := by
+    ∃ id, o = some ⟨r, l, id⟩ := by
   unfold State.cached? at h
   split at h
   · split at h
@@ -262,8 +262,8 @@ theorem VState.WF.restore {c c' : VContext} {s₀ s₁ : VState} (wf : s₀.WF c
   have hmade : ∀ fv ∈ c'.vlctx.fvars, fv ∉ c.vlctx.fvars → s₁.ngen.Reserves fv :=
     fun fv a b => hnew fv a b ▸ hr
   have hwf' : c'.mlctx.WF c.venv c.lparams := hv ▸ hl ▸ c'.mlctx_wf
-  have ex {cache : InferCache} {P} (h : LabHolds c' s₁.toState cache (·.2) P) :
-      LabHolds c (s₀.toState.popScope s₁.toState) cache (·.2) P :=
+  have ex {cache : InferCache} {P} (h : LabHolds c' s₁.toState cache Cached.lab P) :
+      LabHolds c (s₀.toState.popScope s₁.toState) cache Cached.lab P :=
     h.exit wf.shape hfv ⟨_, hids⟩ wf.fv_size hb hx hv hl hc ht hmade
   have hI := wf₁.inferTypeI_wf; have hC := wf₁.inferTypeC_wf
   have hW₁ := wf₁.whnfCore_wf; have hW₂ := wf₁.whnf_wf; have hP := wf₁.pairs_wf

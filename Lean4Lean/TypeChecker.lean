@@ -13,29 +13,14 @@ open Kernel
 
 /-- A cached result, with the label `(level, id)` of the deepest scope whose facts it rests on
 (see `Scopes`). -/
-abbrev Cached := Expr × Nat × Nat
-abbrev InferCache := ExprMap Cached
+structure Cached where
+  val : Expr
+  lvl : Nat
+  id : Nat
 
-/-- The deepest open scope declaring a free variable of `e` (`0` for none), memoized in `memo`. -/
-def fvarLevel (scopes : Array FVarId) (e : Expr) (memo : ExprMap Nat) : Nat × ExprMap Nat :=
-  if !e.hasFVar then (0, memo) else
-  match memo[e]? with
-  | some l => (l, memo)
-  | none =>
-    let (l, memo) : Nat × ExprMap Nat := match e with
-      | .fvar id => ((scopes.findIdx? (· == id)).map (· + 1) |>.getD 0, memo)
-      | .app f a | .lam _ f a _ | .forallE _ f a _ =>
-        let (l1, memo) := fvarLevel scopes f memo
-        let (l2, memo) := fvarLevel scopes a memo
-        (max l1 l2, memo)
-      | .letE _ t v b _ =>
-        let (l1, memo) := fvarLevel scopes t memo
-        let (l2, memo) := fvarLevel scopes v memo
-        let (l3, memo) := fvarLevel scopes b memo
-        (max l1 (max l2 l3), memo)
-      | .mdata _ b | .proj _ _ b => fvarLevel scopes b memo
-      | _ => (0, memo)
-    (l, memo.insert e l)
+/-- A cached result's label. -/
+@[reducible] def Cached.lab (v : Cached) : Nat × Nat := (v.lvl, v.id)
+abbrev InferCache := ExprMap Cached
 
 /-- The type checker's state. Facts learned under a binder (cached results and equivalences) may
 rest on the binder's variable even when their terms do not mention it, so each records the deepest
@@ -55,8 +40,6 @@ structure TypeChecker.State where
   scopeFV : Array FVarId := #[]
   /-- The deepest level of a fact the computation under way has used. -/
   taint : Nat := 0
-  /-- `fvarLevel`'s memo. -/
-  fvLvl : ExprMap Nat := {}
   failure : Std.HashSet (Expr × Expr) := {}
   unfold : ExprMap Expr := {}
 
@@ -75,14 +58,10 @@ structure TypeChecker.Context where
 namespace TypeChecker
 
 /-- Records that `t` and `s` are definitionally equal, by facts up to level `l`: as a link of the
-union-find at the current depth, and as a pair labelled by `l` and the terms' free variables. -/
+union-find at the current depth, and as a pair labelled by `l`. -/
 def State.recordEquiv (st : State) (t s : Expr) (l : Nat) : State :=
-  let (lt, memo) := fvarLevel st.scopeFV t st.fvLvl
-  let (ls, memo) := fvarLevel st.scopeFV s memo
-  let lab := max l (max lt ls)
   { st with
-    fvLvl := memo
-    eqvPairs := st.eqvPairs.insert (t, s) (lab, st.scopeIds.labelId lab)
+    eqvPairs := st.eqvPairs.insert (t, s) (l, st.scopeIds.labelId l)
     eqvManager := ((ScopedEquivManager.addEquiv st.scopeIds (fun _ => 0) t s
       st.scopeIds.size).run st.eqvManager).2 }
 
@@ -103,15 +82,13 @@ def State.checkEquiv (st : State) (useHash : Bool) (t s : Expr) : Option Nat × 
 
 /-- A cached result, if the scope it rests on is still open and not beyond the ceiling. -/
 @[inline] def State.cached? (s : State) (ceil : Option Nat) : Option Cached → Option (Expr × Nat)
-  | some (r, l, id) => if s.scopeIds.valid l id && ceil.all (l ≤ ·) then some (r, l) else none
+  | some ⟨r, l, id⟩ => if s.scopeIds.valid l id && ceil.all (l ≤ ·) then some (r, l) else none
   | none => none
 
-/-- The label of a result for the key `e` that rests on facts up to level `t`: the deeper of `t` and
-the scopes of `e`'s free variables. -/
-def State.keyLabel (s : State) (e : Expr) (t : Nat) : (Nat × Nat) × State :=
-  let (lk, memo) := fvarLevel s.scopeFV e s.fvLvl
-  let l := max t lk
-  ((l, s.scopeIds.labelId l), { s with fvLvl := memo })
+/-- The label of a result that rests on facts up to level `t`. A key mentioning a scope's variable
+needs no deeper label: the variable is fresh, so once its scope closes the key is never looked up
+again. -/
+@[inline] def State.keyLabel (s : State) (t : Nat) : Nat × Nat := (t, s.scopeIds.labelId t)
 
 /-- A fact up to level `l` was used. -/
 def State.taintWith (s : State) (l : Nat) : State := { s with taint := max s.taint l }
@@ -396,10 +373,10 @@ def inferType' (e : Expr) (inferOnly : Bool) : RecM Expr := do
     return r
   let (r, t) ← withTaint (inferTypeCore e inferOnly)
   modify fun s =>
-    let (lab, s) := s.keyLabel e t
+    let lab := s.keyLabel t
     cond inferOnly
-      { s with inferTypeI := s.inferTypeI.insert e (r, lab) }
-      { s with inferTypeC := s.inferTypeC.insert e (r, lab) }
+      { s with inferTypeI := s.inferTypeI.insert e ⟨r, lab.1, lab.2⟩ }
+      { s with inferTypeC := s.inferTypeC.insert e ⟨r, lab.1, lab.2⟩ }
   return r
 termination_by (e, 1)
 
@@ -556,8 +533,8 @@ def whnfCore' (e : Expr) (cheapProj := false) : RecM Expr := do
   let ((r, save), t) ← withTaint (whnfCoreCore e cheapProj)
   if save && !cheapProj then
     modify fun s =>
-      let (lab, s) := s.keyLabel e t
-      { s with whnfCoreCache := s.whnfCoreCache.insert e (r, lab) }
+      let lab := s.keyLabel t
+      { s with whnfCoreCache := s.whnfCoreCache.insert e ⟨r, lab.1, lab.2⟩ }
   return r
 
 /-- Checks if the head of `e` is a constant that can be delta-reduced, applied to the right number
@@ -691,8 +668,8 @@ def whnf' (e : Expr) : RecM Expr := do
   let ctx ← readThe Context
   let (r, t) ← withTaint (whnfLoop e <| if ctx.eagerReduce then ctx.fuel.whnfEager else ctx.fuel.whnf)
   modify fun s =>
-    let (lab, s) := s.keyLabel e t
-    { s with whnfCache := s.whnfCache.insert e (r, lab) }
+    let lab := s.keyLabel t
+    { s with whnfCache := s.whnfCache.insert e ⟨r, lab.1, lab.2⟩ }
   return r
 
 /-- If `t` and `s` are lambda expressions, checks that their domains are defeq and recurses on the

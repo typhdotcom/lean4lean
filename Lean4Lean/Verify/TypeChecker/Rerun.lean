@@ -175,16 +175,16 @@ theorem RecM.WF.withTaintLearn [VEnv.Injective] {c : VContext} {s : VState} {x :
           fun m => (∀ fv, D fv → m.lctx.Dom fv) → Pre m → P p.1 m := by
   intro m mwf wf a s' e
   obtain ⟨b, s₁, e₁, rfl, rfl⟩ := withTaint_run e
-  have wf₀ := wf.setTaint 0 s.fvLvl
+  have wf₀ := wf.setTaint 0
   obtain ⟨vs₁, h1, h2, h3, h4⟩ := h m mwf wf₀ _ _ e₁
   subst h1
   have hS₀ := hss m mwf.ss (Supp.dom c.toContext) c.toContext
     (Agree.refl wf.supp.lctxWF) wf.supp.closedDom hDc (fun _ => trivial) (fun _ => trivial)
   obtain ⟨-, hgle, hmo, hR⟩ := hS₀.1 wf₀.supp _ _ e₁
   refine ⟨⟨{ vs₁.toState with taint := max s.taint vs₁.taint }⟩, rfl, h2,
-    h3.setTaint _ vs₁.fvLvl, hQ b vs₁ _ rfl h4, hR, ?_⟩
+    h3.setTaint _, hQ b vs₁ _ rfl h4, hR, ?_⟩
   intro lab hlab hle hvis
-  refine Learned.of_rerun (s₀ := ⟨{ s.toState with taint := 0, fvLvl := s.fvLvl }⟩)
+  refine Learned.of_rerun (s₀ := ⟨{ s.toState with taint := 0 }⟩)
     (s₁ := vs₁.toState) (a := b) e₁ wf₀.supp hDc
     (fun S c₂ hA hS hD hl hc => (hss m mwf.ss S c₂ hA hS hD hl hc).2)
     fun m₂ wfm hb ha hD hpre => ?_
@@ -199,7 +199,7 @@ theorem RecM.WF.withTaintLearn [VEnv.Injective] {c : VContext} {s : VState} {x :
 
 theorem _root_.Lean4Lean.TypeChecker.State.cached?_spec {s : State} {ceil : Option Nat}
     {o : Option Cached} {r : Expr} {l : Nat} (h : s.cached? ceil o = some (r, l)) :
-    ∃ id, o = some (r, l, id) ∧ s.scopeIds.valid l id = true ∧ ceil.all (l ≤ ·) := by
+    ∃ id, o = some ⟨r, l, id⟩ ∧ s.scopeIds.valid l id = true ∧ ceil.all (l ≤ ·) := by
   unfold State.cached? at h
   split at h
   · split at h
@@ -207,11 +207,7 @@ theorem _root_.Lean4Lean.TypeChecker.State.cached?_spec {s : State} {ceil : Opti
     · cases h
   · cases h
 
-theorem _root_.Lean4Lean.TypeChecker.State.keyLabel_eq (s : State) (e : Expr) (t : Nat) :
-    ∃ l memo, t ≤ l ∧ s.keyLabel e t = ((l, s.scopeIds.labelId l), { s with fvLvl := memo }) := by
-  unfold State.keyLabel
-  rcases h : fvarLevel s.scopeFV e s.fvLvl with ⟨lk, m⟩
-  simp only [h]
-  exact ⟨_, _, Nat.le_max_left _ _, rfl⟩
+theorem _root_.Lean4Lean.TypeChecker.State.keyLabel_eq (s : State) (t : Nat) :
+    ∃ l, t ≤ l ∧ s.keyLabel t = (l, s.scopeIds.labelId l) := ⟨t, Nat.le_refl _, rfl⟩
 
 end Lean4Lean.TypeChecker
