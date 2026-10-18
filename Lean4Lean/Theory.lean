@@ -11,3 +11,4 @@ import Lean4Lean.Theory.Typing.InductiveRules
 import Lean4Lean.Theory.Typing.QuotReduce
 import Lean4Lean.Theory.Typing.Iota
 import Lean4Lean.Theory.Typing.ProjKernel
+import Lean4Lean.Theory.Typing.Nested

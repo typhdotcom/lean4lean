@@ -307,6 +307,7 @@ theorem VState.WF.emptyM (c : VContext) : TypeChecker.VState.WF c.tc {} where
   ectx := ⟨c.mlctx.vlctx, .refl, c.tc.Δwf, .refl, .empty, c.notKernel⟩
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
+  inferTypeC_lit := .empty
   whnfCore_wf := .empty
   whnf_wf := .empty
   unfold_wf _ := by simp

@@ -94,6 +94,7 @@ theorem VState.WF.empty1 {env : Environment} {safety : DefinitionSafety} {venv :
   ectx := ⟨[], .refl, trivial, .refl, .empty, nofun⟩
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
+  inferTypeC_lit := .empty
   whnfCore_wf := .empty
   whnf_wf := .empty
   unfold_wf _ := by simp
@@ -224,6 +225,127 @@ nonrec theorem inferType.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
 /-- `checkType` is `inferType` at `inferOnly := false`, where the obligation is vacuous. -/
 theorem checkType.WF {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx.fvars)) :
     M.WF c s (checkType e) fun ty _ => ∃ e' ty', c.TrTyping e ty e' ty' := inferType.WF' h1 nofun
+
+/-- `checkType` on a constant applied within its declared type's literal binders: each argument
+has the type of its binder, instantiated by the earlier arguments (`LitApp`). -/
+theorem checkType.WF_lit {c : VContext} {s : VState} (h1 : e.FVarsIn (· ∈ c.vlctx.fvars)) :
+    M.WF c s (checkType e) fun ty s' => (∃ e' ty', c.TrTyping e ty e' ty') ∧
+      LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) e ty := by
+  show M.WF c s (readThe Context >>= fun ctx =>
+    Inner.inferType e false (Methods.withFuel ctx.fuel.recDepth)) _
+  refine (?_ : M.WF c s (Inner.inferType e false (Methods.withFuel c.toContext.fuel.recDepth)) _)
+  generalize c.toContext.fuel.recDepth = n
+  cases n with
+  | zero => exact .throw
+  | succ n =>
+    exact ((inferType'.WF_lit (inferOnly := false) h1 nofun) _ Methods.withFuel.WF).le
+      fun _ _ _ h => ⟨h.1, h.2 rfl⟩
+
+/-- What `LitApp` says in the type theory: a constant whose declared type translates to the
+telescope `L` over `R`, applied to arguments `Ds` for the binders of `L`, has each argument typed
+at its binder, at the levels and the earlier arguments. -/
+theorem LitApp.argTypes {c : VContext} {s : VState} (wf : s.WF c) {J : Name} {ls : List Level}
+    {Ds : Array Expr} {ty : Expr} {ci : ConstantInfo} {ls' : List VLevel} {L : List VExpr}
+    {R : VExpr} {Ds' : List VExpr}
+    (H : LitApp c.env (ConditionallyArgTyped s.ngen c.venv c.lparams c.vlctx)
+      (mkAppN (.const J ls) Ds) ty)
+    (hfind : c.env.find? J = some ci)
+    (hty : TrExprS c.venv ci.levelParams [] ci.type (.foralls L R))
+    (hls : ls.mapM (VLevel.ofLevel c.lparams) = some ls')
+    (hlen : ci.levelParams.length = ls.length) (hL : L.length = Ds.size)
+    (hsz : Ds.size ≤ ci.type.leadingForalls)
+    (hfv : ∀ a ∈ Ds.toList, FVarsIn (· ∈ c.vlctx.fvars) a)
+    (hDs : List.Forall₂ c.TrExprS Ds.toList Ds') :
+    ∀ k (a : VExpr) (A : VExpr), Ds'[k]? = some a → L[k]? = some A →
+      c.HasType a ((A.instL ls').subst (VExpr.Subst.dflt.consList (Ds'.take k))) := by
+  have hΓ := c.Δwf.toCtx
+  have hDl : Ds'.length = Ds.size := by
+    rw [← Lean4Lean.List.Forall₂.length_eq hDs, Array.length_toList]
+  have hlsW : ∀ l ∈ ls', l.WF c.lparams.length := .of_mapM_ofLevel hls
+  obtain ⟨-, hargs⟩ := H BEq.rfl hfind hsz
+  generalize hT : ci.instantiateTypeLevelParams ls = T at hargs
+  have hT' : T = ci.type.instantiateLevelParams ci.levelParams ls := by
+    rw [← hT]; rfl
+  obtain ⟨X₀, hX₀, -⟩ := hty.instL c.Ewf (Δ := []) trivial hls hlen
+  have hX₀e := TrExprS.instL_eqUpTo hls hlen hty hX₀ .nil
+  have hX₀c : c.TrExprS T X₀ := by
+    have := hX₀.weakFV c.Ewf.ordered (.from_nil c.mlctx.noBV) c.Δwf
+    rw [hT']
+    rwa [(hX₀.wf c.Ewf.ordered (by exact trivial)).closedN c.Ewf.ordered trivial |>.liftN_eq
+      (Nat.zero_le _)] at this
+  have hcl : ((VExpr.foralls L R).instL ls').ClosedN :=
+    ((hty.wf c.Ewf.ordered (by exact trivial)).closedN c.Ewf.ordered trivial).instL
+  have htrans {v' Tref A : VExpr} (hT : c.HasType v' Tref)
+      (hE : VEnv.EqUpToLevels c.lparams.length Tref A) : c.HasType v' A :=
+    let ⟨_, hS⟩ := hT.isType c.Ewf.ordered hΓ
+    hT.defeqU_r c.Ewf hΓ ⟨_, VEnv.IsDefEq.eqUpToLevels c.Ewf.ordered hΓ hS hE⟩
+  -- the kernel's walk down the declared type, with the arguments typed so far
+  have walk : ∀ i ≤ Ds.size,
+      Inner.ProjWalk c (L.map (·.instL ls')) (R.instL ls') Ds' i
+        (T.instForall (Ds.toList.take i)) ∧
+      ∀ k < i, ∀ (a A : VExpr), Ds'[k]? = some a → L[k]? = some A →
+        c.HasType a ((A.instL ls').subst (VExpr.Subst.dflt.consList (Ds'.take k))) := by
+    intro i
+    induction i with
+    | zero =>
+      intro _
+      refine ⟨⟨⟨X₀, by simpa [Expr.instForall] using hX₀c, ?_⟩, ?_⟩, by simp⟩
+      · simp only [List.drop_zero, List.take_zero, VExpr.Subst.consList_nil]
+        rw [← VExpr.instL_foralls, hcl.subst_eq nofun]
+        exact hX₀e
+      · simp only [List.length_map, List.take_zero, Expr.instForall, Nat.sub_zero, hT',
+          Expr.leadingForalls_instantiateLevelParams, hL]
+        exact hsz
+    | succ i ih =>
+      intro hi
+      obtain ⟨W, hprev⟩ := ih (Nat.le_of_succ_le hi)
+      have hiL : i < (L.map (·.instL ls')).length := by simp [hL]; omega
+      obtain ⟨nm, dom, b, bi, A, B, hr, hdom, hb, -, hAe, hBe, har⟩ := W.step hiL
+      have hiD : i < Ds.size := by omega
+      obtain ⟨a, ha, hx⟩ := List.Forall₂.getElem?_l hDs
+        (show Ds.toList[i]? = some Ds[i] by simp [hiD])
+      obtain ⟨-, -, -, -, Hc⟩ := hargs i hiD
+      rw [hr] at Hc
+      obtain ⟨x', A', hx', hA', hxA⟩ := Hc (hfv _ (by simp)) hdom.fvarsIn
+      cases hx'.unique (TrExprS.IsUnique.all _) hx
+      cases hA'.unique (TrExprS.IsUnique.all _) hdom
+      have hAi : (L.map (·.instL ls'))[i] = L[i].instL ls' := by simp
+      refine ⟨?_, fun k hk a' A₀ ha' hA₀ => ?_⟩
+      · have := Inner.ProjWalk.inst hb hBe har hx hxA ha
+        rwa [List.take_succ, show Ds.toList[i]? = some Ds[i] by simp [hiD], Option.toList_some,
+          Expr.instForall_concat, hr]
+      rcases Nat.lt_succ_iff_lt_or_eq.1 hk with hk | rfl
+      · exact hprev k hk a' A₀ ha' hA₀
+      · cases ha.symm.trans ha'
+        have hLk : L[k] = A₀ := by
+          rw [List.getElem?_eq_some_iff] at hA₀; exact hA₀.2
+        rw [hAi, hLk] at hAe
+        exact htrans hxA hAe.symm
+  intro k a A ha hA
+  have hk : k < Ds.size := hDl ▸ (List.getElem?_eq_some_iff.1 ha).1
+  exact (walk Ds.size (Nat.le_refl _)).2 k hk a A ha hA
+
+theorem LitApp.mono {c : VContext} {s s' : VState} (le : s ≤ s')
+    (H : LitApp c.env (ConditionallyArgTyped s.ngen c.venv c.lparams c.vlctx) e ty) :
+    LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) e ty :=
+  H.imp fun _ _ h => h.mono le
+
+/-- Checking each of a list of terms, as `addInductive` checks its nested occurrences: each is a
+`LitApp` at the end. -/
+theorem checkType.forM_lit {c : VContext} {s : VState} (xs : List α) (f : α → Expr)
+    (hfv : ∀ x ∈ xs, (f x).FVarsIn (· ∈ c.vlctx.fvars)) :
+    M.WF c s (xs.forM fun x => do _ ← checkType (f x)) fun _ s' => ∀ x ∈ xs, ∃ ty,
+      LitApp c.env (ConditionallyArgTyped s'.ngen c.venv c.lparams c.vlctx) (f x) ty := by
+  induction xs generalizing s with
+  | nil => exact .pure nofun
+  | cons x xs ih =>
+    show M.WF c s ((do _ ← checkType (f x)) >>= fun _ => xs.forM fun x => do _ ← checkType (f x)) _
+    simp only [bind_assoc, pure_bind]
+    refine (checkType.WF_lit (hfv x (.head _))).bind fun ty s₁ _ ⟨_, H⟩ => ?_
+    refine (ih fun y hy => hfv y (.tail _ hy)).le fun _ s₂ le h y hy => ?_
+    rcases List.mem_cons.1 hy with rfl | hy
+    · exact ⟨ty, H.mono le⟩
+    · exact h y hy
 
 nonrec theorem isDefEq.WF {c : VContext} {s : VState}
     (he₁ : c.TrExprS e₁ e₁') (he₂ : c.TrExprS e₂ e₂') :

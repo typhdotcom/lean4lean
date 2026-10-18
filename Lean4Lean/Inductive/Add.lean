@@ -621,45 +621,62 @@ def getNestedIfAuxCtor (r : Result) (env' : Environment) (c : Name) : Option (Ex
   let .ctorInfo { induct, .. } ← env'.find? c | none
   return (← r.aux2nested.find? induct, induct)
 
-def restoreCtorName (r : Result) (env' : Environment) (c : Name) : Name := Id.run do
-  let (e, name) := (r.getNestedIfAuxCtor env' c).get!
-  let .const I _ := e.getAppFn | unreachable!
-  c.replacePrefix name I
+def restoreCtorName (r : Result) (env' : Environment) (c : Name) : Name :=
+  match r.getNestedIfAuxCtor env' c with
+  | some (e, name) => match e.getAppFn with
+    | .const I _ => c.replacePrefix name I
+    | _ => c
+  | none => c
 
-def restoreNested (r : Result) (env' : Environment) (e : Expr)
+/-- `u` with its parameters substituted by `s`, keeping its shape: unlike
+`Level.instantiateParams`, it does not simplify, so an occurrence's levels come back as written. -/
+def substLevelParams (s : Name → Option Level) : Level → Level
+  | .succ u => .succ (substLevelParams s u)
+  | .max u v => .max (substLevelParams s u) (substLevelParams s v)
+  | .imax u v => .imax (substLevelParams s u) (substLevelParams s v)
+  | .param n => (s n).getD (.param n)
+  | u => u
+
+/-- `e` with the level parameters `ps` instantiated by `ls`, keeping the levels' shape. -/
+def instantiateLevelParamsRaw (e : Expr) (ps : List Name) (ls : List Level) : Expr :=
+  let s n := List.lookup n (ps.zip ls)
+  e.replace fun
+    | .const c us => some (.const c (us.map (substLevelParams s)))
+    | .sort u => some (.sort (substLevelParams s u))
+    | _ => none
+
+/-- The head constant of `e`'s application spine and its arguments. -/
+def constSpine? : Expr → Option (Name × List Level × Array Expr)
+  | .const c ls => some (c, ls, #[])
+  | .app f a => (constSpine? f).map fun (c, ls, as) => (c, ls, as.push a)
+  | _ => none
+
+/-- The head constant of `e`'s application spine and its number of arguments. -/
+def spineHead? : Expr → Option (Name × Nat)
+  | .const c _ => some (c, 0)
+  | .app f _ => (spineHead? f).map fun (c, n) => (c, n + 1)
+  | _ => none
+
+/-- Replaces each auxiliary type or constructor applied to as many arguments as the block has
+parameters by the nested occurrence it stands for, at those arguments and levels, and renames the
+auxiliary recursors by `auxRec`. -/
+def restoreNested (r : Result) (env' : Environment) (lparams : List Name) (e : Expr)
     (auxRec : NameMap Name := {}) : Expr :=
-  Id.run <| StateT.run' (s := { namePrefix := `_nested_fresh : NameGenerator }) do
-  let pi := e.isForall
-  let mut e := e
-  let mut As := #[]
-  let mut lctx : LocalContext := {}
-  for _ in [:r.nparams] do
-    match e with
-    | .forallE name dom body bi | .lam name dom body bi =>
-      let id := ⟨← mkFreshId⟩
-      lctx := lctx.mkLocalDecl id name dom bi
-      let arg := .fvar id
-      e := body.instantiate1 arg
-      As := As.push arg
-    | _ => unreachable!
-  e := e.replace fun t => do
+  e.replace fun t => do
     if let .const c ls := t then
       if let some recName := auxRec.find? c then
         return .const recName ls
-    let .const c _ := t.getAppFn | none
+    let (c, n) ← spineHead? t
+    if n != r.nparams || !(r.aux2nested.contains c || (r.getNestedIfAuxCtor env' c).isSome) then
+      none
+    let (_, ls, args) ← constSpine? t
+    let inst (nested : Expr) :=
+      (instantiateLevelParamsRaw (nested.abstract r.params) lparams ls).instantiateRev args
     if let some nested := r.aux2nested.find? c then
-      let args := t.getAppArgs
-      assert! args.size ≥ r.nparams
-      return mkAppRange ((nested.abstract r.params).instantiateRev As) r.nparams args.size args
+      return inst nested
     let (nested, auxI_name) ← r.getNestedIfAuxCtor env' c
-    let args := t.getAppArgs
-    assert! args.size ≥ r.nparams
-    let nested' := (nested.abstract r.params).instantiateRev As
-    nested'.withApp fun I I_args => do
-    let .const I_c I_ls := I | unreachable!
-    let c' := .const (c.replacePrefix auxI_name I_c) I_ls
-    return mkAppRange (mkAppN c' I_args) r.nparams args.size args
-  return if pi then lctx.mkForall As e else lctx.mkLambda As e
+    let .const I_c I_ls := (inst nested).getAppFn | none
+    return mkAppN (.const (c.replacePrefix auxI_name I_c) I_ls) (inst nested).getAppArgs
 
 end Result
 
@@ -862,30 +879,63 @@ def Environment.addInductive (env : Environment) (lparams : List Name) (nparams 
   if numNested = 0 then return env'
   let allIndNames := types.map (·.name)
   let (recNames', recNameMap') := mkAuxRecNameMap env' types
-  (·.2) <$> StateT.run (s := env) do
-  let processRec recName := do
+  let restore e := res.restoreNested env' lparams e recNameMap'
+  -- The block's types and constructors, and all its recursors, as the environment will have them.
+  let inds ← types.mapM fun indType => do
+    let some (.inductInfo ind) := env'.find? indType.name | unreachable!
+    let ctors ← ind.ctors.mapM fun ctorName => do
+      let some (.ctorInfo ctor) := env'.find? ctorName | unreachable!
+      return { ctor with type := restore ctor.type }
+    return ({ ind with all := allIndNames }, ctors)
+  let recs ← (types.map (mkRecName ·.name) ++ recNames').mapM fun recName => do
     let newRecName := recNameMap'.getD recName recName
     let some (.recInfo recInfo) := env'.find? recName | unreachable!
-    let newRecType := res.restoreNested env' recInfo.type recNameMap'
-    let newRules ← recInfo.rules.mapM fun rule => do
-      let newRhs := res.restoreNested env' rule.rhs recNameMap'
-      let newCtorName := if newRecName == recName then rule.ctor else
-        res.restoreCtorName env' rule.ctor
-      return { rule with ctor := newCtorName, rhs := newRhs }
-    (← MonadState.get).checkName newRecName allowPrimitive
-    modify (·.add <| .recInfo { recInfo with
-      name := newRecName, type := newRecType, all := allIndNames, rules := newRules })
-  for indType in types do
-    let some (.inductInfo ind) := env'.find? indType.name | unreachable!
-    (← get).checkName ind.name allowPrimitive
-    modify (·.add <| .inductInfo { ind with all := allIndNames })
-    for ctorName in ind.ctors do
-      let some (.ctorInfo ctor) := env'.find? ctorName | unreachable!
-      let newType := res.restoreNested env' ctor.type
-      (← get).checkName ctor.name allowPrimitive
-      modify (·.add <| .ctorInfo { ctor with type := newType })
-    processRec (mkRecName indType.name)
-  recNames'.forM processRec
-  TypeChecker.M.run (← get) (safety := safety) (lctx := res.lctx)
-      (lparams := lparams) (fuel := fuel) do
+    let rules := recInfo.rules.map fun rule =>
+      { rule with
+        ctor := if newRecName == recName then rule.ctor else res.restoreCtorName env' rule.ctor
+        rhs := restore rule.rhs }
+    return { recInfo with name := newRecName, type := restore recInfo.type, all := allIndNames, rules }
+  -- Restoring must leave no auxiliary constant behind. A `let`'s value is not part of what the
+  -- term means once the `let` is unfolded, so a restored term with a `let` is checked, against the
+  -- block's constants it may mention, added as axioms.
+  let auxNames : NameSet := (res.types.drop types.length).foldl (init := .ofList recNames')
+    fun s t => t.ctors.foldl (·.insert ·.name) (s.insert t.name)
+  let isAux (c : Name) := auxNames.contains c
+  let restored := inds.flatMap (·.2.map (·.type)) ++ recs.flatMap fun r => r.type :: r.rules.map (·.rhs)
+  for e in restored do
+    if e.anySubterm fun | .const c _ => isAux c | .proj s _ _ => isAux s | _ => false then
+      throw <| .other "invalid nested inductive datatype, an auxiliary constant was not restored"
+  let ax (env : Environment) (name : Name) (levelParams : List Name) (type : Expr) := do
+    env.checkName name allowPrimitive
+    return env.add <| .axiomInfo { name, levelParams, type, isUnsafe }
+  let check (env : Environment) (levelParams : List Name) (e : Expr) (isType : Bool) := do
+    if e.anySubterm (·.isLet) then
+      TypeChecker.M.run env safety {} levelParams fuel do
+        let ty ← TypeChecker.checkType e
+        if isType then _ ← TypeChecker.ensureSort ty e
+  let envT ← inds.foldlM (fun env (ind, _) => ax env ind.name lparams ind.type) env
+  -- The nested occurrences' parameters were dropped from the translated block, so they are checked
+  -- here, against its types (leanprover/lean4#14577).
+  TypeChecker.M.run envT (safety := safety) (lctx := res.lctx) (lparams := lparams) (fuel := fuel) do
     res.aux2nested.forM fun _ e => do _ ← TypeChecker.checkType e
+  if restored.any (·.anySubterm (·.isLet)) then
+    for (_, ctors) in inds do
+      for ctor in ctors do check envT lparams ctor.type true
+    let envC ← inds.foldlM (init := envT) fun env (_, ctors) =>
+      ctors.foldlM (fun env ctor => ax env ctor.name lparams ctor.type) env
+    for r in recs do check envC r.levelParams r.type true
+    let envR ← recs.foldlM (fun env r => ax env r.name r.levelParams r.type) envC
+    for r in recs do
+      for rule in r.rules do check envR r.levelParams rule.rhs false
+  (·.2) <$> StateT.run (s := env) do
+  for (ind, ctors) in inds, r in recs do
+    (← get).checkName ind.name allowPrimitive
+    modify (·.add <| .inductInfo ind)
+    for ctor in ctors do
+      (← get).checkName ctor.name allowPrimitive
+      modify (·.add <| .ctorInfo ctor)
+    (← get).checkName r.name allowPrimitive
+    modify (·.add <| .recInfo r)
+  for r in recs.drop types.length do
+    (← get).checkName r.name allowPrimitive
+    modify (·.add <| .recInfo r)

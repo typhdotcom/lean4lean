@@ -408,6 +408,7 @@ theorem _root_.Lean4Lean.TypeChecker.VState.WF.emptyAt (c : TypeChecker.VContext
   ectx := ⟨c.mlctx.vlctx, .refl, c.Δwf, .refl, .empty, hnk⟩
   inferTypeI_wf := .empty
   inferTypeC_wf := .empty
+  inferTypeC_lit := .empty
   whnfCore_wf := TypeChecker.WHNFCache.WF.empty
   whnf_wf := TypeChecker.WHNFCache.WF.empty
   unfold_wf _ := by simp

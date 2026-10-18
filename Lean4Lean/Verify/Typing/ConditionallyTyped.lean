@@ -90,6 +90,52 @@ theorem ConditionallyHasType.fresh
     · cases Nat.lt_irrefl _ (h2 _ rfl)
     · exact h1
 
+/-- `x` has type `A` whenever both are in scope, without `A` mentioning only variables `x` does:
+an argument at the binder it is checked against, which the function's earlier arguments
+instantiate. -/
+def ConditionallyArgTyped
+    (ngen : NameGenerator) (env : VEnv) (Us : List Name) (Δ : VLCtx) (x A : Expr) : Prop :=
+  Closed x ∧ FVarsIn ngen.Reserves x ∧ Closed A ∧ FVarsIn ngen.Reserves A ∧
+    (FVarsIn (· ∈ Δ.fvars) x → FVarsIn (· ∈ Δ.fvars) A →
+      ∃ x' A', TrExprS env Us Δ x x' ∧ TrExprS env Us Δ A A' ∧ env.HasType Us.length Δ.toCtx x' A')
+
+theorem ConditionallyArgTyped.mono (H : ngen₁ ≤ ngen₂) :
+    ConditionallyArgTyped ngen₁ env Us Δ e A → ConditionallyArgTyped ngen₂ env Us Δ e A
+  | ⟨c1, f1, c2, f2, h'⟩ => ⟨c1, f1.mono fun _ h => h.mono H, c2, f2.mono fun _ h => h.mono H, h'⟩
+
+theorem ConditionallyArgTyped.weakN_inv
+    (henv : VEnv.WF env) (hΔ : VLCtx.WF env Us.length ((some fv, d) :: Δ))
+    (H : ConditionallyArgTyped ngen env Us ((some fv, d) :: Δ) e A) :
+    ConditionallyArgTyped ngen env Us Δ e A := by
+  have ⟨c1, f1, c2, f2, H⟩ := H
+  refine ⟨c1, f1, c2, f2, fun He HA => ?_⟩
+  have ⟨e', A', h2, h3, h4⟩ := H He.fvars_cons HA.fvars_cons
+  have W : VLCtx.FVLift Δ ((some fv, d) :: Δ) 0 (0 + d.depth) 0 := .skip_fvar _ _ .refl
+  have ⟨e'', he⟩ := TrExprS.weakFV_inv henv W (.refl henv hΔ) h2 c1 He
+  have ee := h2.uniq henv (.refl henv hΔ) <| he.weakFV henv W hΔ
+  have ⟨A'', hA⟩ := TrExprS.weakFV_inv henv W (.refl henv hΔ) h3 c2 HA
+  have AA := h3.uniq henv (.refl henv hΔ) <| hA.weakFV henv W hΔ
+  have h4 := h4.defeqU_r henv hΔ.toCtx AA |>.defeqU_l henv hΔ.toCtx ee
+  exact ⟨_, _, he, hA, (HasType.weakN_iff henv hΔ.toCtx W.toCtx).1 h4⟩
+
+theorem ConditionallyArgTyped.fresh {Δ : VLCtx}
+    (henv : Ordered env)
+    (hΔ : VLCtx.WF env Us.length ((some (⟨ngen.curr⟩, deps), d) :: Δ))
+    (H : ConditionallyArgTyped ngen env Us Δ e A) :
+    ConditionallyArgTyped ngen env Us ((some (⟨ngen.curr⟩, deps), d) :: Δ) e A := by
+  refine have ⟨c1, f1, c2, f2, H⟩ := H; ⟨c1, f1, c2, f2, fun He HA => ?_⟩
+  have hne {x} (hx : FVarsIn ngen.Reserves x)
+      (H4 : FVarsIn (· ∈ VLCtx.fvars ((some (⟨ngen.curr⟩, deps), d) :: Δ)) x) :
+      FVarsIn (· ∈ Δ.fvars) x := by
+    refine H4.mp ?_ hx
+    intro _ h1 h2; simp at h1; rcases h1 with rfl | h1
+    · cases Nat.lt_irrefl _ (h2 _ rfl)
+    · exact h1
+  have ⟨_, _, h2, h3, h4⟩ := H (hne f1 He) (hne f2 HA)
+  have W : VLCtx.FVLift Δ ((some (⟨ngen.curr⟩, deps), d) :: Δ) 0 (0 + d.depth) 0 :=
+    .skip_fvar _ _ .refl
+  exact ⟨_, _, h2.weakFV henv W hΔ, h3.weakFV henv W hΔ, h4.weakN henv W.toCtx⟩
+
 def ConditionallyWHNF
     (ngen : NameGenerator) (env : VEnv) (Us : List Name) (Δ : VLCtx) (e e₁ : Expr) : Prop :=
   Closed e ∧ FVarsIn ngen.Reserves e ∧ Closed e₁ ∧ FVarsIn ngen.Reserves e₁ ∧
