@@ -102,7 +102,10 @@ theorem AdequacyHyps.of_WF' (henvW : env.WF) (N : Nat)
       VDecl.listRank ds < N →
       VDecl.WF E (.induct d) E' →
       Extends E' env → (∀ c, X.dom c → E'.constants c = none) →
-      @AdequacyHyps env U _ X henv hU E Γ₀ → @AdequacyHyps env U _ X henv hU E' Γ₀) :
+      @AdequacyHyps env U _ X henv hU E Γ₀ →
+      (∀ X' : AxInterp, @AxOK _ X' → @DomRole _ X' env → (∀ c, X'.dom c → E.constants c = none) →
+        @AdequacyHyps env U _ X' henv hU E Γ₀) →
+      @AdequacyHyps env U _ X henv hU E' Γ₀) :
     ∀ {ds E}, VEnv.WF' ds E → VDecl.listRank ds ≤ N → Extends E env → ∀ X : AxInterp, @AxOK _ X →
       @DomRole _ X env → (∀ c, X.dom c → E.constants c = none) →
       @AdequacyHyps env U _ X henv hU E Γ₀ := by
@@ -143,6 +146,7 @@ theorem AdequacyHyps.of_WF' (henvW : env.WF) (N : Nat)
     | quot h0 h1 => exact hQuot X hX hXD hW (by simp [VDecl.rank] at hN; omega) (.quot h0 h1) hext hdom IH
     | induct h0 h1 h2 =>
       exact hInd X hX hXD hW (by simp [VDecl.rank] at hN; omega) (.induct h0 h1 h2) hext hdom IH
+        fun X' hX' hXD' hd' => ih hN₁ hext₁ X' hX' hXD' hd'
     | @mutualDef cis E' _ hT h1 hV =>
       obtain ⟨hnd₁, hfr₁, hcs₁⟩ := VEnv.addConstList_spec ((VEnv.addConsts_eq (env := E) cis).symm.trans h1)
       simp only [List.map_map] at hnd₁ hcs₁

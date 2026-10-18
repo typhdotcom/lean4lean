@@ -167,6 +167,61 @@ theorem ctorApp_projs (henv : Ordered env) (hΓ : OnCtx Γ (env.IsType U)) {s : 
   exact .defeqDF (by simpa [Function.comp_def, VExpr.instL, VExpr.subst] using H2.symm)
     (hPI k h f hf)
 
+/-- Projections of a term each definitionally equal to a value at its projection's type give its
+declared domains, instantiated by the projections, as the domains instantiated by the values; and
+the projections equal to the values there. -/
+theorem declDom_projs (henv : Ordered env) (hΓ : OnCtx Γ (env.IsType U))
+    (hls : ∀ l ∈ ls, l.WF U) {Ds : List VExpr}
+    (hV : ∀ k D (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      env.IsDefEq d.uvars (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse) D f.type
+        (.sort f.level))
+    (hVT : env.IsTele d.uvars d.params.reverse (c.fields.map (·.type))) {As : List VExpr}
+    (W : Ctx.SubstEq env U Γ (Subst.dflt.consList As) (Subst.dflt.consList As)
+      (d.params.map (·.instL ls)).reverse)
+    {s : Name} {x : VExpr} {ms : List VExpr} (hms : ms.length = c.fields.length)
+    (hP : ∀ k (h : k < ms.length), env.IsDefEq U Γ (.proj s k x) ms[k] (c.projType ls s k As x)) :
+    ∀ k (h : k < ms.length) D (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
+      env.IsDefEq U Γ ((D.instL ls).subst (Subst.dflt.consList (As ++ VExpr.projs s k x)))
+        ((D.instL ls).subst (Subst.dflt.consList (As ++ ms.take k))) (.sort (f.level.inst ls)) ∧
+      env.IsDefEq U Γ (.proj s k x) ms[k]
+        ((D.instL ls).subst (Subst.dflt.consList (As ++ VExpr.projs s k x))) ∧
+      env.IsDefEq U Γ (c.projType ls s k As x)
+        ((D.instL ls).subst (Subst.dflt.consList (As ++ VExpr.projs s k x)))
+        (.sort (f.level.inst ls)) := by
+  intro k h D f hD hf
+  have hkf : k < c.fields.length := by omega
+  have hT := (IsTele.append_inv (As := (c.fields.take k).map (·.type))
+    (Bs := (c.fields.drop k).map (·.type))
+    (by rw [← List.map_append, List.take_append_drop]; exact hVT)).1
+  have hT' := hT.instL hls
+  simp only [List.map_reverse, List.map_map] at hT'
+  have Wk : Ctx.SubstEq env U Γ (Subst.dflt.consList (As ++ VExpr.projs s k x))
+      (Subst.dflt.consList (As ++ ms.take k))
+      (((c.fields.take k).map (·.type.instL ls)).reverse ++ (d.params.map (·.instL ls)).reverse) := by
+    rw [Subst.consList_append, Subst.consList_append]
+    refine Ctx.SubstEq.ofGetElemDF W k (by simp) (by simpa [Function.comp_def] using hT')
+      (by simp; omega) (by simp; omega) fun r h1 h2 h3 => ?_
+    simp only [VExpr.length_projs] at h1
+    have hrf : r < c.fields.length := by omega
+    have := hP r (by omega)
+    simp only [VExpr.projs, List.getElem_map, List.getElem_range, List.getElem_take,
+      List.getElem_map]
+    rw [← Subst.consList_append, show (List.map (fun x_1 => VExpr.proj s x_1 x) (List.range k)).take r
+      = VExpr.projs s r x from projs_take' s x (Nat.le_of_lt h1)]
+    simpa [VConstructor.projType, List.getElem?_eq_getElem hrf] using this
+  have H := (hV k D f hD hf).instL hls
+  simp only [List.map_append, List.map_reverse, List.map_map] at H
+  have H1 := H.hasType.1.substDF henv Wk.wf hΓ Wk
+  have H2 := (H.subst henv Wk.left hΓ).symm
+  have hPk := hP k h
+  simp only [VConstructor.projType, hf, Option.map_some, Option.getD_some] at hPk
+  have H2' : env.IsDefEq U Γ (c.projType ls s k As x)
+      ((D.instL ls).subst (Subst.dflt.consList (As ++ VExpr.projs s k x)))
+      (.sort (f.level.inst ls)) := by
+    simpa [VConstructor.projType, hf, Function.comp_def, VExpr.instL, VExpr.subst] using H2
+  refine ⟨by simpa [Function.comp_def, VExpr.instL, VExpr.subst] using H1, ?_, H2'⟩
+  exact .defeqDF (by simpa [Function.comp_def, VExpr.instL, VExpr.subst] using H2) hPk
+
 end VEnv
 
 end Lean4Lean

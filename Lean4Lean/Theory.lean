@@ -18,6 +18,8 @@ import Lean4Lean.Theory.Typing.LogRel.ConstDelta
 import Lean4Lean.Theory.Typing.LogRel.Good
 import Lean4Lean.Theory.Typing.LogRel.Mutual
 import Lean4Lean.Theory.Typing.LogRel.BlockGood
+import Lean4Lean.Theory.Typing.LogRel.BlockStage
+import Lean4Lean.Theory.Typing.LogRel.IndTeleCtors
 import Lean4Lean.Theory.Typing.LogRel.Prefix
 import Lean4Lean.Theory.Typing.LogRel.AdeqProj
 import Lean4Lean.Theory.Typing.LogRel.AdequacyWF

@@ -1,5 +1,7 @@
 import Lean4Lean.Theory.Typing.LogRel.AdeqQuotLiftQ
 import Lean4Lean.Theory.Typing.LogRel.IndTeleOf
+import Lean4Lean.Theory.Typing.LogRel.AdeqStruct
+import Lean4Lean.Theory.Typing.LogRel.StructProj
 
 /-!
 # A constructor's constant case
@@ -252,6 +254,59 @@ def ctorCod (s : Name) (c : VConstructor) (np nf : Nat) (l : List VLevel) : VExp
 
 variable {henv : env.Ordered} {hU : StepUniq env} {Γ₀ : List VExpr}
 
+omit [ShapeEnv] in
+/-- A substitution along a closed context depends only on its values at the context's variables. -/
+theorem substEq_congr_closed {Γ : List VExpr} :
+    ∀ {Cs : List VExpr} {σ σ' τ τ' : VExpr.Subst}, CtxClosed Cs →
+      (∀ i < Cs.length, σ i = τ i) → (∀ i < Cs.length, σ' i = τ' i) →
+      VEnv.Ctx.SubstEq env U Γ σ σ' Cs → VEnv.Ctx.SubstEq env U Γ τ τ' Cs
+  | [], _, _, _, _, _, _, _, _ => .nil
+  | _ :: Cs, σ, σ', τ, τ', ⟨hC, hA⟩, h1, h2, .cons W hAt ha => by
+    refine .cons (substEq_congr_closed hC (fun i hi => h1 (i+1) (by simp; omega))
+      (fun i hi => h2 (i+1) (by simp; omega)) W) hAt ?_
+    have e1 : σ.head = τ.head := h1 0 (by simp)
+    have e2 : σ'.head = τ'.head := h2 0 (by simp)
+    have e3 := hA.subst_congr (σ := σ.tail) (σ' := τ.tail) fun i hi => h1 (i+1) (by simp; omega)
+    rw [← e1, ← e2, ← e3]; exact ha
+
+omit [ShapeEnv] in
+/-- Substitutions along a telescope `Ps ++ Ds` give each field of `Ds` its domain, instantiated
+with the parameters' and earlier fields' values. -/
+theorem fields_lookup {Ps Ds Γ : List VExpr} {σ σ' : VExpr.Subst}
+    (W : VEnv.Ctx.SubstEq env U Γ₀ σ σ' ((Ps ++ Ds).reverse ++ Γ))
+    (hDcl : ∀ j (D : VExpr), Ds[j]? = some D → D.ClosedN (Ps.length + j)) :
+    ∀ j (h : j < Ds.length), env.IsDefEq U Γ₀ (σ (Ds.length - 1 - j)) (σ' (Ds.length - 1 - j))
+      (Ds[j].subst (Subst.dflt.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++
+        ((VExpr.bvars Ds.length 0).map (·.subst σ)).take j))) := by
+  intro j hjD
+  let qs := (VExpr.bvars Ps.length Ds.length).map (·.subst σ)
+  let ms := (VExpr.bvars Ds.length 0).map (·.subst σ)
+  have hqsl : qs.length = Ps.length := by simp [qs, VExpr.bvars]
+  have hms_get : ∀ j (h : j < ms.length), ms[j] = σ (Ds.length - 1 - j) := by
+    intro j h; simp [ms, VExpr.bvars, VExpr.subst]
+  have hmsl : ms.length = Ds.length := by simp [ms, VExpr.bvars]
+  have hjm : j < ms.length := by omega
+  have L := Lookup.reverse_append (Ps ++ Ds) (Γ := Γ) (Ps.length + j) (by simp; omega)
+  have e1 : (Ps ++ Ds).length - 1 - (Ps.length + j) = Ds.length - 1 - j := by simp; omega
+  have e2 : (Ps ++ Ds)[Ps.length + j]'(by simp; omega) = Ds[j] := by
+    rw [List.getElem_append_right (by omega)]; congr 1; omega
+  have e3 : (Ps ++ Ds).length - (Ps.length + j) = Ds.length - j := by simp; omega
+  rw [e1, e2, e3] at L
+  have hcl := hDcl j Ds[j] (List.getElem?_eq_getElem hjD)
+  have eT : (Ds[j].liftN (Ds.length - j)).subst σ =
+      Ds[j].subst (Subst.dflt.consList (qs ++ ms.take j)) := by
+    rw [← lift'_consN_skipN (n := Ds.length - j) (k := 0), subst_lift']
+    refine hcl.subst_congr fun i hi => ?_
+    have hl : (qs ++ ms.take j).length = Ps.length + j := by simp [hqsl]; omega
+    rw [Subst.consList_lt _ _ _ (by omega), List.getElem_reverse]
+    simp only [Subst.lift_l, Lift.consN, Lift.liftVar_skipN, Lift.liftVar]
+    rw [List.getElem_append]
+    split <;> rename_i h
+    · simp [qs, VExpr.bvars, VExpr.subst]; congr 1; omega
+    · rw [List.getElem_take, hms_get]; congr 1; simp [hqsl] at h ⊢; omega
+  have hD := W.lookup L
+  rwa [eT] at hD
+
 /-- The fields of a telescope `Ps ++ Ds` under related substitutions are related along `Ds`,
 instantiated with the parameters' values, at a telescope shape that interprets `Ds` at the
 parameters' shapes, at field shapes below the fields' values. -/
@@ -380,6 +435,20 @@ theorem ctorFields_rel (hM : ModelEnv env) (hΓ₀ : OnCtx Γ₀ (env.IsType U))
     ⟨0, Nat.zero_le _, rfl, rfl, rfl, rfl, by simp only [List.take_zero, List.append_nil]; rfl,
       by simp⟩ hT hfit (by simp [hmsl, hfl]) (by simp [hmsl', hfl])
 
+/-- What a structure constructor's case needs of its declaration, at its type's levels `ls`, for
+the parameter binders `Ps` and field binders `Ds` of its type there: its declared domains `Ds₀`,
+each a type equal to its field's view, and the parameter binders equal to the block's. -/
+def StructHyps (env : VEnv) (U : Nat) (d : VInductDecl) (T : VInductiveType) (c : VConstructor)
+    (ls : List VLevel) (Ps Ds : List VExpr) : Prop :=
+  T.ctors = [c] ∧ (∀ l ∈ ls, l.WF U) ∧ ls.length = d.uvars ∧
+  OnCtx (Ps ++ Ds).reverse (env.IsType U) ∧
+  env.IsDefEqCtx U [] Ps.reverse (d.params.map (·.instL ls)).reverse ∧
+  ∃ Ds₀ : List VExpr, Ds = Ds₀.map (·.instL ls) ∧ Ds₀.length = c.fields.length ∧
+    (∀ k D (f : VField), Ds₀[k]? = some D → c.fields[k]? = some f →
+      env.IsDefEq d.uvars (((c.fields.take k).map (·.type)).reverse ++ d.params.reverse) D f.type
+        (.sort f.level)) ∧
+    env.IsTele d.uvars d.params.reverse (c.fields.map (·.type))
+
 /-- A constructor, not a structure's, applied to its telescope's variables, under related
 substitutions and at levels whose codomains are related: related at its codomain, at a
 constructor shape, through its fields along its telescope. -/
@@ -388,8 +457,9 @@ theorem ctorSpine_core (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
     {ci : VConstant} (hs : env.inducts s = some (d, t)) (hT : d.types[t]? = some T)
     (hc : c ∈ T.ctors) (hnodup : (T.ctors.map (·.name)).Nodup)
     (hci : env.constants c.name = some ci) (hcity : ci.type = c.type)
-    (hnd : ¬AxInterp.dom s) (hns : IsStruct c.name = false)
+    (hnd : ¬AxInterp.dom s)
     {ls : List VLevel} {Ps Ds : List VExpr}
+    (hstr : IsStruct c.name = true → StructHyps env U d T c ls Ps Ds)
     (hcty : c.type.instL ls = .foralls (Ps ++ Ds) (ctorCod s c Ps.length Ds.length ls))
     (hPs : Ps.length = d.params.length) (hDs : Ds.length = c.fields.length)
     (hnidx : c.indices.length = T.indices.length)
@@ -418,6 +488,14 @@ theorem ctorSpine_core (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
     (ht2 : env.IsDefEq U Γ₀
       (((VExpr.const c.name ls₂).appN (VExpr.bvars (Ps.length + Ds.length) 0)).subst σ')
       (((VExpr.const c.name ls₂).appN (VExpr.bvars (Ps.length + Ds.length) 0)).subst σ')
+      ((ctorCod s c Ps.length Ds.length ls).subst σ))
+    (hMN : env.IsDefEq U Γ₀
+      (((VExpr.const c.name ls₁).appN (VExpr.bvars (Ps.length + Ds.length) 0)).subst σ)
+      (((VExpr.const c.name ls₂).appN (VExpr.bvars (Ps.length + Ds.length) 0)).subst σ')
+      ((ctorCod s c Ps.length Ds.length ls).subst σ))
+    (hM0 : env.IsDefEq U Γ₀
+      (((VExpr.const c.name ls₁).appN (VExpr.bvars (Ps.length + Ds.length) 0)).subst σ)
+      (((VExpr.const c.name ls).appN (VExpr.bvars (Ps.length + Ds.length) 0)).subst σ)
       ((ctorCod s c Ps.length Ds.length ls).subst σ)) :
     (LR (U := U) (Γ := Γ₀) henv hU n).DefEq
       (((VExpr.const c.name ls₁).appN (VExpr.bvars (Ps.length + Ds.length) 0)).subst σ)
@@ -443,7 +521,6 @@ theorem ctorSpine_core (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
   obtain ⟨I, as, rfl⟩ := WShape.HasType.ctor_inv hma
   simp only [LR, LRS, LRS.DefEq.ctor_indTy]
   unfold LRS.IndVal
-  rw [if_neg (fun hs => absurd hs.1 (by rw [hns]; decide))]
   refine .inl ?_
   -- the codomain's arguments
   have hcodσ : ∀ (l : List VLevel) (τ : VExpr.Subst), (ctorCod s c Ps.length Ds.length l).subst τ =
@@ -499,28 +576,27 @@ theorem ctorSpine_core (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
     obtain ⟨lsA, AsA, hr, hP⟩ := CtorParams.of_indRel hR
     obtain ⟨-, rfl, rfl⟩ := appN_const_inj (StepS.of_whnf hInS.whnf hr)
     exact hP
-  refine ⟨hInS, hInC, hITA.left' hU hRA, i, fs.length, ci, ls, _, ls₁,
-    (VExpr.bvars Ps.length Ds.length).map (·.subst σ), (VExpr.bvars Ds.length 0).map (·.subst σ),
-    ls₂, (VExpr.bvars Ps.length Ds.length).map (·.subst σ'),
-    (VExpr.bvars Ds.length 0).map (·.subst σ'), hi, hk, hci, ?_, ?_, ?_, rfl, ?_, hCP hT1, hCP hT2⟩
-  · rw [← hcodσ]; exact .rfl
-  · rw [← hvals]; exact ⟨.rfl, ht1⟩
-  · rw [← hvals]; exact ⟨.rfl, ht2⟩
-  · -- the fields, along the constructor's telescope at the type's parameters
-    have hfsl : fs.length = Ds.length := by
-      simp [List.getElem?_map, hci'] at hk; omega
+  -- the fields, along the constructor's telescope at the type's parameters
+  have hfsl : fs.length = Ds.length := by
+    simp [List.getElem?_map, hci'] at hk; omega
+  have eTel : ctorTeleAt ci fs.length ls
+      ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++
+        c.indices.map (fun e => (e.instL ls).subst σ)) =
+      (VExpr.foralls Ds (ctorCod s c Ps.length Ds.length ls)).subst
+        (Subst.id.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ))) := by
+    rw [ctorTeleAt, hcity, ← piCount_instL c.type ls, hcty, piCount_foralls, ctorCod,
+      piCount_appN_const, List.length_append, hfsl, Nat.add_zero, Nat.add_sub_cancel,
+      List.take_left' (by simp [VExpr.bvars]), VExpr.foralls_append,
+      piInst_foralls _ _ _ (by simp [VExpr.bvars])]
+  have hFR : FieldsRel (LR (U := U) (Γ := Γ₀) henv hU n0)
+      ((VExpr.foralls Ds (ctorCod s c Ps.length Ds.length ls)).subst
+        (Subst.id.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ))))
+      (ctorTel ⟨s, (VExpr.bvars Ps.length Ds.length ++ c.indices.map (·.instL ls)).length,
+        T.ctors.map (·.name), T.ctors.map (·.fields.length)⟩ as i)
+      ((VExpr.bvars Ds.length 0).map (·.subst σ)) ((VExpr.bvars Ds.length 0).map (·.subst σ'))
+      fs := by
     have hppl : pp.length = Ps.length := by
       rw [List.Forall₂.length_eq hpp]; simp [VExpr.bvars]; omega
-    have eTel : ctorTeleAt ci fs.length ls
-        ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++
-          c.indices.map (fun e => (e.instL ls).subst σ)) =
-        (VExpr.foralls Ds (ctorCod s c Ps.length Ds.length ls)).subst
-          (Subst.id.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ))) := by
-      rw [ctorTeleAt, hcity, ← piCount_instL c.type ls, hcty, piCount_foralls, ctorCod,
-        piCount_appN_const, List.length_append, hfsl, Nat.add_zero, Nat.add_sub_cancel,
-        List.take_left' (by simp [VExpr.bvars]), VExpr.foralls_append,
-        piInst_foralls _ _ _ (by simp [VExpr.bvars])]
-    rw [eTel]
     obtain ⟨h', cty, hh', hP', hle'⟩ := hpi i c hci'
     have hT0 := (closed_iff (ρ' := fun i => ρ (i + (Ps.length + Ds.length))) hM.closed hccl).1 hh'
     rw [hcty] at hT0
@@ -541,6 +617,143 @@ theorem ctorSpine_core (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
       rw [bvars_getElem] at h2
       simp only [Nat.add_zero] at h2
       exact h1.trans (bvar_iff.1 h2)
+  split
+  · rename_i hso
+    obtain ⟨hone, hlsWF, hlslen, hPD, hPctx, Ds₀, hDs₀, hDs₀l, hV, hVT⟩ := hstr hso.1
+    have hEo := henvW.ordered
+    have hF := henvW.projFacts hs hT hone
+    have hqsl : ((VExpr.bvars Ps.length Ds.length).map (·.subst σ)).length = d.params.length := by
+      simp [VExpr.bvars, hPs]
+    have hqsl' : ((VExpr.bvars Ps.length Ds.length).map (·.subst σ')).length = d.params.length := by
+      simp [VExpr.bvars, hPs]
+    have hmsl : ((VExpr.bvars Ds.length 0).map (·.subst σ)).length = c.fields.length := by
+      simp [VExpr.bvars, hDs]
+    have hmsl' : ((VExpr.bvars Ds.length 0).map (·.subst σ')).length = c.fields.length := by
+      simp [VExpr.bvars, hDs]
+    have hidxl : (c.indices.map (fun e => (e.instL ls).subst σ)).length = T.indices.length := by
+      simp [hnidx]
+    have hms_get : ∀ (τ : VExpr.Subst) j (h : j < ((VExpr.bvars Ds.length 0).map (·.subst τ)).length),
+        ((VExpr.bvars Ds.length 0).map (·.subst τ))[j] = τ (Ds.length - 1 - j) := by
+      intro τ j h; simp [VExpr.bvars, VExpr.subst]
+    -- the parameters' values, along the block's parameters
+    have WS := W.toSubstEq hΓ₀
+    have Wv := Ctx.SubstEq.vals hEo hPD WS.left
+    rw [List.length_reverse, List.length_append, hsplit, List.map_append, Subst.consList_append,
+      List.reverse_append] at Wv
+    have Wq := VEnv.Ctx.SubstEq.dropList (by simp [VExpr.bvars]) (by simp [VExpr.bvars]) Wv
+    have Wq2 := VEnv.Ctx.SubstEq.defeqTele hEo hΓ₀ hPctx Wq
+    have hpar : OnCtx (d.params.map (·.instL ls)).reverse (env.IsType U) := by
+      simpa using (hF.params.instL hlsWF).onCtx (Γ := []) trivial
+    have Wq3 : VEnv.Ctx.SubstEq env U Γ₀
+        (Subst.dflt.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ)))
+        (Subst.dflt.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ)))
+        (d.params.map (·.instL ls)).reverse :=
+      substEq_congr_closed (hpar.ctxClosed hEo)
+        (fun i hi => by
+          rw [Subst.consList_lt _ _ _ (by simpa [hqsl] using hi),
+            Subst.consList_lt _ _ _ (by simpa [hqsl] using hi)])
+        (fun i hi => by
+          rw [Subst.consList_lt _ _ _ (by simpa [hqsl] using hi),
+            Subst.consList_lt _ _ _ (by simpa [hqsl] using hi)]) Wq2
+    -- the type, the values and the type's sort
+    have eA := hcodσ ls σ
+    have eM := hvals ls₁ σ
+    have eN := hvals ls₂ σ'
+    have eMl := hvals ls σ
+    obtain ⟨u, hAu⟩ := ht1.isType hEo hΓ₀
+    rw [eA] at hAu
+    have hM0' := hM0; rw [eM, eMl, eA] at hM0'
+    have hMN' := hMN; rw [eM, eN, eA] at hMN'
+    -- the fields at their declared domains, and at their views
+    have hDsget : ∀ j (h : j < Ds.length), Ds[j] = (Ds₀[j]'(by rw [hDs₀] at h; simpa using h)).instL ls := by
+      intro j h; simp [hDs₀]
+    have hfD : ∀ k (h : k < ((VExpr.bvars Ds.length 0).map (·.subst σ)).length) D, Ds₀[k]? = some D →
+        env.HasType U Γ₀ ((VExpr.bvars Ds.length 0).map (·.subst σ))[k]
+          ((D.instL ls).subst (Subst.dflt.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++
+            ((VExpr.bvars Ds.length 0).map (·.subst σ)).take k))) := by
+      intro k h D hD
+      have hkD : k < Ds.length := by simpa [VExpr.bvars] using h
+      have := (fields_lookup WS hDcl k hkD).hasType.1
+      rw [hms_get σ k h, ← (List.getElem?_eq_some_iff.1 hD).2, ← hDsget k hkD]
+      exact this
+    have hfsT := VEnv.fields_views hEo hΓ₀ hlsWF hV hVT Wq3 hDs₀l hfD
+    have hPA : ∀ k < c.fields.length, d.ProjAllowed c ls k := fun k hk =>
+      hso.2 ls _ (by rw [eA]; exact .rfl) hInS.whnf d t T c hs hT
+        (by simp [hone]) rfl k hk
+    -- each projection of the first value is its field, at its projection's type
+    have hP : ∀ k (h : k < ((VExpr.bvars Ds.length 0).map (·.subst σ)).length),
+        env.IsDefEq U Γ₀ (.proj s k ((VExpr.const c.name ls₁).appN
+          ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++
+            (VExpr.bvars Ds.length 0).map (·.subst σ))))
+          ((VExpr.bvars Ds.length 0).map (·.subst σ))[k]
+          (c.projType ls s k ((VExpr.bvars Ps.length Ds.length).map (·.subst σ))
+            ((VExpr.const c.name ls₁).appN ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++
+              (VExpr.bvars Ds.length 0).map (·.subst σ)))) := by
+      intro k h
+      have hkf : k < c.fields.length := by omega
+      obtain ⟨f, hf⟩ : ∃ f, c.fields[k]? = some f := ⟨_, List.getElem?_eq_getElem hkf⟩
+      have pc := VEnv.projCongr hEo hΓ₀ hs hT hone hF hlsWF hlslen hqsl hidxl hqsl hidxl Wq3 hAu
+        hM0' k f hf (hPA k hkf)
+      have pi := VEnv.projIota_ctor hEo hΓ₀ hs hT hone hF hlsWF hlslen hqsl hidxl hmsl Wq3 hAu
+        hM0'.hasType.2 hfsT k f _ hf (List.getElem?_eq_getElem h) (hPA k hkf)
+      exact pc.2.trans (.defeqDF pc.1.symm pi)
+    have DP := VEnv.declDom_projs hEo hΓ₀ hlsWF hV hVT Wq3 hmsl hP
+    -- the type's arguments, and the type's telescopes
+    have hRL := hRA.left
+    obtain ⟨-, lsx, lsx', Asx, Asx', hx1, -, -, hx4, -, hx6⟩ := hRL
+    rw [eA] at hx1
+    obtain ⟨-, rfl, rfl⟩ := appN_const_inj (StepS.of_whnf hInS.whnf hx1)
+    have hTel := hITA.left' hU hRA ls _ ls _ (by rw [eA]; exact .rfl) (by rw [eA]; exact .rfl)
+      c.name i fs.length ci hi hk hci
+    rw [eM, eN]
+    refine ⟨hInS, hITA.left' hU hRA, i, fs.length, ci, ls, _, _, _, hi, hk, hci,
+      (by rw [eA]; exact .rfl), TRed.refl (by rw [← eM]; exact ht1), hInC.whnf,
+      TRed.refl (by rw [← eN]; exact ht2), hInC.whnf, rfl, ?_, ⟨hx4, hx6.left⟩⟩
+    rw [eTel] at hTel ⊢
+    -- the domains instantiated by the parameters' values, by either base substitution
+    have eD : ∀ j (h : j < Ds.length) (xs : List VExpr), xs.length = j →
+        Ds[j].subst ((Subst.id.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ))).consList xs) =
+        ((Ds₀[j]'(by rw [hDs₀] at h; simpa using h)).instL ls).subst
+          (Subst.dflt.consList ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++ xs)) := by
+      intro j h xs hxs
+      rw [← hDsget j h, ← Subst.consList_append]
+      refine (hDcl j _ (List.getElem?_eq_getElem h)).subst_congr fun i hi => ?_
+      have hl : ((VExpr.bvars Ps.length Ds.length).map (·.subst σ) ++ xs).length = Ps.length + j := by
+        simp [VExpr.bvars, hxs]
+      rw [Subst.consList_lt _ _ _ (by omega), Subst.consList_lt _ _ _ (by omega)]
+    refine FieldsRel.of_red hU (by simpa [hfsl] using hTel) hFR ?_ ?_
+    · refine RedFields.of_foralls _ Ds _ _ _ _ (by simp [hfsl]) (by simp [hfsl]) (by simp [VExpr.bvars])
+        fun j h1 h2 h3 => ?_
+      have hjf : j < c.fields.length := by omega
+      obtain ⟨f, hf⟩ : ∃ f, c.fields[j]? = some f := ⟨_, List.getElem?_eq_getElem hjf⟩
+      have hD0 : Ds₀[j]? = some (Ds₀[j]'(by omega)) := List.getElem?_eq_getElem _
+      obtain ⟨-, hb, -⟩ := DP j h2 _ f hD0 hf
+      rw [eD j h3 _ (by simp; omega), VEnv.projs_take' _ _ (by omega)]
+      simp only [VExpr.projs, List.getElem_map, List.getElem_range] at hb ⊢
+      exact ⟨.single (.projIota hs hT hone hqsl hmsl (by simp; exact ⟨_, List.getElem?_eq_getElem (by simpa [VExpr.bvars] using h3), rfl⟩)), hb⟩
+    · refine RedFields.of_foralls _ Ds _ _ _ _ (by simp [hfsl]) (by simp [hfsl]) (by simp [VExpr.bvars])
+        fun j h1 h2 h3 => ?_
+      have hjf : j < c.fields.length := by omega
+      have h2' : j < ((VExpr.bvars Ds.length 0).map (·.subst σ)).length := by simpa using h2
+      obtain ⟨f, hf⟩ : ∃ f, c.fields[j]? = some f := ⟨_, List.getElem?_eq_getElem hjf⟩
+      have hD0 : Ds₀[j]? = some (Ds₀[j]'(by omega)) := List.getElem?_eq_getElem _
+      obtain ⟨ha, hb, hc'⟩ := DP j h2' _ f hD0 hf
+      rw [eD j h3 _ (by simp; omega), VEnv.projs_take' _ _ (by omega)]
+      have pc := VEnv.projCongr hEo hΓ₀ hs hT hone hF hlsWF hlslen hqsl hidxl hqsl hidxl Wq3 hAu
+        hMN' j f hf (hPA j hjf)
+      have e3 := fields_lookup WS hDcl j h3
+      rw [← hms_get σ j h2', ← hms_get σ' j h2, hDsget j h3] at e3
+      have key := (VEnv.IsDefEq.defeqDF hc' pc.2.symm).trans (hb.trans (.defeqDF ha.symm e3))
+      simp only [VExpr.projs, List.getElem_map, List.getElem_range] at key ⊢
+      exact ⟨.single (.projIota hs hT hone hqsl' hmsl' (by simp; exact ⟨_, List.getElem?_eq_getElem (by simpa [VExpr.bvars] using h3), rfl⟩)), key⟩
+  refine ⟨hInS, hInC, hITA.left' hU hRA, i, fs.length, ci, ls, _, ls₁,
+    (VExpr.bvars Ps.length Ds.length).map (·.subst σ), (VExpr.bvars Ds.length 0).map (·.subst σ),
+    ls₂, (VExpr.bvars Ps.length Ds.length).map (·.subst σ'),
+    (VExpr.bvars Ds.length 0).map (·.subst σ'), hi, hk, hci, ?_, ?_, ?_, rfl, ?_, hCP hT1, hCP hT2⟩
+  · rw [← hcodσ]; exact .rfl
+  · rw [← hvals]; exact ⟨.rfl, ht1⟩
+  · rw [← hvals]; exact ⟨.rfl, ht2⟩
+  · rw [eTel]; exact hFR
 
 /-- A constructor, not a structure's, applied to its telescope's variables at equivalent levels:
 related at its codomain, given the codomains related and their soundness and the spines' typing. -/
@@ -549,8 +762,9 @@ theorem AdeqStmt.ctorSpine (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx 
     {ci : VConstant} (hs : env.inducts s = some (d, t)) (hT : d.types[t]? = some T)
     (hc : c ∈ T.ctors) (hnodup : (T.ctors.map (·.name)).Nodup)
     (hci : env.constants c.name = some ci) (hcity : ci.type = c.type)
-    (hnd : ¬AxInterp.dom s) (hns : IsStruct c.name = false)
+    (hnd : ¬AxInterp.dom s)
     {ls ls' : List VLevel} {Ps Ds : List VExpr}
+    (hstr : IsStruct c.name = true → StructHyps env U d T c ls Ps Ds)
     (hcty : c.type.instL ls = .foralls (Ps ++ Ds) (ctorCod s c Ps.length Ds.length ls))
     (hPs : Ps.length = d.params.length) (hDs : Ds.length = c.fields.length)
     (hnidx : c.indices.length = T.indices.length)
@@ -597,21 +811,23 @@ theorem AdeqStmt.ctorSpine (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx 
     have := H.substDF hEo hΔ hΓ₀ (W.toSubstEq hΓ₀)
     exact ⟨this.hasType.1, this.hasType.2⟩
   have core := @ctorSpine_core _ _ _ _ henv hU Γ₀ hM henvW hΓ₀ s d t T c ci hs hT hc hnodup hci hcity
-    hnd hns ls Ps Ds hcty hPs hDs hnidx hDcl hicl hccl Γ
+    hnd ls Ps Ds hstr hcty hPs hDs hnidx hDcl hicl hccl Γ
   have hL := hsp.hasType.1
   have hR := hsp.hasType.2
   refine ⟨fun σ σ' W => ⟨?_, ?_⟩, fun σ W => ?_⟩
   · obtain ⟨tA, -, -⟩ := tys W
     exact core W hma hm ha tA ((LR _ _ _).left_ty tA) ((LR _ _ _).symm_ty tA)
-      (typ W ls hL).1 (typ W ls hL).2
+      (typ W ls hL).1 (typ W ls hL).2 (hL.substDF hEo hΔ hΓ₀ (W.toSubstEq hΓ₀)) (typ W ls hL).1
   · obtain ⟨tA, tB, -⟩ := tys W
     obtain ⟨-, -, tAB⟩ := tys W.left
     exact core W hma hm ha tA ((LR _ _ _).symm_ty tAB)
       ((LR _ _ _).trans_ty ((LR _ _ _).symm_ty tB) ((LR _ _ _).symm_ty tAB))
-      (typ W ls' hR).1 (typ W ls' hR).2
+      (typ W ls' hR).1 (typ W ls' hR).2 (hR.substDF hEo hΔ hΓ₀ (W.toSubstEq hΓ₀))
+      (hsp.symm.substDF hEo hΔ hΓ₀ (W.left.toSubstEq hΓ₀))
   · obtain ⟨tA, -, tAB⟩ := tys W
     exact core W hma hm ha tA ((LR _ _ _).left_ty tA) ((LR _ _ _).symm_ty tAB)
-      (typ W ls hL).1 (typ W ls' hR).2
+      (typ W ls hL).1 (typ W ls' hR).2 (hsp.substDF hEo hΔ hΓ₀ (W.left.toSubstEq hΓ₀))
+      (typ W ls hL).1
 
 /-- A constructor's constant case, for a constructor that is not a structure's: given adequacy's
 cases for an environment `E₀` in which its type's telescope and codomain are typed, model
@@ -624,8 +840,9 @@ theorem AdeqStmt.ctor (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ₀
     {ci : VConstant} (hs : env.inducts s = some (d, t)) (hT : d.types[t]? = some T)
     (hc : c ∈ T.ctors) (hnodup : (T.ctors.map (·.name)).Nodup)
     (hci : env.constants c.name = some ci) (hcity : ci.type = c.type)
-    (hnd : ¬AxInterp.dom s) (hns : IsStruct c.name = false)
+    (hnd : ¬AxInterp.dom s)
     {ls ls' : List VLevel} {Ps Ds : List VExpr}
+    (hstr : IsStruct c.name = true → StructHyps env U d T c ls Ps Ds)
     (hcty : c.type.instL ls = .foralls (Ps ++ Ds) (ctorCod s c Ps.length Ds.length ls))
     (hPs : Ps.length = d.params.length) (hDs : Ds.length = c.fields.length)
     (hnidx : c.indices.length = T.indices.length)
@@ -653,7 +870,7 @@ theorem AdeqStmt.ctor (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ₀
       (ctorCod s c Ps.length Ds.length ls) := by
     intro ρ n m a hm ha hma
     exact AdeqStmt.ctorSpine (U := U) (henv := henv) (hU := hU) (Γ₀ := Γ₀) hM henvW hΓ₀ hs hT hc
-      hnodup hci hcity hnd hns hcty hPs hDs hnidx hDcl hicl hccl hΔ (Dsp.defeq.mono hE₀le) (hS DB)
+      hnodup hci hcity hnd hstr hcty hPs hDs hnidx hDcl hicl hccl hΔ (Dsp.defeq.mono hE₀le) (hS DB)
       @HB hm ha hma
   have hR : E₀.IsType U (Ps ++ Ds).reverse (ctorCod s c Ps.length Ds.length ls) :=
     ⟨_, hBE.hasType.1⟩

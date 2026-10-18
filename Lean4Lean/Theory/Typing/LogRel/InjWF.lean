@@ -41,9 +41,12 @@ def IndStep : Prop :=
     @DomRole env.shapeEnv X env → VEnv.WF' ds E → E.Inj →
     (∀ envT envC envR, E.addConstList d.typeConsts = some envT →
       envT.addConstList d.ctorConsts = some envC →
-      envC.addConstList d.recConsts = some envR → envR.Inj) →
+      envC.addConstList d.recConsts = some envR → envT.Inj ∧ envC.Inj ∧ envR.Inj) →
     VDecl.WF E (.induct d) E' → Extends E' env → (∀ c, X.dom c → E'.constants c = none) →
     @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E Γ₀ →
+    (∀ X' : @AxInterp env.shapeEnv, @AxOK env.shapeEnv X' → @DomRole env.shapeEnv X' env →
+      (∀ c, X'.dom c → E.constants c = none) →
+      @AdequacyHyps env U env.shapeEnv X' henvW.ordered henvW.stepUniq E Γ₀) →
     @AdequacyHyps env U env.shapeEnv X henvW.ordered henvW.stepUniq E' Γ₀
 
 /-- The step the quotient makes to adequacy's environment cases, given injectivity of the
@@ -82,7 +85,7 @@ theorem _root_.Lean4Lean.VEnv.WF'.inj_of (hInd : IndStep) (hQuot : QuotStep)
       ∀ {d : VInductDecl}, d.WF E → d.GeneratedWF E →
       ∀ envT envC envR, E.addConstList d.typeConsts = some envT →
       envT.addConstList d.ctorConsts = some envC →
-      envC.addConstList d.recConsts = some envR → envR.Inj := by
+      envC.addConstList d.recConsts = some envR → envT.Inj ∧ envC.Inj ∧ envR.Inj := by
     intro ds' E h hr d hd hg envT envC envR hT hC hRc
     obtain ⟨ds₁, h₁, e₁⟩ := h.addConstList (fun p hp => by
       simp only [VInductDecl.typeConsts, List.mem_map] at hp
@@ -95,7 +98,7 @@ theorem _root_.Lean4Lean.VEnv.WF'.inj_of (hInd : IndStep) (hQuot : QuotStep)
       have hT' := List.mem_of_getElem? (List.mem_zipIdx_iff_getElem?.1 hm)
       exact ((hd.ctors envT hT T (List.mem_append_left _ hT')).2 c hc).type) hC
     obtain ⟨ds₃, h₃, e₃⟩ := h₂.addConstList (hg envT envC envR hT hC hRc).1 hRc
-    exact hsmall h₃ (by omega)
+    exact ⟨hsmall h₁ (by omega), hsmall h₂ (by omega), hsmall h₃ (by omega)⟩
   have hAdeq : ∀ U Γ, OnCtx Γ (env.IsType U) →
       @AdequacyHyps env U env.shapeEnv (@AxInterp.none env.shapeEnv) henvW.ordered
         henvW.stepUniq env Γ := by
@@ -103,12 +106,12 @@ theorem _root_.Lean4Lean.VEnv.WF'.inj_of (hInd : IndStep) (hQuot : QuotStep)
     refine AdequacyHyps.of_WF' henvW N (fun X hX hXD => henvW.modelEnv hX hXD) hΓ
       (fun X _ _ _ hX hXD hW' hr hD hle hdom IH₀ =>
         hQuot henvW hΓ X hX hXD hW' (hsmall hW' hr) hD hle hdom IH₀)
-      (fun X _ _ _ _ hX hXD hW' hr hD hle hdom IH₀ => ?_) hW hN .refl _ AxOK.none nofun
+      (fun X _ _ _ _ hX hXD hW' hr hD hle hdom IH₀ IHall => ?_) hW hN .refl _ AxOK.none nofun
       (fun _ h => h.elim)
     cases hD with
     | induct h0 h1 h2 =>
       exact hInd henvW hΓ X hX hXD hW' (hsmall hW' hr) (hR hW' hr h0 h1) (.induct h0 h1 h2) hle
-        hdom IH₀
+        hdom IH₀ IHall
   exact VEnv.Inj.of_chainInv henvW fun U =>
     ChainInv.of_adequacy henvW (hAdeq U) (hProj henvW hAdeq U)
 

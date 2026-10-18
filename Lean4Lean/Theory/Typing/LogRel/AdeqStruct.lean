@@ -1,4 +1,4 @@
-import Lean4Lean.Theory.Typing.LogRel.AdeqQuotMk
+import Lean4Lean.Theory.Typing.LogRel.IndTeleOf
 
 /-!
 # Fields related through what reduces to them
