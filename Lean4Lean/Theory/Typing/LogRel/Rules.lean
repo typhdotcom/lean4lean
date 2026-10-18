@@ -22,14 +22,15 @@ inductive VEnv.RuleKind (env : VEnv) : VDefEq → Prop
   /-- The quotient's computation rule, `Quot.lift f h (Quot.mk r a) ≡ f a`. -/
   | quot : env.constants ``Quot.lift = some quotLiftConst →
     env.constants ``Quot.mk = some quotMkConst → env.constants ``Eq = some eqConst →
-    env.RuleKind quotDefEq
+    env.constants ``Quot = some quotConst → env.RuleKind quotDefEq
   /-- An iota rule of a recorded block. -/
   | iota {s d t df} : env.inducts s = some (d, t) → df ∈ d.iotaRules → env.RuleKind df
 
 theorem VEnv.RuleKind.mono {env env' : VEnv} (H : env ≤ env') {df} :
     env.RuleKind df → env'.RuleKind df
   | .defn ci h => .defn ci (H.constants h)
-  | .quot h1 h2 h3 => .quot (H.constants h1) (H.constants h2) (H.constants h3)
+  | .quot h1 h2 h3 h4 =>
+    .quot (H.constants h1) (H.constants h2) (H.constants h3) (H.constants h4)
   | .iota h1 h2 => .iota (H.inducts h1) h2
 
 namespace VEnv
@@ -105,7 +106,7 @@ theorem WF.ruleKind {env : VEnv} (henv : env.WF) {df : VDefEq} (h : env.defeqs d
     | quot hq h1 =>
       rcases addQuot_defeqs h1 h with rfl | h
       · exact .quot (addQuot_quotLift h1) (addQuot_quotMk h1)
-          ((VDecl.WF.quot hq h1).le.constants hq)
+          ((VDecl.WF.quot hq h1).le.constants hq) (addQuot_quot h1)
       · exact IH h
     | induct hd _ h1 =>
       rename_i d _

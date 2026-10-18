@@ -1,4 +1,5 @@
 import Lean4Lean.Theory.Typing.Recursor
+import Lean4Lean.Theory.Typing.RecursorInv
 
 /-! The projection's type as `inferProj` computes it: the constructor's declared field domain at
 the parameters and the earlier projections. The kernel lets the projection past an earlier field

@@ -1,4 +1,4 @@
-import Lean4Lean.Verify.Environment.NestedAuxWF
+import Lean4Lean.Verify.Environment.NestedPlaced
 
 /-!
 # `addInductive`
@@ -197,7 +197,7 @@ theorem addInductive.WF_nested {env : Environment} {ves : VEnvs} (wf : ves.WF en
     ∃ ves' : VEnvs, ves'.WF envF ∧ ∀ safety, ves.venv safety ≤ ves'.venv safety := by
   -- the translation, checked flat
   obtain ⟨d, venv', hu, hd, hdaux, hflat, hq, hnp, -, ⟨E₁, level, hE₁, hEl⟩, hIdx, hM, hX, -⟩ := hFR
-  obtain ⟨hU, hUs, hdpar, hlpv, htyTr⟩ := hX rfl
+  obtain ⟨hU, hUs, hdpar, hlpv, htyTr, hcty⟩ := hX rfl
   have henvAt := wf.toVEnvAt (inductSafety isUnsafe)
   generalize hvenv : ves.venv (inductSafety isUnsafe) = venv at henvAt hd hflat hE₁
   have henv : venv.WF := henvAt.tr.wf
@@ -698,10 +698,126 @@ theorem addInductive.WF_nested {env : Environment} {ves : VEnvs} (wf : ves.WF en
       · obtain ⟨T, hT, e⟩ := List.mem_map.1 h'
         cases e
         exact (hRI.renNames _ c' hc' (List.mem_map_of_mem hT)).elim
+  -- where the kernel's restoration replaces
+  have hpsz : res.params.size = d.params.length := by rw [hparams]; simpa [hxl] using hdpar.symm
+  have hK : ∀ c K, res.aux2nested.find? c = some K → ∃ J Ls Ds,
+      K.abstract res.params = Expr.mkAppList (.const J Ls) Ds ∧
+        ∀ D ∈ Ds, D.looseBVarRange' ≤ d.params.length := by
+    intro c K hc
+    have hm : (K, c) ∈ pairs := by
+      rw [haux2] at hc
+      exact (foldl_insert_getElem?_mem {} hc).resolve_left (by simp)
+    obtain ⟨o, -, Ls, Ks, Ds, -, hD, -, hys⟩ := Lean4Lean.List.Forall₂.forall_exists_l hocc _ hm
+    refine ⟨o.ind, Ls, Ds.toList, by rw [hD, Expr.mkAppN_eq_mkAppList], fun D hD' => ?_⟩
+    obtain ⟨y, -, hy⟩ := Lean4Lean.List.Forall₂.forall_exists_l
+      (hys (List.replicate res.params.size (.sort .zero)) (by simp)) D hD'
+    refine hy.looseBVarRange_le fun i p h => ?_
+    obtain ⟨j, hj, e, -⟩ := paramCtx_find? h
+    cases e
+    simpa [hpsz] using hj
+  have hPF := (hS lps venv VEnv.LE.rfl fun _ h => h).placedFn (by rw [hnpar, hdpar]) hK
+  -- the own constructors' types have their auxiliary constants placed after the parameters
+  have hpa : ∀ p ∈ pairs, (R p.2).isSome := by
+    intro p hp
+    have hm : p.2 ∈ auxs.map (·.name) := hpairs ▸ List.mem_map_of_mem hp
+    obtain ⟨k, T₂, hT₂, e⟩ := hauxName hm
+    obtain ⟨-, o, -, ho, -⟩ := hpairk k T₂ hT₂
+    rw [← e]; exact (show R T₂.name = _ from VInductDecl.auxTable_type HA hT₂ ho) ▸ rfl
+  have hpl : ∀ (j : Nat) T, j < n → d.types[j]? = some T → ∀ c ∈ T.ctors, ∀ c₀,
+      env'.find? c.name = some (.ctorInfo c₀) →
+      ElimNestedInductive.PlacedAfter (fun c => (R c).isSome) (lps.map .param)
+        d.params.length d.params.length c₀.type ∧
+      c₀.type.anySub (constP fun c =>
+        ((mkAuxRecNameMap env' (I :: rest)).2.find? c).isSome) = false := by
+    intro j T hj hT c hc c₀ hf₀
+    obtain ⟨t, ht⟩ : ∃ t, (I :: rest)[j]? = some t := ⟨_, List.getElem?_eq_getElem hj⟩
+    have ht₁ : (I :: rest ++ auxs)[j]? = some t := by
+      rw [List.getElem?_append_left hj]; exact ht
+    obtain ⟨t', ht', hD⟩ := hTD.getElem?_left ht₁
+    obtain ⟨T'', hT'', hE⟩ := hEl.types.getElem?_left ht'
+    rw [hT] at hT''; cases hT''
+    obtain ⟨ct, hct, hce⟩ := Lean4Lean.List.Forall₂.forall_exists_r hE.2 c hc
+    have hty := hcty t' (List.mem_of_getElem? ht') ct hct c₀ (hce.1 ▸ hf₀)
+    obtain ⟨ct₀, hct₀, hCD⟩ := Lean4Lean.List.Forall₂.forall_exists_r hD.2.2 ct hct
+    have htm : t ∈ I :: rest := List.mem_of_getElem? ht
+    have hin₀ := hin' t (List.mem_append_left _ htm) ct₀ hct₀
+    obtain ⟨B, hB, hpeel, hAP⟩ := hCD.placed (isAux := fun c => (R c).isSome) hpa hin₀
+      ((hcl t htm).2.2 ct₀ hct₀).2.1
+    refine ⟨?_, ?_⟩
+    · rw [hty, hB, hdpar]
+      exact ElimNestedInductive.placedAfter_setBody hAP hpeel hin₀
+    · obtain ⟨c₀', hf₀', -, ⟨-, -, htr⟩, -⟩ := hfC j T hT c hc
+      rw [hf₀] at hf₀'; cases hf₀'
+      refine TrExprS.anySub_constP (fun x hx => ?_) htr
+      refine hrenE envT' hT' x ?_
+      rw [(hS lps venv VEnv.LE.rfl fun _ h => h).ren_eq]
+      intro h; rw [h] at hx; cases hx
+  -- the occurrences restoring puts back translate over the parameters
+  have hocc' : ∀ E₀, venv.addConstList (d.restoreNested R ren n ns cname).typeConsts = some E₀ →
+      ∀ Qs, E₀.IsTele d.uvars [] Qs → E₀.TeleDefEq d.uvars [] Qs d.params →
+      ∀ c, (R c).isSome → ∃ Y, TrExprS E₀ lps (paramVLCtx Qs)
+        ((Expr.mkAppList (.const c (lps.map .param))
+          (ElimNestedInductive.bvs d.params.length 0)).replaceNoCache
+          (ElimNestedInductive.Result.restoreFn res env' lps
+            (mkAuxRecNameMap env' (I :: rest)).2)) Y := by
+    have htyTr' := hvenv ▸ htyTr
+    obtain ⟨r0, hr0, hTD0⟩ := hTD.getElem?_left (i := 0) (a := I) rfl
+    obtain ⟨T0, -, hty0, hag0⟩ := htyTr'.getElem?_left hr0
+    rw [hTD0.2.1] at hty0 hag0
+    have hpeelI := hoI.peel hxnd fun x _ => Expr.SuppIn.mono
+      (S := ElimNestedInductive.FVOnly fun _ => False) (S' := ElimNestedInductive.FVOnly (· ≠ x))
+      ⟨fun _ h => h.elim, fun _ => id, fun _ => id⟩ (hcl I (.head _)).1
+    have hlfI : xs.length ≤ I.type.leadingForalls := le_leadingForalls_of_peel hpeelI
+    obtain ⟨Qs₀, B₀, hQB, hQl⟩ :=
+      VExpr.exists_foralls_of_le xs.length T0.type (Nat.le_trans hlfI hty0.leadingForalls_le)
+    have hQ₀ : venv.TeleDefEq d.uvars [] Qs₀ d.params :=
+      hag0 (by rw [hdpar, ← hxl]; exact hlfI) Qs₀ B₀ hQB (by rw [hQl, hxl, hdpar])
+    intro E₀ h0 Qs hQ hQP c hc
+    have hle₀ := VEnv.addConstList_le h0
+    have henv₀ : E₀.WF := VEnv.WF.addConstList henv (fun p hp => by
+      obtain ⟨T', hT', rfl⟩ := List.mem_map.1 hp
+      exact (hdN.types T' hT').1) h0
+    have hVT₀ : VEnvAt envT (inductSafety isUnsafe) E₀ :=
+      typeAx_venvAt hF henvAt hflat hd hRI.spec rfl (by simp) hnn hRI.Rfresh hRI.renfresh hnamesR
+        rfl hlpk h0
+    have hI0 : TrExprS E₀ lps [] I.type (.foralls Qs₀ B₀) := hQB ▸ hty0.mono hle₀
+    have hOT := nested_occs_tr wf hcl hrun hoI hxnd hparams hA haux2 hpnd hF hVT₀ hQl hI0
+    have hP₀ : E₀.IsTele d.uvars [] d.params := hd.params.mono hle₀
+    have hΔ₁ := (paramVLCtx_isDefEq henv₀ (hQ₀.mono hle₀) hP₀ trivial (Δ₁ := []) (Δ₂ := []) rfl
+      .nil).symm
+    have hΔ₂ := paramVLCtx_isDefEq henv₀ hQP hP₀ trivial (Δ₁ := []) (Δ₂ := []) rfl .nil
+    simp only [List.append_nil] at hΔ₁ hΔ₂
+    rw [hU] at hΔ₁ hΔ₂
+    have S := hS lps venv VEnv.LE.rfl fun _ h => h
+    refine S.occ_tr (by rw [hnpar, hdpar]) hK hUs henv₀.ordered (fun l h => h.mono hle₀)
+      hQP.length_eq (by simpa [hU] using hQ.onCtx trivial)
+      (fun c h hc => by rw [S.n_eq c h hc, hnpar, hdpar]) (fun c h hc => ?_)
+      (fun a K J Ls Ds hfa hD D hDm => ?_) hc
+    · obtain ⟨F, HE⟩ := hHE E₁ E₀ hE₁ h0 Qs hQ hQP
+      exact HE.inst_wf hc
+    · have hm : (K, a) ∈ pairs := by
+        rw [haux2] at hfa
+        exact (foldl_insert_getElem?_mem {} hfa).resolve_left (by simp)
+      obtain ⟨J', Ls', Ks, hK', hKs⟩ := hOT _ hm
+      simp only at hK'
+      have e1 : K.abstract res.params =
+          Expr.mkAppList (.const J' Ls') (Ks.toList.map (·.abstract' xs)) := by
+        rw [hK', hparams]
+        show (mkAppN (.const J' Ls') Ks).abstract ⟨xs.map .fvar⟩ = _
+        rw [Expr.abstract_eq', Expr.mkAppN_eq_mkAppList, Expr.abstract'_mkAppList]
+        rfl
+      have e2 := congrArg Expr.getAppArgs (hD.symm.trans e1)
+      rw [Expr.getAppArgs_mkAppList_const, Expr.getAppArgs_mkAppList_const] at e2
+      have e3 : Ds = Ks.toList.map (·.abstract' xs) := by simpa using e2
+      rw [e3] at hDm
+      obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hDm
+      obtain ⟨k', hk'⟩ := hKs k hk
+      obtain ⟨k₂, h2⟩ := TrExprS.defeqDFC henv₀ (hΔ₁ henv₀.ordered) hk'
+      exact TrExprS.defeqDFC henv₀ hΔ₂ h2
   obtain ⟨venvF, hstep⟩ := nestedAddInduct (d := d) (R := R) (ren := ren) (n := n) (ns := ns)
     (cname := cname) hF henvAt hflat hd hRI.spec hdN rfl hRI.n_pos hns hnn hS
     hP hcL hRI.Rfresh hRI.renfresh hout (fun _ _ _ _ _ => rfl) hnamesR hSN hM rfl hlit hlpk
-    hHE sorry sorry sorry hRI.litR hrenE hUs (by rw [hnpar, hdpar])
+    hHE hPF hocc' hpl hRI.litR hrenE hUs (by rw [hnpar, hdpar])
   have hu' : (d.restoreNested R ren n ns cname).isUnsafe = isUnsafe := hu
   have hdecl : (d.restoreNested R ren n ns cname).WF
       (ves.venv (inductSafety (d.restoreNested R ren n ns cname).isUnsafe)) := by

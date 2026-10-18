@@ -2,6 +2,7 @@ import Lean4Lean.Verify.Typing.Lemmas
 import Lean4Lean.Verify.TypeChecker.IsDefEq
 import Lean4Lean.Theory.Typing.ProjKernel
 import Lean4Lean.Theory.Typing.Iota
+import Lean4Lean.Theory.Typing.IotaInv
 
 namespace Lean4Lean
 open Lean hiding Environment Exception

@@ -193,7 +193,7 @@ variable {F : Expr → Option Expr} {isAux isRec : Name → Bool} {lvls : List L
   (hF : PlacedFn F isAux isRec lvls n)
 include hF
 
-theorem PlacedFn.app_none {f a : Expr} {K : Nat} (hA : AuxPlaced isAux lvls n K (.app f a))
+theorem PlacedFn.app_none {f a : Expr}
     (hr : (Expr.app f a).anySub (constP isRec) = false)
     (hs : ¬∃ c ls xs, spineNM (.app f a) = some (c, ls, xs) ∧ isAux c ∧ xs.length = n) :
     F (.app f a) = none := by

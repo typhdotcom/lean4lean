@@ -1,8 +1,10 @@
 import Lean4Lean.Theory.Typing.EnvLemmas
 import Lean4Lean.Theory.Typing.Strong
+import Lean4Lean.Theory.Typing.LogRel.ModelInv
 
 /-!
-A bunch of important structural theorems which we can't prove :(
+Structural theorems of the type theory. `sort_forallE_inv` follows from the soundness of the shape
+model (`Theory/Typing/LogRel`); the others are not proved yet.
 -/
 
 namespace Lean4Lean
@@ -49,4 +51,4 @@ theorem IsDefEqU.indApp_inv (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U))
       (d.params.map (·.instL ls₁) ++ T.indices.map (·.instL ls₁)).reverse := sorry
 
 theorem IsDefEqU.sort_forallE_inv (henv : VEnv.WF env) (hΓ : OnCtx Γ (env.IsType U)) :
-    ¬env.IsDefEqU U Γ (.sort u) (.forallE A B) := sorry
+    ¬env.IsDefEqU U Γ (.sort u) (.forallE A B) := henv.sort_forallE_inv hΓ

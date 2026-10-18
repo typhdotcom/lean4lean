@@ -16,11 +16,6 @@ open Kernel
 
 open private Lean.Kernel.Environment.add from Lean.Environment
 
-theorem VEnv.addDefEqList_constants : ∀ {env : VEnv} {dfs : List VDefEq},
-    (env.addDefEqList dfs).constants = env.constants
-  | _, [] => rfl
-  | _, _ :: _ => VEnv.addDefEqList_constants (env := VEnv.addDefEq ..)
-
 /-- A constant of the environment an `AddInductN` step makes is an earlier one or one of the
 block's. -/
 theorem AddInductN.constants_cases {nn : Nat} {safety : DefinitionSafety} {m₁ m₂ : ConstMap}

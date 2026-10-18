@@ -1,6 +1,7 @@
 import Lean4Lean.Verify.TypeChecker.Reduce
 import Lean4Lean.Verify.EquivManager
 import Lean4Lean.Theory.Typing.Iota
+import Lean4Lean.Theory.Typing.IotaInv
 
 namespace Lean4Lean.TypeChecker.Inner
 open Lean hiding Environment Exception

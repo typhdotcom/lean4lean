@@ -4,6 +4,7 @@ import Lean4Lean.Verify.Expr
 import Lean4Lean.Theory.Typing.Strong
 import Lean4Lean.Theory.Typing.UniqueTyping
 import Lean4Lean.Theory.Typing.Recursor
+import Lean4Lean.Theory.Typing.RecursorInv
 import Lean4Lean.Instantiate
 
 namespace Lean4Lean

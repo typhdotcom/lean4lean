@@ -60,7 +60,7 @@ theorem WF.quotBodyWF (henv : env.WF) (hdf : env.defeqs quotDefEq) :
     have := congrArg VDefEq.lhs e
     rw [QuotRed.quotDefEq_eq] at this
     simp [VDefVal.toDefEq, QuotRed.liftBinders] at this
-  | quot h1 h2 h3 => exact ⟨_, _, _, VEnv.quotBodyWF h3 h2 h1⟩
+  | quot h1 h2 h3 _ => exact ⟨_, _, _, VEnv.quotBodyWF h3 h2 h1⟩
   | iota _ hm =>
     subst e
     simp only [VInductDecl.iotaRules, List.mem_map] at hm

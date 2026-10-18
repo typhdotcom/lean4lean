@@ -1,4 +1,5 @@
 import Lean4Lean.Theory.Typing.Iota
+import Lean4Lean.Theory.Typing.IotaInv
 
 /-!
 # Restoring a nested block's translation

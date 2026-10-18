@@ -46,7 +46,8 @@ def FlatResult (ves : VEnvs) (env : Environment) (lparams : List Name) (nparams 
         (decl.params.length ≤ t.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
           ps.length = decl.params.length →
           (ves.venv (inductSafety isUnsafe)).TeleDefEq decl.uvars [] ps decl.params))
-        types decl.types) ∧
+        types decl.types ∧
+      ∀ t ∈ types, ∀ ct ∈ t.ctors, ∀ v, env'.find? ct.name = some (.ctorInfo v) → v.type = ct.type) ∧
     ∀ T ∈ decl.types, ∀ c ∈ T.ctors, ∀ (ps Ds : List VExpr) (B : VExpr),
       c.type = .foralls (ps ++ Ds) B → ps.length = decl.params.length →
       ∀ (k : Nat) (D : VExpr) (f : VField), Ds[k]? = some D → c.fields[k]? = some f →
@@ -368,7 +369,7 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
   rw [hc₂, hc₂U, hcl] at hEl
   refine ⟨d, _, hR.isUnsafe, hdecl, hR.aux, hstep, hRq, fun _ n hn => ?_, nofun,
     ⟨venvAx, level, hAxd, hEl⟩, hR.idxFree,
-    AddInductive.majorAt_of_recs mapWFC hRc hRnd hRfr hRnames hRmaj, fun _ => ⟨?_, hUs, ?_, ?_, ?_⟩,
+    AddInductive.majorAt_of_recs mapWFC hRc hRnd hRfr hRnames hRmaj, fun _ => ⟨?_, hUs, ?_, ?_, ?_, ?_⟩,
     hR.elaborates.stripsTo (by rw [hR.params]; exact hT.nparams)⟩
   rotate_left
   · rw [hR.uvars, hc₂U, hcl]
@@ -394,6 +395,23 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
     rw [hR.uvars, hc₂U, hR.params, hcl]
     rw [hR.params] at hl hpl
     exact hag hl ps B he hpl
+  · intro t ht ct hct v hv
+    have hC' : env'.constants.WF := by
+      rw [hRc]; exact insertConsts_wf mapWFC hRfr hRnd
+    rw [Kernel.Environment.find?, hC'.find?'_eq_find?, hRc] at hv
+    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.1 hct
+    have hm : ConstantInfo.ctorInfo (AddInductive.ctorVal c.lparams stats.params.size isUnsafe t ct i)
+        ∈ (AddInductive.ctorVals c.lparams stats.params.size types isUnsafe).map .ctorInfo :=
+      List.mem_map_of_mem (List.mem_flatMap.2 ⟨t, ht, List.mem_map.2
+        ⟨(ct, i), List.mk_mem_zipIdx_iff_getElem?.2 hi, rfl⟩⟩)
+    have h1 := insertConsts_find?_of_mem
+      (by rw [hDc]; exact insertConsts_wf c.envAt.tr.map_wf hDfr hDnd) hDCfr hDCnd hm
+    rw [← hDCc] at h1
+    have h2 := insertConsts_find?_of_some mapWFC hRfr hRnd h1
+    rw [show (ConstantInfo.ctorInfo (AddInductive.ctorVal c.lparams stats.params.size isUnsafe t ct
+      i)).name = ct.name from rfl] at h2
+    rw [h2] at hv
+    cases hv; rfl
   obtain ⟨ci, hci, rfl⟩ := hnames n hn
   refine Bool.eq_false_iff.2 fun h => ?_
   simp only [List.mem_append] at hci

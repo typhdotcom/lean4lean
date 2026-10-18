@@ -19,10 +19,13 @@ import Lean4Lean.Theory.Typing.LogRel.RuleBodies
 import Lean4Lean.Theory.Typing.Telescope
 import Lean4Lean.Theory.Typing.TelescopeInv
 import Lean4Lean.Theory.Typing.InductiveEnv
+import Lean4Lean.Theory.Typing.RecursorInv
 import Lean4Lean.Theory.Typing.Recursor
 import Lean4Lean.Theory.Typing.InductiveRules
 import Lean4Lean.Theory.Typing.QuotReduce
+import Lean4Lean.Theory.Typing.QuotReduceInv
 import Lean4Lean.Theory.Typing.Iota
+import Lean4Lean.Theory.Typing.IotaInv
 import Lean4Lean.Theory.Typing.ProjKernel
 import Lean4Lean.Theory.Typing.Nested
 import Lean4Lean.Theory.Typing.NestedDecl
@@ -32,3 +35,4 @@ import Lean4Lean.Theory.Typing.NestedAux
 import Lean4Lean.Theory.Typing.LogRel.Shape
 import Lean4Lean.Theory.Typing.LogRel.BlockSound
 import Lean4Lean.Theory.Typing.LogRel.QuotSound
+import Lean4Lean.Theory.Typing.LogRel.ModelInv

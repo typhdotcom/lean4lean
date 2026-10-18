@@ -128,7 +128,8 @@ def isEquiv (ids : Scopes) (lv : Expr → Nat) (useHash : Bool) (e1 e2 : Expr) :
         fun _ => isEquiv ids lv useHash b1 b2
     | _, _ => pure none
   let some l := result | return none
-  modify (·.merge ids n1 n2 (max l (max (lv e1) (lv e2))))
+  -- the structural equivalence holds in the current scope, which the link records
+  modify (·.merge ids n1 n2 ids.size)
   return some l
 termination_by e1
 

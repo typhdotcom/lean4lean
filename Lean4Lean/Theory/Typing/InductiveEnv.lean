@@ -1,4 +1,8 @@
-import Lean4Lean.Theory.Typing.TelescopeInv
+import Lean4Lean.Theory.Typing.Telescope
+import Lean4Lean.Theory.Typing.Pattern
+import Lean4Lean.Theory.Typing.Projection
+import Lean4Lean.Theory.Typing.EnvLemmas
+import Lean4Lean.Theory.Typing.Strong
 
 /-!
 # Environments with an inductive block

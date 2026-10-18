@@ -440,9 +440,11 @@ theorem both.SWF {x : StateM ScopedEquivManager (Option Nat)}
     | none => exact .pure nofun
     | some b => exact .pure fun _ e => by cases e; exact ⟨a, b, rfl, hr a rfl, hr' b rfl⟩
 
-/-- An equivalence the manager reports holds at the level it reports. -/
-theorem isEquiv.SWF (hE : ERel E) {lv : Expr → Nat} {m : ScopedEquivManager} {useHash : Bool}
-    {e₁ e₂ : Expr} :
+/-- An equivalence the manager reports holds at the level it reports. A structural equivalence is
+recorded at the current depth `ids.size`, where every reported level's equivalences hold
+(`hTop`). -/
+theorem isEquiv.SWF (hE : ERel E) (hTop : ∀ {l e₁ e₂}, E l e₁ e₂ → E ids.size e₁ e₂)
+    {lv : Expr → Nat} {m : ScopedEquivManager} {useHash : Bool} {e₁ e₂ : Expr} :
     SWF ids E m (isEquiv ids lv useHash e₁ e₂) fun r _ => ∀ l, r = some l → E l e₁ e₂ := by
   unfold isEquiv
   split
@@ -474,18 +476,18 @@ theorem isEquiv.SWF (hE : ERel E) {lv : Expr → Nat} {m : ScopedEquivManager} {
   have fin {m} (le : LE m₀ m) {r : Option Nat} (H : ∀ l, r = some l → E l e₁ e₂) :
       ScopedEquivManager.SWF ids E m (do
         let some l := r | return none
-        modify (·.merge ids n1 n2 (max l (max (lv e₁) (lv e₂))))
+        modify (·.merge ids n1 n2 ids.size)
         return some l) fun r _ => ∀ l, r = some l → E l e₁ e₂ := by
     cases r with
     | none => exact .pure nofun
     | some l =>
       refine (modifyMerge.SWF hE fun wf' => ⟨wf'.dom.2 ⟨_, le a1⟩, wf'.dom.2 ⟨_, le b1⟩,
-        wf'.nodeRel hE (le a1) (le b1) (hE.mono (by omega) (H l rfl))⟩).bind fun _ _ _ _ => ?_
+        wf'.nodeRel hE (le a1) (le b1) (hTop (H l rfl))⟩).bind fun _ _ _ _ => ?_
       exact .pure fun _ e => by cases e; exact H l rfl
   have leaf {X : Option Nat} (H : ∀ l, X = some l → E l e₁ e₂) :
       ScopedEquivManager.SWF ids E m₀ (do let result ← pure X; match result with
         | some l => do
-          modify fun x => x.merge ids n1 n2 (max l (max (lv e₁) (lv e₂)))
+          modify fun x => x.merge ids n1 n2 ids.size
           pure (some l)
         | _ => pure none) fun r _ => ∀ l, r = some l → E l e₁ e₂ :=
     SWF.bind (P := fun r _ => r = X) (.pure rfl) fun r _ le hr => by subst hr; exact fin le H
@@ -501,7 +503,7 @@ theorem isEquiv.SWF (hE : ERel E) {lv : Expr → Nat} {m : ScopedEquivManager} {
       (H : ∀ a b, P a → Q b → E (max a b) e₁ e₂) :
       ScopedEquivManager.SWF ids E m₀ (do let result ← both x y; match result with
         | some l => do
-          modify fun x => x.merge ids n1 n2 (max l (max (lv e₁) (lv e₂)))
+          modify fun x => x.merge ids n1 n2 ids.size
           pure (some l)
         | _ => pure none) fun r _ => ∀ l, r = some l → E l e₁ e₂ :=
     (both.SWF h1 h2).bind fun r _ le hr => fin le fun l e => by
@@ -519,19 +521,19 @@ theorem isEquiv.SWF (hE : ERel E) {lv : Expr → Nat} {m : ScopedEquivManager} {
       split at h <;> cases h; rename_i h; simp only [beq_iff_eq] at h; rw [h])
   · exact leaf (eqv ite0 fun h => by
       split at h <;> cases h; rename_i h; simp only [beq_iff_eq] at h; rw [h])
-  · exact rec2 (isEquiv.SWF hE) (isEquiv.SWF hE) fun _ _ => hE.app
-  · exact rec2 (isEquiv.SWF hE) (isEquiv.SWF hE) fun _ _ => hE.lam
-  · exact (isEquiv.SWF (useHash := useHash) (lv := lv) hE).bind fun r _ le hr =>
+  · exact rec2 (isEquiv.SWF hE hTop) (isEquiv.SWF hE hTop) fun _ _ => hE.app
+  · exact rec2 (isEquiv.SWF hE hTop) (isEquiv.SWF hE hTop) fun _ _ => hE.lam
+  · exact (isEquiv.SWF (useHash := useHash) (lv := lv) hE hTop).bind fun r _ le hr =>
       fin le fun l e => hE.mdata (hr l e)
-  · exact rec2 (isEquiv.SWF hE) (isEquiv.SWF hE) fun _ _ => hE.forallE
+  · exact rec2 (isEquiv.SWF hE hTop) (isEquiv.SWF hE hTop) fun _ _ => hE.forallE
   · split
     · rename_i h
       simp only [Bool.and_eq_true, beq_iff_eq] at h; obtain ⟨rfl, rfl⟩ := h
-      exact (isEquiv.SWF (useHash := useHash) (lv := lv) hE).bind fun r _ le hr =>
+      exact (isEquiv.SWF (useHash := useHash) (lv := lv) hE hTop).bind fun r _ le hr =>
         fin le fun l e => hE.proj (hr l e)
     · exact (SWF.pure (P := fun r _ => r = none) rfl).bind fun r _ le hr => by
         subst hr; exact fin (r := none) le fun _ e => by cases e
-  · refine (both.SWF (both.SWF (isEquiv.SWF hE) (isEquiv.SWF hE)) (isEquiv.SWF hE)).bind fun r _ le hr =>
+  · refine (both.SWF (both.SWF (isEquiv.SWF hE hTop) (isEquiv.SWF hE hTop)) (isEquiv.SWF hE hTop)).bind fun r _ le hr =>
       fin le fun l e => ?_
     obtain ⟨a, b, rfl, ⟨a', b', rfl, ha, hb⟩, hc⟩ := hr l e
     exact hE.letE ha hb hc

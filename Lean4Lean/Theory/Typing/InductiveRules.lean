@@ -1,4 +1,5 @@
 import Lean4Lean.Theory.Typing.Substitution
+import Lean4Lean.Theory.Typing.RecursorInv
 
 /-!
 # What an inductive block generates is well typed
