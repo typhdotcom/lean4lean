@@ -136,31 +136,61 @@ theorem VExpr.appN_const_inj {n n' : Name} {ls ls' : List VLevel} {xs ys : List 
     rw [VExpr.appN_const_inj h1]
 termination_by xs.length
 
+theorem VEnv.EqUpToLevels.foralls_inv {U : Nat} : ∀ {As As' : List VExpr} {B B' : VExpr},
+    (∀ A C, B ≠ .forallE A C) → (∀ A C, B' ≠ .forallE A C) →
+    VEnv.EqUpToLevels U (.foralls As B) (.foralls As' B') →
+    As.length = As'.length ∧ VEnv.EqUpToLevels U B B'
+  | [], [], _, _, _, _, h => ⟨rfl, h⟩
+  | [], _ :: _, _, _, hB, _, h => by cases h; exact (hB _ _ rfl).elim
+  | _ :: _, [], _, _, _, hB', h => by cases h; exact (hB' _ _ rfl).elim
+  | _ :: _, _ :: _, _, _, hB, hB', h => by
+    cases h with | forallE _ h =>
+    obtain ⟨h1, h2⟩ := VEnv.EqUpToLevels.foralls_inv hB hB' h
+    exact ⟨by simp [h1], h2⟩
+
+theorem VEnv.EqUpToLevels.appN_const_length {U : Nat} {n n' : Name} {ls ls' : List VLevel}
+    (xs ys : List VExpr)
+    (h : VEnv.EqUpToLevels U (.appN (.const n ls) xs) (.appN (.const n' ls') ys)) :
+    xs.length = ys.length := by
+  obtain rfl | ⟨xs', x, rfl⟩ := List.eq_nil_or_concat xs
+  · obtain rfl | ⟨ys', y, rfl⟩ := List.eq_nil_or_concat ys
+    · rfl
+    · simp only [List.concat_eq_append, appN_append_singleton] at h
+      change VEnv.EqUpToLevels U (.const n ls) _ at h; cases h
+  · obtain rfl | ⟨ys', y, rfl⟩ := List.eq_nil_or_concat ys
+    · simp only [List.concat_eq_append, appN_append_singleton] at h
+      change VEnv.EqUpToLevels U _ (.const n' ls') at h; cases h
+    · simp only [List.concat_eq_append, appN_append_singleton] at h ⊢
+      cases h with | app h _ => simp [VEnv.EqUpToLevels.appN_const_length xs' ys' h]
+termination_by xs.length
+
 /-- An auxiliary type's constructor has as many fields and indices as the constructor of the
 earlier type it copies. -/
 theorem VInductDecl.auxCounts {d dI : VInductDecl} {envT envTI : VEnv} {T TI : VInductiveType}
     {c cI : VConstructor} {o : VNested} (hno : T.nested = some o) (hcW : c.WF envT d T)
     (hTI : TI.nested = none) (hcIW : cI.WF envTI dI TI)
     (hargslen : o.args.length = dI.params.length)
-    (hcorr : ∃ ps B, cI.type = .foralls ps B ∧ ps.length = dI.params.length ∧ ∃ ps',
-      ps'.length = d.params.length ∧
-      c.type = .foralls ps' ((B.instL o.lvls).subst (VExpr.Subst.dflt.consList o.args))) :
+    (hcorr : ∃ ps B, cI.type = .foralls ps B ∧ ps.length = dI.params.length ∧ ∃ ps' Y,
+      ps'.length = d.params.length ∧ c.type = .foralls ps' Y ∧
+      VEnv.EqUpToLevels d.uvars Y ((B.instL o.lvls).subst (VExpr.Subst.dflt.consList o.args))) :
     c.fields.length = cI.fields.length ∧ c.indices.length = cI.indices.length := by
   obtain ⟨ps, Ds, hty, hps, hfs, -⟩ := hcW.shape
   obtain ⟨psI', DsI, htyI, hpsI, hfsI, -⟩ := hcIW.shape
-  obtain ⟨psI, BcI, hcIty, hpsIlen, ps'', hps''len, hcty⟩ := hcorr
+  obtain ⟨psI, BcI, hcIty, hpsIlen, ps'', Y, hps''len, hcty, hY⟩ := hcorr
   rw [hcIty, foralls_append] at htyI
   obtain ⟨rfl, hB⟩ := VExpr.foralls_inj htyI (by rw [hpsIlen, hpsI.length_eq])
   rw [hty, foralls_append] at hcty
-  obtain ⟨rfl, hY⟩ := VExpr.foralls_inj hcty (by rw [hps''len, hps.length_eq])
+  obtain ⟨rfl, rfl⟩ := VExpr.foralls_inj hcty (by rw [hps''len, hps.length_eq])
   rw [hB, instL_foralls, subst_foralls, VInductiveType.typeApp_of_none hTI] at hY
   simp only [VInductiveType.typeApp, hno, instL_appN, instL, subst_appN, List.map_append] at hY
-  obtain ⟨hDs, hZ⟩ := VExpr.foralls_inj' (fun _ _ => appN_const_ne_forallE) (fun _ _ => appN_const_ne_forallE) hY
-  have hlen1 : Ds.length = DsI.length := by rw [hDs]; simp
+  obtain ⟨hlen1, hZ⟩ := VEnv.EqUpToLevels.foralls_inv (fun _ _ => appN_const_ne_forallE)
+    (fun _ _ => appN_const_ne_forallE) hY
+  simp only [List.length_map, List.length_zipIdx] at hlen1
   refine ⟨by rw [← hfs.length, ← hfsI.length, hlen1], ?_⟩
-  have hargs := VExpr.appN_const_inj hZ
-  have := List.append_inj hargs (by simp [hargslen])
-  rw [this.2]; simp
+  have := VEnv.EqUpToLevels.appN_const_length _ _ hZ
+  simp only [List.length_append, List.length_map, VExpr.bvars, List.length_reverse,
+    List.length_range, hargslen] at this
+  omega
 
 /-- Each pair of arguments of a pair of telescope substitutions, definitionally equal at its
 entry instantiated by the left arguments before it. -/

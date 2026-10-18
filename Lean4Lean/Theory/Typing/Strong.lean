@@ -289,15 +289,6 @@ theorem IsDefEqStrong.weak0 (H : env.IsDefEqStrong U [] e1 e2 A) :
   simpa [h1.liftN_eq (Nat.zero_le _), h2.liftN_eq (Nat.zero_le _),
     h3.liftN_eq (Nat.zero_le _)] using H.weakN henv (.zero Γ rfl)
 
-inductive EqUpToLevels (U : Nat) : VExpr → VExpr → Prop
-  | bvar : EqUpToLevels U (.bvar i) (.bvar i)
-  | const : (∀ l ∈ ls, l.WF U) → (∀ l ∈ ls', l.WF U) → List.Forall₂ (· ≈ ·) ls ls' →
-    EqUpToLevels U (.const c ls) (.const c ls')
-  | sort : l.WF U → l'.WF U → l ≈ l' → EqUpToLevels U (.sort l) (.sort l')
-  | app : EqUpToLevels U f f' → EqUpToLevels U a a' → EqUpToLevels U (.app f a) (.app f' a')
-  | lam : EqUpToLevels U A A' → EqUpToLevels U e e' → EqUpToLevels U (.lam A e) (.lam A' e')
-  | forallE : EqUpToLevels U A A' → EqUpToLevels U B B' → EqUpToLevels U (.forallE A B) (.forallE A' B')
-  | proj : EqUpToLevels U e e' → EqUpToLevels U (.proj s k e) (.proj s k e')
 
 variable! {env : VEnv} {ls ls' : List VLevel}
     (hls : ∀ l ∈ ls, l.WF U) (hls' : ∀ l ∈ ls', l.WF U) (heq : List.Forall₂ (· ≈ ·) ls ls') in

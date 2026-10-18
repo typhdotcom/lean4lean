@@ -432,7 +432,8 @@ where
     else
       k uiTy xs
 
-variable (stats : InductiveStats) (u : Array Expr) (recInfos : Array RecInfo) in
+variable (stats : InductiveStats) (blockNames : NameSet) (u : Array Expr)
+  (recInfos : Array RecInfo) in
 def loopU (i : Nat) (v : Array Expr) (ihs : Array IHInfo)
     (k : Array Expr → Array IHInfo → M α) : M α := do
   if _h : i < u.size then
@@ -440,6 +441,10 @@ def loopU (i : Nat) (v : Array Expr) (ihs : Array IHInfo)
     let (viTy, ih) ← loopUArgs ui fun uiTy xs => do
       let (itIdx, itIndices) ← getIIndices stats uiTy
       let lctx ← getLCtx
+      for x in xs do
+        if let some d := lctx.findFVar? x then
+          if d.type.anySubterm fun | .const c _ => blockNames.contains c | _ => false then
+            throw <| .other "invalid recursive argument, its binders mention the block"
       return (lctx.mkForall xs <| .app (mkAppN recInfos[itIdx]!.motive itIndices) (mkAppN ui xs),
         { itIdx, field := ui
           binders := xs.mapIdx fun i x => match lctx.findFVar? x with
@@ -453,7 +458,7 @@ def loopU (i : Nat) (v : Array Expr) (ihs : Array IHInfo)
     k v ihs
 termination_by u.size - i
 
-variable (stats : InductiveStats) (indTypeName : Name) (dIdx : Nat) in
+variable (stats : InductiveStats) (blockNames : NameSet) (indTypeName : Name) (dIdx : Nat) in
 def loopCtors (recInfos : Array RecInfo)
     (ctors : List Constructor) (k : Array RecInfo → M α) : M α := match ctors with
   | ctor::ctors =>
@@ -461,7 +466,7 @@ def loopCtors (recInfos : Array RecInfo)
     let (itIdx, itIndices) ← getIIndices stats t
     let introApp := mkAppN (mkAppN (.const ctor.name stats.levels) stats.params) bu
     let motiveApp := Expr.app (mkAppN recInfos[itIdx]!.motive itIndices) introApp
-    loopU stats u recInfos 0 #[] #[] fun v ihs => do
+    loopU stats blockNames u recInfos 0 #[] #[] fun v ihs => do
     let lctx ← getLCtx
     let minorTy := lctx.mkForall bu <| lctx.mkForall v motiveApp
     let minorName := ctor.name.replacePrefix indTypeName .anonymous
@@ -471,12 +476,12 @@ def loopCtors (recInfos : Array RecInfo)
     loopCtors recInfos ctors k
   | [] => k recInfos
 
-variable (stats : InductiveStats) (indTypes : Array InductiveType) in
+variable (stats : InductiveStats) (blockNames : NameSet) (indTypes : Array InductiveType) in
 def loopInd2 (dIdx : Nat) (recInfos : Array RecInfo) (k : Array RecInfo → M α) : M α := do
   if _h : dIdx < indTypes.size then
     let indType := indTypes[dIdx]
     let indTypeName := indType.name
-    loopCtors stats indTypeName dIdx recInfos indType.ctors fun recInfos =>
+    loopCtors stats blockNames indTypeName dIdx recInfos indType.ctors fun recInfos =>
     loopInd2 (dIdx + 1) recInfos k
   else
     k recInfos
@@ -487,7 +492,10 @@ end mkRecInfos
 def mkRecInfos (stats : InductiveStats) (indTypes : Array InductiveType)
     (elimLevel : Level) (k : Array RecInfo → M α) : M α :=
   mkRecInfos.loopInd1 stats indTypes elimLevel 0 #[] fun recInfos =>
-  mkRecInfos.loopInd2 stats indTypes 0 recInfos k
+  -- The block's types and constructors, which no inductive hypothesis's binders mention.
+  let blockNames := indTypes.foldl (init := {}) fun s t =>
+    t.ctors.foldl (·.insert ·.name) (s.insert t.name)
+  mkRecInfos.loopInd2 stats blockNames indTypes 0 recInfos k
 
 def getRecLevels (elimLevel : Level) (levels : List Level) : List Level :=
   if elimLevel.isParam then elimLevel :: levels else levels
@@ -862,13 +870,20 @@ def checkNoNestedAux (n : Name) (e : Expr) : Except Exception Unit := do
       | _ => false then
     throw <| .other s!"invalid declaration '{n}', it uses the reserved prefix '_nested'"
 
+/-- A declared type has no loose bound variables. -/
+def checkClosed (n : Name) (e : Expr) : Except Exception Unit := do
+  if e.hasLooseBVars then
+    throw <| .other s!"invalid declaration '{n}', its type has loose bound variables"
+
 def Environment.addInductive (env : Environment) (lparams : List Name) (nparams : Nat)
     (types : List InductiveType) (isUnsafe allowPrimitive : Bool) (fuel : FuelConfig := {}) :
     Except Exception Environment := do
   for indType in types do
     env.checkNoMVarNoFVar indType.name indType.type
+    checkClosed indType.name indType.type
     for ctor in indType.ctors do
       env.checkNoMVarNoFVar ctor.name ctor.type
+      checkClosed ctor.name ctor.type
       checkNoNestedAux ctor.name ctor.type
   let res ← ElimNestedInductive.run fuel.inductiveFuel nparams types env
     |>.run' { lvls := lparams.map .param, newTypes := types.toArray }

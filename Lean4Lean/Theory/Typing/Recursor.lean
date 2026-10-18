@@ -1450,7 +1450,7 @@ theorem auxHeads {env envT : VEnv} (hdecl : d.WF env)
   have hPP : OnCtx d.params.reverse (envT.IsType d.uvars) := by simpa using hP.onCtx trivial
   obtain ⟨o, hno, hAux⟩ := hdecl.aux T hTa
   obtain ⟨⟨dI, tI, TI, hind, hTI, hlvlen, hlvwf, hargslen, hargs,
-    ⟨psJ, BJ, hTIty, hpsJ, ps', hTD, hTty⟩, hctors⟩⟩ := hAux envT hT
+    ⟨psJ, BJ, hTIty, hpsJ, ps', Y, hTD, hTty, hY⟩, hctors⟩⟩ := hAux envT hT
   have hps'len : ps'.length = d.params.length := hTD.length_eq
   have hTW := hdecl.ctors envT hT T (List.mem_append_right _ hTa)
   -- the block of the type the occurrence is of
@@ -1503,6 +1503,10 @@ theorem auxHeads {env envT : VEnv} (hdecl : d.WF env)
       (hTIty ▸ ((hdI.types TI (List.mem_of_getElem? hTI)).1.mono
         ((VEnv.addConstList_le hTI').trans hleI)))
     rw [hname] at hG
+    -- at the body of `T`'s declared type, which agrees with it up to levels
+    have hG : envT.HasType d.uvars d.params.reverse (.appN (.const o.ind o.lvls) o.args) Y := by
+      have ⟨_, hX⟩ := hG.isType henvT.ordered hPP
+      exact .defeqDF (hX.eqUpToLevels henvT.ordered hPP hY.symm) hG
     have hctx : envT.IsDefEqCtx d.uvars [] ps'.reverse d.params.reverse := by
       simpa using hTD.defeqCtx henvT (Γ' := []) .zero trivial hP
     have hGp := hG.defeqDFC henvT.ordered (hctx.symm henvT.ordered)
@@ -1531,7 +1535,7 @@ theorem auxHeads {env envT : VEnv} (hdecl : d.WF env)
     have hβP := hβ.defeqDFC henvT.ordered hctx
     exact (VEnv.IsDefEqU.of_l henvT hPP ⟨_, hβP⟩ happly).hasType.2
   · -- a constructor: the earlier type's, at the occurrence's parameters
-    obtain ⟨cI, hcI, hcn, psI, BcI, hcIty, hpsIlen, ps'', hps''len, hcty⟩ :=
+    obtain ⟨cI, hcI, hcn, psI, BcI, hcIty, hpsIlen, ps'', Yc, hps''len, hcty, hYc⟩ :=
       Lean4Lean.List.Forall₂.forall_exists_r hctors c hc
     have hjc : (tI, cI) ∈ dI.ctors := mem_ctors_iff.2 ⟨TI, hTI, hcI⟩
     have hcIc := henvT.ctor_constant hind hjc
@@ -1546,8 +1550,12 @@ theorem auxHeads {env envT : VEnv} (hdecl : d.WF env)
     obtain ⟨ps, Ds, hcty', hps, hfs, -⟩ := hcW.shape
     have hcty2 := hcty'
     rw [hcty, foralls_append] at hcty2
-    obtain ⟨rfl, hY⟩ := VExpr.foralls_inj hcty2 (by rw [hps''len, hps.length_eq])
-    rw [hY] at hH
+    obtain ⟨rfl, rfl⟩ := VExpr.foralls_inj hcty2 (by rw [hps''len, hps.length_eq])
+    have hH : envT.HasType d.uvars d.params.reverse (.appN (.const c.name o.lvls) o.args)
+        (.foralls Ds (T.typeApp (VLevel.params d.uvars) (bvars d.params.length c.fields.length)
+          c.indices)) := by
+      have ⟨_, hX⟩ := hH.isType henvT.ordered hPP
+      exact .defeqDF (hX.eqUpToLevels henvT.ordered hPP hYc.symm) hH
     obtain ⟨hFs, hDF⟩ := FieldsWF.tele hfs
     have hcT := hcW.type
     rw [hcty', foralls_append] at hcT

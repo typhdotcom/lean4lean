@@ -1608,28 +1608,28 @@ theorem RecInfosData.compat {c₂ : VContext} {nparams : Nat} {types : List Indu
   ⟨hR.uvars, hR.params, hR.level, hR.isUnsafe, (names_eq hR.elaborates).symm, hR.nindices, hR.aux,
     hR.nested⟩
 
-theorem inductVals_tr {c₀ c : VContext} {nparams : Nat} {types : List InductiveType}
+theorem inductVals_tr {c₀ c : VContext} {nparams nn : Nat} {types : List InductiveType}
     {stats params level typeTr} (hT : TypesData c₀ nparams types stats c params level typeTr)
     {isUnsafe : Bool} (hsafety : c₀.safety = inductSafety isUnsafe)
     {c₂ c₃ : VContext} {elimLevel recInfos d} (hc₂U : c₂.lparams = c.lparams)
     (hR : RecInfosData c₂ nparams types stats params level typeTr isUnsafe elimLevel recInfos c₃ d) :
-    List.Forall₂ (fun v T => TrInductVal d c.lparams T v ∧
+    List.Forall₂ (fun v T => TrInductValN d c.lparams nn T v ∧
       TrConstant c₀.safety c₀.venv (.inductInfo v) ⟨d.uvars, T.type⟩ ∧
       (d.params.length ≤ v.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
         ps.length = d.params.length → c₀.venv.TeleDefEq d.uvars [] ps d.params))
-      (inductVals c.lparams stats nparams types.toArray 0 isUnsafe) d.types := by
+      (inductVals c.lparams stats nparams types.toArray nn isUnsafe) d.types := by
   have hEl := hR.elaborates
   refine List.forall₂_of_getElem? ((inductVals_length hT.nindices).trans
     (Lean4Lean.List.Forall₂.length_eq hEl.types)) fun j v T hv hTj => ?_
   obtain ⟨t, ht, hname, hcs⟩ := List.Forall₂.getElem?_r hEl.types hTj
   obtain ⟨v', hv', h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ :=
-    inductVals_getElem? (lparams := c.lparams) (np := nparams) (nn := 0) (isUnsafe := isUnsafe)
+    inductVals_getElem? (lparams := c.lparams) (np := nparams) (nn := nn) (isUnsafe := isUnsafe)
       ht (hR.nindices j T hTj)
   obtain rfl : v = v' := Option.some.inj (hv.symm.trans hv')
   obtain ⟨T', hT', e⟩ := List.Forall₂.getElem?_l hR.typeTr hTj
   obtain ⟨-, -, htr, -, -, -, -, -, hagree⟩ := hT.types j t T' ht hT'
   refine ⟨⟨h1.trans hname.symm, h2, h4.trans (hR.params ▸ hT.nparams).symm, h5,
-    h6.trans (names_eq hEl), h7.trans ?_, h8.trans (by rw [hR.aux]; rfl), h9.trans hR.isRec.symm,
+    h6.trans (names_eq hEl), h7.trans ?_, h8, h9.trans hR.isRec.symm,
     h10.trans hR.isUnsafe.symm⟩,
     ⟨?_, ?_, ?_⟩, ?_⟩
   · exact List.Forall₂.map_eq (f := fun ct : Constructor => ct.name)

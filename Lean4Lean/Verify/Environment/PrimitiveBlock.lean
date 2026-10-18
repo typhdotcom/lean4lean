@@ -449,7 +449,7 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
     (hallow : Primitive.PrimitiveInductiveResult lparams nparams types isUnsafe) :
     (AddInductive.run nparams types 0
       { env, allowPrimitive := true, lparams, fuel, safety := inductSafety isUnsafe }).WF
-      (FlatResult ves env isUnsafe true) := by
+      (FlatResult ves env isUnsafe true 0) := by
   obtain ⟨rfl, rfl, rfl, type, cs, rfl, htype, hshape, hpres⟩ := hallow
   -- the block: `Bool` or `Nat`
   obtain ⟨hI, hct, hcs⟩ : (type.name = ``Bool ∨ type.name = ``Nat) ∧
@@ -844,7 +844,7 @@ theorem AddInductive.run.WF_primitive {env : Environment} {ves : VEnvs} (wf : ve
           ConstantInfo.levelParams, ConstantInfo.toConstantVal, hcl]
     refine wf.safePrimitives ?_ hp
     rw [Kernel.Environment.find?, ← hcenv, c.envAt.tr.map_wf.find?'_eq_find?]; exact hf
-  refine ⟨d, env₂, hR.isUnsafe, hdecl, hstep, by rw [hRq, hDC'.2.1, hDq, hcenv], nofun,
+  refine ⟨d, env₂, hR.isUnsafe, hdecl, hR.aux, hstep, by rw [hRq, hDC'.2.1, hDq, hcenv], nofun,
     fun _ => ⟨fun safety venv₁ venv₂ H hp =>
       hpres hp (Primitive.AddsConsts.of_addInduct H hcs' hrecs'), hsafe⟩⟩
 

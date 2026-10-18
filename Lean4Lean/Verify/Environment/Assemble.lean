@@ -14,11 +14,11 @@ open Kernel
 /-- What `addInductive` establishes for a block without nested occurrences: an `AddInduct` step
 at the level the block is checked at, for a well-formed `decl`. A primitive block keeps the
 primitive invariant at every level; any other block adds no primitive name. -/
-def FlatResult (ves : VEnvs) (env : Environment) (isUnsafe allowPrimitive : Bool)
+def FlatResult (ves : VEnvs) (env : Environment) (isUnsafe allowPrimitive : Bool) (nn : Nat)
     (env' : Environment) : Prop :=
   ∃ (decl : VInductDecl) (venv' : VEnv), decl.isUnsafe = isUnsafe ∧
-    decl.WF (ves.venv (inductSafety isUnsafe)) ∧
-    AddInduct (inductSafety isUnsafe) env.constants (ves.venv (inductSafety isUnsafe)) decl
+    decl.WF (ves.venv (inductSafety isUnsafe)) ∧ decl.aux = [] ∧
+    AddInductN nn (inductSafety isUnsafe) env.constants (ves.venv (inductSafety isUnsafe)) decl
       env'.constants venv' ∧
     env'.quotInit = env.quotInit ∧
     (allowPrimitive = false →
@@ -35,7 +35,7 @@ def FlatResult (ves : VEnvs) (env : Environment) (isUnsafe allowPrimitive : Bool
 well formed, and the constants `run` added are an `AddInduct` step. `d` elaborates the block
 in `venvAx`, the checking environment with the types only. -/
 theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.WF env)
-    {lparams : List Name} {nparams : Nat} {types : List InductiveType}
+    {lparams : List Name} {nparams nn : Nat} {types : List InductiveType}
     {isUnsafe ap : Bool} {fuel : FuelConfig} (hne : types ≠ [])
     {stats : InductiveStats} {c : AddInductive.VContext} {params : List VExpr} {level : VLevel}
     {typeTr : List VExpr}
@@ -43,10 +43,10 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
       lparams ap fuel) nparams types stats c params level typeTr)
     {envTypes : Environment}
     (hDc : envTypes.constants = insertConsts c.env.constants
-      ((AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map .inductInfo))
-    (hDnd : (((AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map
+      ((AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map .inductInfo))
+    (hDnd : (((AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map
       ConstantInfo.inductInfo).map (·.name)).Nodup)
-    (hDfr : ∀ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map
+    (hDfr : ∀ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map
       ConstantInfo.inductInfo, c.env.constants.find? ci.name = none)
     {venvAx : VEnv} (hleAx : c.venv ≤ venvAx) (henvAx : venvAx.WF)
     (hAx : c.venv.addConstList (AddInductive.typeConstsOf c.lparams.length types typeTr) =
@@ -84,10 +84,10 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
           ⟨d.recUVars, d.recType d.recLevels d.motiveLevel p.2 p.1⟩)
         recs d.types.zipIdx) :
     d.WF (ves.venv (inductSafety isUnsafe)) ∧
-    (∃ env₂, AddInduct (inductSafety isUnsafe) env.constants (ves.venv (inductSafety isUnsafe)) d
-      env'.constants env₂) ∧
+    (∃ env₂, AddInductN nn (inductSafety isUnsafe) env.constants
+      (ves.venv (inductSafety isUnsafe)) d env'.constants env₂) ∧
     ∀ n ∈ (d.typeConsts ++ d.ctorConsts ++ d.recConsts).map (·.1),
-      ∃ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map
+      ∃ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map
           ConstantInfo.inductInfo ++
         (AddInductive.ctorVals c.lparams stats.params.size types isUnsafe).map
           ConstantInfo.ctorInfo ++ recs.map ConstantInfo.recInfo, ci.name = n := by
@@ -103,9 +103,9 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
     rw [VInductDecl.typeConsts, hU,
       AddInductive.typeConsts_eq (X := fun _ _ => _) hEl.types hR.typeTr]
     exact hAx
-  have htv := AddInductive.inductVals_tr hT rfl hc₂U hR
+  have htv := AddInductive.inductVals_tr (nn := nn) hT rfl hc₂U hR
   have hcv := AddInductive.ctorVals_tr hT hcs henvAx hleAx hC hc₂U hR hEl
-  generalize AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe = tv
+  generalize AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe = tv
     at htv hDc hDnd hDfr ⊢
   generalize AddInductive.ctorVals c.lparams stats.params.size types isUnsafe = cv
     at hcv hDCc hDCnd hDCfr ⊢
@@ -193,8 +193,8 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
       have hn : T.name ∈ d.typeConsts.map (·.1) := by simpa [VInductDecl.typeConsts] using ⟨T, hT, rfl⟩
       obtain ⟨ci, hci, e⟩ := List.mem_map.1 (htvn ▸ hn)
       have := hvfr _ (hDfr ci hci); rw [e] at this; cases h.symm.trans this
-  have hstep : AddInduct (inductSafety isUnsafe) env.constants (ves.venv (inductSafety isUnsafe)) d
-      env'.constants env₂ := by
+  have hstep : AddInductN nn (inductSafety isUnsafe) env.constants
+      (ves.venv (inductSafety isUnsafe)) d env'.constants env₂ := by
     refine .mk (lparams := c.lparams) hU.symm htv (hcs ▸ hcv) (by rw [hall]; exact hcs ▸ hrecs)
       hnd hfr ⟨_, List.Perm.refl _, ?_⟩ (hcvenv ▸ hAxd) hCadd hRadd hBadd
     rw [hRc, hDCc, hDc, hcenv, inductConsts, insertConsts_append, insertConsts_append]
@@ -207,7 +207,7 @@ theorem AddInductive.assemble_step {env : Environment} {ves : VEnvs} (wf : ves.W
 gives `FlatResult`: the elaborated `d` is well formed, and the constants `run` added are an
 `AddInduct` step. -/
 theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env)
-    {lparams : List Name} {nparams : Nat} {types : List InductiveType}
+    {lparams : List Name} {nparams nn : Nat} {types : List InductiveType}
     {isUnsafe : Bool} {fuel : FuelConfig} (hne : types ≠ [])
     {stats : InductiveStats} {c : AddInductive.VContext} {params : List VExpr} {level : VLevel}
     {typeTr : List VExpr}
@@ -215,12 +215,12 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
       lparams false fuel) nparams types stats c params level typeTr)
     {envTypes : Environment}
     (hDc : envTypes.constants = insertConsts c.env.constants
-      ((AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map .inductInfo))
-    (hDnd : (((AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map
+      ((AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map .inductInfo))
+    (hDnd : (((AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map
       ConstantInfo.inductInfo).map (·.name)).Nodup)
-    (hDfr : ∀ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map
+    (hDfr : ∀ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map
       ConstantInfo.inductInfo, c.env.constants.find? ci.name = none)
-    (hDp : ∀ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray 0 isUnsafe).map
+    (hDp : ∀ ci ∈ (AddInductive.inductVals c.lparams stats nparams types.toArray nn isUnsafe).map
       ConstantInfo.inductInfo, Environment.primitives.contains ci.name → c.allowPrimitive)
     {venvAx : VEnv} (hleAx : c.venv ≤ venvAx) (henvAx : venvAx.WF)
     (hAx : c.venv.addConstList (AddInductive.typeConstsOf c.lparams.length types typeTr) =
@@ -260,12 +260,12 @@ theorem AddInductive.assemble {env : Environment} {ves : VEnvs} (wf : ves.WF env
         TrConstant c.safety envC (.recInfo v)
           ⟨d.recUVars, d.recType d.recLevels d.motiveLevel p.2 p.1⟩)
         recs d.types.zipIdx) :
-    FlatResult ves env isUnsafe false env' := by
+    FlatResult ves env isUnsafe false nn env' := by
   obtain ⟨hdecl, ⟨_, hstep⟩, hnames⟩ := AddInductive.assemble_step wf hne hT hDc hDnd hDfr hleAx
     henvAx hAx hC hDCc hDCnd hDCfr hc₂U hR (hc₂ ▸ hc₂U ▸ hR.elaborates) (hc₂ ▸ hR.indices) hLE hRc
     hRnd hRfr hRnames hRtr
   have hcp : c.allowPrimitive = false := hT.base.allowPrimitive
-  refine ⟨d, _, hR.isUnsafe, hdecl, hstep, hRq, fun _ n hn => ?_, nofun⟩
+  refine ⟨d, _, hR.isUnsafe, hdecl, hR.aux, hstep, hRq, fun _ n hn => ?_, nofun⟩
   obtain ⟨ci, hci, rfl⟩ := hnames n hn
   refine Bool.eq_false_iff.2 fun h => ?_
   simp only [List.mem_append] at hci

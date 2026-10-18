@@ -1,3 +1,4 @@
+import Lean4Lean.Verify.Environment.Checker
 import Lean4Lean.Verify.Environment.ElimNested
 import Lean4Lean.Verify.Support.Basic
 import Lean4Lean.Theory.Typing.Nested
@@ -2687,3 +2688,100 @@ theorem auxMade_names {env : Environment} {params : Array Expr} {nparams : Nat} 
     · exact h2 T' h
 
 end Lean4Lean.ElimNestedInductive
+
+namespace Lean4Lean
+open Lean hiding Environment Exception
+
+/-- `checkClosed` passes only on a term with no loose bound variable: the input closedness the
+elimination's facts assume (`TypeClosed`). -/
+theorem checkClosed.WF (n : Name) (e : Expr) :
+    (checkClosed n e).WF fun _ => e.looseBVarRange' = 0 := by
+  intro _ h
+  unfold checkClosed at h
+  split at h
+  · cases h
+  · rename_i hlb; simpa [Expr.hasLooseBVars] using hlb
+
+end Lean4Lean
+
+namespace Lean4Lean
+open Lean hiding Environment Exception
+
+theorem Expr.suppIn_of_fvarsIn : ∀ {e : Expr}, e.FVarsIn (fun _ => False) →
+    e.SuppIn (ElimNestedInductive.FVOnly fun _ => False)
+  | .bvar _, _ | .mvar _, _ => trivial
+  | .fvar _, h => h.elim
+  | .sort u, _ => Level.LParamsIn.true
+  | .const _ us, _ => ⟨trivial, fun u _ => Level.LParamsIn.true⟩
+  | .lit (.natVal _), _ => ⟨trivial, trivial, trivial⟩
+  | .lit (.strVal _), _ => ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial,
+      trivial⟩
+  | .app .., h | .lam .., h | .forallE .., h =>
+    ⟨Expr.suppIn_of_fvarsIn h.1, Expr.suppIn_of_fvarsIn h.2⟩
+  | .letE .., h => ⟨Expr.suppIn_of_fvarsIn h.1, Expr.suppIn_of_fvarsIn h.2.1,
+      Expr.suppIn_of_fvarsIn h.2.2⟩
+  | .mdata _ e, h | .proj _ _ e, h => Expr.suppIn_of_fvarsIn (e := e) h
+
+end Lean4Lean
+
+namespace Lean4Lean
+open Lean hiding Environment Exception
+open Kernel
+
+theorem Except.bind_ok' {ε α β} {x : Except ε α} {f : α → Except ε β} {r : β}
+    (h : (x >>= f) = .ok r) : ∃ a, x = .ok a ∧ f a = .ok r := by
+  cases x with
+  | error e => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+/-- A loop over a list that only yields, run to success, ran its body to success on each
+element. -/
+theorem Except.forIn_ok {ε α} {f : α → PUnit → Except ε (ForInStep PUnit)}
+    (hf : ∀ x u s, f x u = .ok s → s = .yield PUnit.unit) :
+    ∀ {l : List α} {r : PUnit}, forIn l PUnit.unit f = .ok r → ∀ x ∈ l, ∃ s, f x PUnit.unit = .ok s
+  | [], _, _ => nofun
+  | x :: l, r, h => by
+    rw [List.forIn_cons] at h
+    obtain ⟨s, h1, h2⟩ := Except.bind_ok' h
+    obtain rfl := hf _ _ _ h1
+    intro y hy
+    rcases List.mem_cons.1 hy with rfl | hy
+    · exact ⟨_, h1⟩
+    · exact Except.forIn_ok hf h2 y hy
+
+/-- The checks `addInductive` runs on its input before eliminating nested occurrences give the
+closedness the elimination's facts assume. -/
+theorem addInductive_inputChecks.WF (env : Environment) (types : List InductiveType) :
+    (forIn (m := Except Exception) types PUnit.unit fun indType _ => do
+      env.checkNoMVarNoFVar indType.name indType.type
+      checkClosed indType.name indType.type
+      forIn (m := Except Exception) indType.ctors PUnit.unit fun ctor _ => do
+        env.checkNoMVarNoFVar ctor.name ctor.type
+        checkClosed ctor.name ctor.type
+        checkNoNestedAux ctor.name ctor.type
+        pure (ForInStep.yield PUnit.unit)
+      pure (ForInStep.yield PUnit.unit)).WF
+      fun _ => ∀ T ∈ types, ElimNestedInductive.TypeClosed T := by
+  intro _ h T hT
+  have yld {α} {m : Except Exception α} {s} (h : (m >>= fun _ =>
+      (pure (ForInStep.yield PUnit.unit) : Except Exception _)) = .ok s) :
+      s = .yield PUnit.unit := by
+    obtain ⟨_, -, h⟩ := Except.bind_ok' h; cases h; rfl
+  obtain ⟨s, hs⟩ := Except.forIn_ok (fun _ _ _ h => by
+    obtain ⟨_, -, h⟩ := Except.bind_ok' h
+    obtain ⟨_, -, h⟩ := Except.bind_ok' h
+    exact yld h) h T hT
+  obtain ⟨_, h1, hs⟩ := Except.bind_ok' hs
+  obtain ⟨_, h2, hs⟩ := Except.bind_ok' hs
+  obtain ⟨_, h3, -⟩ := Except.bind_ok' hs
+  refine ⟨Expr.suppIn_of_fvarsIn (checkNoMVarNoFVar.WF _ _ _ _ h1), checkClosed.WF _ _ _ h2,
+    fun c hc => ?_⟩
+  obtain ⟨s', hs'⟩ := Except.forIn_ok (fun _ _ _ h => by
+    obtain ⟨_, -, h⟩ := Except.bind_ok' h
+    obtain ⟨_, -, h⟩ := Except.bind_ok' h
+    exact yld h) h3 c hc
+  obtain ⟨_, c1, hs'⟩ := Except.bind_ok' hs'
+  obtain ⟨_, c2, -⟩ := Except.bind_ok' hs'
+  exact ⟨Expr.suppIn_of_fvarsIn (checkNoMVarNoFVar.WF _ _ _ _ c1), checkClosed.WF _ _ _ c2⟩
+
+end Lean4Lean

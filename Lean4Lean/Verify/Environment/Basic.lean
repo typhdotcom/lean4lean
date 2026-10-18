@@ -111,11 +111,16 @@ def insertConsts (C : ConstMap) (cis : List ConstantInfo) : ConstMap :=
 section
 variable (decl : VInductDecl) (lparams : List Name)
 
-/-- What `addInductive` records about a type of `decl`, besides its type. -/
-def TrInductVal (T : VInductiveType) (v : InductiveVal) : Prop :=
+/-- What `addInductive` records about a type of `decl`, besides its type, with `nn` auxiliary
+types. -/
+def TrInductValN (nn : Nat) (T : VInductiveType) (v : InductiveVal) : Prop :=
   v.name = T.name ∧ v.levelParams = lparams ∧ v.numParams = decl.params.length ∧
   v.numIndices = T.indices.length ∧ v.all = decl.names ∧ v.ctors = T.ctors.map (·.name) ∧
-  v.numNested = decl.aux.length ∧ v.isRec = decl.isRec ∧ v.isUnsafe = decl.isUnsafe
+  v.numNested = nn ∧ v.isRec = decl.isRec ∧ v.isUnsafe = decl.isUnsafe
+
+/-- What `addInductive` records about a type of `decl`, besides its type. -/
+abbrev TrInductVal (T : VInductiveType) (v : InductiveVal) : Prop :=
+  TrInductValN decl lparams decl.aux.length T v
 
 /-- What `addInductive` records about constructor `c` of the `j`th type, besides its type, whose
 leading binders are syntactically its parameters and fields. -/
@@ -156,13 +161,15 @@ environment as it was before that group of constants. A type declared as a pi ov
 as there are parameters has those binders agree with the parameters, which `checkInductiveTypes`
 checks one by one. The constants go in in some order: a block
 without nested occurrences inserts its types, constructors and recursors in turn, a nested one each
-type with its constructors and recursor, then the auxiliary types' recursors. -/
-inductive AddInduct (safety : DefinitionSafety) (m₁ : ConstMap) (env₁ : VEnv)
+type with its constructors and recursor, then the auxiliary types' recursors. `AddInductN nn`
+records `nn` as the number of auxiliary types, which is what the kernel's check of a nested
+block's translation records; `AddInduct` is the step itself. -/
+inductive AddInductN (nn : Nat) (safety : DefinitionSafety) (m₁ : ConstMap) (env₁ : VEnv)
     (decl : VInductDecl) (m₂ : ConstMap) (env₂ : VEnv) : Prop
   | mk {lparams : List Name} {envT envC envR : VEnv} {types : List InductiveVal}
       {ctors : List ConstructorVal} {recs : List RecursorVal} :
     lparams.length = decl.uvars →
-    List.Forall₂ (fun v T => TrInductVal decl lparams T v ∧
+    List.Forall₂ (fun v T => TrInductValN decl lparams nn T v ∧
       TrConstant safety env₁ (.inductInfo v) ⟨decl.uvars, T.type⟩ ∧
       (decl.params.length ≤ v.type.leadingForalls → ∀ ps B, T.type = .foralls ps B →
         ps.length = decl.params.length → env₁.TeleDefEq decl.uvars [] ps decl.params))
@@ -180,12 +187,21 @@ inductive AddInduct (safety : DefinitionSafety) (m₁ : ConstMap) (env₁ : VEnv
     envT.addConstList decl.ctorConsts = some envC →
     envC.addConstList decl.recConsts = some envR →
     (envR.addDefEqList decl.iotaRules).addBlock decl = some env₂ →
-    AddInduct safety m₁ env₁ decl m₂ env₂
+    AddInductN nn safety m₁ env₁ decl m₂ env₂
 
-theorem AddInduct.to_addInduct
-    (H : AddInduct safety m₁ env₁ decl m₂ env₂) : env₁.addInduct decl = some env₂ := by
+/-- The step `addInductive` takes for a block, modelled by `decl`. -/
+abbrev AddInduct (safety : DefinitionSafety) (m₁ : ConstMap) (env₁ : VEnv)
+    (decl : VInductDecl) (m₂ : ConstMap) (env₂ : VEnv) : Prop :=
+  AddInductN decl.aux.length safety m₁ env₁ decl m₂ env₂
+
+theorem AddInductN.to_addInduct
+    (H : AddInductN nn safety m₁ env₁ decl m₂ env₂) : env₁.addInduct decl = some env₂ := by
   obtain ⟨-, -, -, -, -, -, -, hT, hC, hR, hB⟩ := H
   simp [VEnv.addInduct, hT, hC, hR, hB]
+
+theorem AddInduct.to_addInduct
+    (H : AddInduct safety m₁ env₁ decl m₂ env₂) : env₁.addInduct decl = some env₂ :=
+  AddInductN.to_addInduct H
 
 /-- Insert a whole block of definitions into the constant map. -/
 def insertDefs (C : ConstMap) (cis : List DefinitionVal) : ConstMap :=

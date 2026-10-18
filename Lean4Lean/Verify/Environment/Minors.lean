@@ -1585,11 +1585,15 @@ theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
           (ftys.map (·.instL (VLevel.shift pre.length cT.lparams.length))) ++ ihtys))
     (hWf : ∃ hk', VLCtx.FVLift' (Mf.instL (VLevel.shift pre.length cT.lparams.length)).vlctx
       (E.dropN r hk').vlctx 0 ((Lift.skipN .refl (types.length + q)).consN fvs.length) 0)
-    {recInfos : Array RecInfo}
+    {recInfos : Array RecInfo} {blockNames : NameSet}
     (hrec : ∀ t (ht : t < types.length), recInfos[t]!.motive = .fvar (motfvs[t]'(hmot ▸ ht))) :
     WF cb (mkRecInfos.loopUArgs (.fvar fvs[k]) fun uiTy xs => do
       let (itIdx, itIndices) ← getIIndices stats uiTy
       let lctx ← getLCtx
+      for x in xs do
+        if let some d := lctx.findFVar? x then
+          if d.type.anySubterm fun | .const c _ => blockNames.contains c | _ => false then
+            throw <| .other "invalid recursive argument, its binders mention the block"
       return (lctx.mkForall xs <| .app (mkAppN recInfos[itIdx]!.motive itIndices)
           (mkAppN (.fvar fvs[k]) xs),
         { itIdx, field := .fvar fvs[k]
@@ -1878,6 +1882,13 @@ theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
     (by simp [hxl]) hag hm hu hidx hty'
   refine WF.bind (Q := (· = cbx.lctx)) (fun _ h => by cases h; rfl) fun lctx hl => ?_
   subst hl
+  rw [← Array.forIn_toList]
+  refine WF.bind (WF.forIn_list (P := fun _ => True) fun x _ _ => ?_) fun _ _ => ?_
+  · split
+    · split
+      · exact WF.throw
+      · exact WF.pure ⟨trivial, _, rfl⟩
+    · exact WF.pure ⟨trivial, _, rfl⟩
   rw [hrec itIdx hitT, show itIndices = itIndices.toList.toArray by simp]
   refine WF.pure ⟨ra, hC', ⟨T', hT', hisl', ?_⟩, rfl, ?_, hty2, ?_, hk2, ?_, ?_⟩
   · rw [hfty, hT'n]
@@ -2065,7 +2076,7 @@ structure UInv (cT : VContext) (X : Name → Prop) (pre : List Name) (pfvs : Lis
   head : c.name = c₀.name ∧ c.type = c₀.type ∧ c.indices = c₀.indices ∧
     c.fields.map (·.level) = c₀.fields.map (·.level)
 
-theorem loopU.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopU.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {pfvs : List FVarId} {params : List VExpr}
     (hMpT : Mp.IsTele pfvs params) {stats : InductiveStats}
     (hpar : stats.params.toList = pfvs.map .fvar) (hlev : stats.levels = cT.lparams.map .param)
@@ -2098,7 +2109,7 @@ theorem loopU.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
     ∀ n i vfvs infos c E ρE cb ρf, ks.length = i + n →
       UInv cT X pre pfvs params d₀ ml j Mf hMf fvs ftys ks q Qs' motfvs minfvs types.length P F₀
         E₀ c₀ i vfvs infos c E ρE cb ρf →
-      WF cb (mkRecInfos.loopU stats ((recFvs fvs rs).map .fvar).toArray recInfos i
+      WF cb (mkRecInfos.loopU stats blockNames ((recFvs fvs rs).map .fvar).toArray recInfos i
         (vfvs.map .fvar).toArray infos.toArray k) Q := by
   intro n
   induction n with
@@ -2479,7 +2490,7 @@ theorem MinorKDOK.extend {cT Mp pfvs params cb k c} (H : MinorKDOK cT Mp pfvs pa
     cases h : cb.lctx.find? fv <;> rw [h] at this <;> simp_all
   rw [hext _ _ hd', hd]; rw [hd'] at this; exact this
 
-theorem ctorMinor.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem ctorMinor.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
     {d₀ : VInductDecl} {motfvs : List FVarId} {heads : List (Array Expr × Expr)} {recInfos : Array RecInfo}
@@ -2524,7 +2535,7 @@ theorem ctorMinor.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       let (itIdx, itIndices) ← getIIndices stats t
       let introApp := mkAppN (mkAppN (.const ct.name stats.levels) stats.params) bu
       let motiveApp := Expr.app (mkAppN recInfos[itIdx]!.motive itIndices) introApp
-      mkRecInfos.loopU stats u recInfos 0 #[] #[] fun v ihs => do
+      mkRecInfos.loopU stats blockNames u recInfos 0 #[] #[] fun v ihs => do
       let lctx ← getLCtx
       let minorTy := lctx.mkForall bu <| lctx.mkForall v motiveApp
       let minorName := ct.name.replacePrefix indTypeName .anonymous
@@ -3121,7 +3132,7 @@ structure CtorsInv (cT : VContext) (X : Name → Prop) (pre : List Name)
   infoCount : ∀ t (ht : t < recInfos.size),
     recInfos[t].minorInfos.size = (cds.filter (·.1 = t)).length
 
-theorem loopCtors.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopCtors.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
     {d₀ : VInductDecl} {motfvs : List FVarId} {heads : List (Array Expr × Expr)} {ml : VLevel} {P : VContext → Prop}
@@ -3143,7 +3154,7 @@ theorem loopCtors.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       List.Forall₂ (CtorDone cT pre params types d₀ VB UB dIdx hd) done cs →
       CtorsInv cT X pre Mp hMp pfvs params stats types d₀ motfvs heads ml P dIdx recInfos
         (cds₀ ++ cs.map (dIdx, ·)) minfvs kds F₁ Mmin cb ρp ρmin →
-      WF cb (mkRecInfos.loopCtors stats indTypeName dIdx recInfos rest k) Q := by
+      WF cb (mkRecInfos.loopCtors stats blockNames indTypeName dIdx recInfos rest k) Q := by
   intro rest
   induction rest with
   | nil =>
@@ -3342,7 +3353,7 @@ theorem CtorsInv.weaken {cT X pre Mp hMp pfvs params stats types d₀ motfvs hea
     later := fun t ht h' => H.later t ht (by omega)
     laterInfos := fun t ht h' => H.laterInfos t ht (by omega) }
 
-theorem loopInd2.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
+theorem loopInd2.WF {blockNames : NameSet} {cT : VContext} {X : Name → Prop} {pre : List Name}
     {Mp : TypeChecker.MLCtx} {hMp : Mp.WF cT.venv cT.lparams} {pfvs : List FVarId}
     {params : List VExpr} {stats : InductiveStats} {types : List InductiveType}
     {d₀ : VInductDecl} {motfvs : List FVarId} {heads : List (Array Expr × Expr)} {ml : VLevel} {P : VContext → Prop}
@@ -3367,7 +3378,7 @@ theorem loopInd2.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       CtorsInv cT X pre Mp hMp pfvs params stats types d₀ motfvs heads ml P dIdx recInfos
         (flatCtors css) minfvs kds F₁ Mmin cb ρp ρmin →
       (∀ t (ht : t < recInfos.size), dIdx ≤ t → recInfos[t].minors = #[]) →
-      WF cb (mkRecInfos.loopInd2 stats types.toArray dIdx recInfos k) Q := by
+      WF cb (mkRecInfos.loopInd2 stats blockNames types.toArray dIdx recInfos k) Q := by
   intro n
   induction n with
   | zero =>

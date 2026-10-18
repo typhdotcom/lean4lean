@@ -15,6 +15,29 @@ def VExpr.Subst.dflt : VExpr.Subst := fun _ => default
 /-- The first `k` projections of `e`, a term of the type `s`. -/
 def VExpr.projs (s : Name) (k : Nat) (e : VExpr) : List VExpr := (List.range k).map (.proj s · e)
 
+/-- Two terms of the same shape whose universe levels are equivalent and well formed. -/
+inductive VEnv.EqUpToLevels (U : Nat) : VExpr → VExpr → Prop
+  | bvar : EqUpToLevels U (.bvar i) (.bvar i)
+  | const : (∀ l ∈ ls, l.WF U) → (∀ l ∈ ls', l.WF U) → List.Forall₂ (· ≈ ·) ls ls' →
+    EqUpToLevels U (.const c ls) (.const c ls')
+  | sort : l.WF U → l'.WF U → l ≈ l' → EqUpToLevels U (.sort l) (.sort l')
+  | app : EqUpToLevels U f f' → EqUpToLevels U a a' → EqUpToLevels U (.app f a) (.app f' a')
+  | lam : EqUpToLevels U A A' → EqUpToLevels U e e' → EqUpToLevels U (.lam A e) (.lam A' e')
+  | forallE : EqUpToLevels U A A' → EqUpToLevels U B B' → EqUpToLevels U (.forallE A B) (.forallE A' B')
+  | proj : EqUpToLevels U e e' → EqUpToLevels U (.proj s k e) (.proj s k e')
+
+theorem VEnv.EqUpToLevels.symm {U : Nat} {e e' : VExpr} (H : VEnv.EqUpToLevels U e e') :
+    VEnv.EqUpToLevels U e' e := by
+  induction H with
+  | bvar => exact .bvar
+  | const h1 h2 h3 => exact .const h2 h1 (List.Forall₂.flip (Lean4Lean.List.Forall₂.imp
+      (fun _ _ h => h.symm) h3))
+  | sort h1 h2 h3 => exact .sort h2 h1 h3.symm
+  | app _ _ ih1 ih2 => exact .app ih1 ih2
+  | lam _ _ ih1 ih2 => exact .lam ih1 ih2
+  | forallE _ _ ih1 ih2 => exact .forallE ih1 ih2
+  | proj _ ih => exact .proj ih
+
 namespace VConstructor
 variable (c : VConstructor)
 

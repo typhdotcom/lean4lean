@@ -70,17 +70,6 @@ theorem VExpr.skips_instL {e : VExpr} {ls : List VLevel} {n k : Nat} :
     (e.instL ls).Skips n k ↔ e.Skips n k := by
   rw [skips_iff, skips_iff, skips'_instL]
 
-theorem VEnv.EqUpToLevels.symm {U : Nat} {e e' : VExpr} (H : VEnv.EqUpToLevels U e e') :
-    VEnv.EqUpToLevels U e' e := by
-  induction H with
-  | bvar => exact .bvar
-  | const h1 h2 h3 => exact .const h2 h1 (List.Forall₂.flip (Lean4Lean.List.Forall₂.imp
-      (fun _ _ h => h.symm) h3))
-  | sort h1 h2 h3 => exact .sort h2 h1 h3.symm
-  | app _ _ ih1 ih2 => exact .app ih1 ih2
-  | lam _ _ ih1 ih2 => exact .lam ih1 ih2
-  | forallE _ _ ih1 ih2 => exact .forallE ih1 ih2
-  | proj _ ih => exact .proj ih
 
 theorem VEnv.EqUpToLevels.skips' {U : Nat} {e e' : VExpr} (H : VEnv.EqUpToLevels U e e') :
     ∀ {n k}, e.Skips' n k ↔ e'.Skips' n k := by

@@ -125,7 +125,8 @@ theorem VInductiveType.AuxWF.mono {n} (H : T.AuxWF env decl n) : T.AuxWF env' de
   obtain ⟨⟨dI, tI, TI, h1, h2, h3, h4, h5, h6, h7, h8⟩⟩ := H
   exact ⟨⟨dI, tI, TI, henv.inducts h1, h2, h3, h4, h5,
     fun i a P ha hP => (h6 i a P ha hP).mono henv,
-    let ⟨ps, B, e1, e2, ps', e3, e4⟩ := h7; ⟨ps, B, e1, e2.mono henv, ps', e3.mono henv, e4⟩, h8⟩⟩
+    let ⟨ps, B, e1, e2, ps', Y, e3, e4, e5⟩ := h7
+    ⟨ps, B, e1, e2.mono henv, ps', Y, e3.mono henv, e4, e5⟩, h8⟩⟩
 
 theorem VInductDecl.WF.mono (H : decl.WF env) : decl.WF env' where
   nonempty := H.nonempty

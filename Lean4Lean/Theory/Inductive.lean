@@ -460,8 +460,9 @@ structure VConstructor.WF (env : VEnv) (d : VInductDecl) (T : VInductiveType)
 /-- What makes `T` an auxiliary type of the block `d`, standing for the occurrence `n` in `env`,
 the environment with the block's types: `n` is the `tI`th type of a block `dI` recorded there, at
 levels and parameters typed for it, and `T`'s declared type and constructors are that type's and
-its constructors', with its parameters instantiated by the occurrence's, under the block's. The
-earlier type's declared type begins with its parameters, and `T`'s with the block's. -/
+its constructors', with its parameters instantiated by the occurrence's, under the block's, up to
+equivalent universe levels (the kernel simplifies the levels it instantiates). The earlier type's
+declared type begins with its parameters, and `T`'s with the block's. -/
 structure VInductiveType.AuxWF (env : VEnv) (d : VInductDecl) (T : VInductiveType) (n : VNested) :
     Prop where
   ind : ∃ dI tI TI, env.inducts n.ind = some (dI, tI) ∧ dI.types[tI]? = some TI ∧
@@ -469,12 +470,13 @@ structure VInductiveType.AuxWF (env : VEnv) (d : VInductDecl) (T : VInductiveTyp
     (∀ i (a P : VExpr), n.args[i]? = some a → dI.params[i]? = some P →
       env.HasType d.uvars d.params.reverse a
         ((P.instL n.lvls).subst (VExpr.Subst.dflt.consList (n.args.take i)))) ∧
-    (∃ ps B, TI.type = .foralls ps B ∧ env.TeleDefEq dI.uvars [] ps dI.params ∧ ∃ ps',
-      env.TeleDefEq d.uvars [] ps' d.params ∧
-      T.type = .foralls ps' ((B.instL n.lvls).subst (VExpr.Subst.dflt.consList n.args))) ∧
+    (∃ ps B, TI.type = .foralls ps B ∧ env.TeleDefEq dI.uvars [] ps dI.params ∧ ∃ ps' Y,
+      env.TeleDefEq d.uvars [] ps' d.params ∧ T.type = .foralls ps' Y ∧
+      VEnv.EqUpToLevels d.uvars Y ((B.instL n.lvls).subst (VExpr.Subst.dflt.consList n.args))) ∧
     List.Forall₂ (fun cI c => c.name = cI.name ∧ ∃ ps B, cI.type = .foralls ps B ∧
-        ps.length = dI.params.length ∧ ∃ ps', ps'.length = d.params.length ∧
-          c.type = .foralls ps' ((B.instL n.lvls).subst (VExpr.Subst.dflt.consList n.args)))
+        ps.length = dI.params.length ∧ ∃ ps' Y, ps'.length = d.params.length ∧
+          c.type = .foralls ps' Y ∧
+          VEnv.EqUpToLevels d.uvars Y ((B.instL n.lvls).subst (VExpr.Subst.dflt.consList n.args)))
       TI.ctors T.ctors
 
 /-- An inductive block as `addInductive` checks it: its types, then the auxiliary types its

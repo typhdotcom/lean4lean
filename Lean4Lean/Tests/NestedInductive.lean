@@ -82,8 +82,43 @@ def mdDecl : Declaration :=
            (mkApp (mkConst ``List [.zero]) tree)) tree .default }] }]
     false
 
+/-- `LooseFlat (α : Type)` with `mk : ∀ α, #1 → LooseFlat #1`, whose binder's domain and result
+are loose bound variables. Lean's kernel opens the parameter, lowering them, and closes it again
+without raising them, so they are captured as `α`: it accepts the declaration and stores
+`mk : (α : Type) → α → LooseFlat α`, a type it was not given. -/
+def looseFlatDecl : Declaration :=
+  let tree := fun a => mkApp (mkConst `LooseFlat []) a
+  .inductDecl [] 1
+    [{ name := `LooseFlat
+       type := .forallE `α (.sort 1) (.sort 1) .default
+       ctors := [{
+         name := `LooseFlat.mk
+         type := .forallE `α (.sort 1) (.forallE `y (.bvar 1) (tree (.bvar 1)) .default)
+           .default }] }]
+    false
+
+/-- The same capture in a nested block: `LooseTree (α : Type)` with
+`mk : ∀ α, List (LooseTree α) → #2 → LooseTree α`. -/
+def looseDecl : Declaration :=
+  let tree := fun a => mkApp (mkConst `LooseTree []) a
+  .inductDecl [] 1
+    [{ name := `LooseTree
+       type := .forallE `α (.sort 1) (.sort 1) .default
+       ctors := [{
+         name := `LooseTree.mk
+         type := .forallE `α (.sort 1)
+           (.forallE `xs (mkApp (mkConst ``List [.zero]) (tree (.bvar 0)))
+             (.forallE `y (.bvar 2) (tree (.bvar 2)) .default) .default) .default }] }]
+    false
+
 run_meta do
   let kenv := (← getEnv).toKernelEnv
+
+  -- A type with loose bound variables is rejected, flat or nested, where Lean's kernel captures
+  -- them.
+  for (n, d) in [(`LooseFlat, looseFlatDecl), (`LooseTree, looseDecl)] do
+    unless (kenv.addDecl {} d) matches .ok _ do throwError "Lean's kernel rejected `{n}`"
+    if let .ok _ := Lean4Lean.addDecl kenv d then throwError "`{n}` was accepted"
 
   -- The restored recursors are Lean's, levels included.
   let .ok kenv' := kenv.addDecl {} lvlDecl | throwError "Lean's kernel rejected `LvlTree`"
