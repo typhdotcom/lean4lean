@@ -20,6 +20,8 @@ import Lean4Lean.Theory.Typing.LogRel.Mutual
 import Lean4Lean.Theory.Typing.LogRel.BlockGood
 import Lean4Lean.Theory.Typing.LogRel.BlockStage
 import Lean4Lean.Theory.Typing.LogRel.IndTeleCtors
+import Lean4Lean.Theory.Typing.LogRel.AdeqTypes
+import Lean4Lean.Theory.Typing.LogRel.AdeqQuotTy
 import Lean4Lean.Theory.Typing.LogRel.Prefix
 import Lean4Lean.Theory.Typing.LogRel.AdeqProj
 import Lean4Lean.Theory.Typing.LogRel.AdequacyWF
@@ -69,6 +71,7 @@ import Lean4Lean.Theory.Typing.LogRel.QuotSound
 import Lean4Lean.Theory.Typing.LogRel.ModelInv
 import Lean4Lean.Theory.Typing.LogRel.ConstSpine
 import Lean4Lean.Theory.Typing.LogRel.AdeqCtor
+import Lean4Lean.Theory.Typing.LogRel.StructTyOf
 import Lean4Lean.Theory.Typing.LogRel.AdeqIndTy
 import Lean4Lean.Theory.Typing.LogRel.AdeqQuotMk
 import Lean4Lean.Theory.Typing.LogRel.AdeqStruct

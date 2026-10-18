@@ -135,6 +135,7 @@ structure AdequacyHyps (E : VEnv) (Γ₀ : List VExpr) : Prop where
     AdeqStmt (U := U) henv hU Γ₀ Γ e e' (.appN (.const s ls) (As ++ I)) →
     AdeqStmt (U := U) henv hU Γ₀ Γ (c.projType ls s k As e) (c.projType ls s k As' e')
       (.sort (f.level.inst ls)) →
+    StrongSoundEq env U Γ e e' (.appN (.const s ls) (As ++ I)) →
     StrongSoundEq env U Γ (.proj s k e) (.proj s k e') (c.projType ls s k As e) →
     AdeqStmt (U := U) henv hU Γ₀ Γ (.proj s k e) (.proj s k e') (c.projType ls s k As e)
   projIota : ∀ {Γ s d t T c k f fs a ls As I u}, OnCtx Γ (env.IsType U) →
@@ -380,7 +381,7 @@ theorem LR.adequacy_of (hM : ModelEnv env) {E : VEnv} (hE : E ≤ env)
   | projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 ih14 ih15 ih16 =>
     exact hH.projDF hΓ h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 (h14.mono hE) (h15.mono hE)
       (h16.mono hE)
-      (ih14 hΓ) (ih15 hΓ) (ih16 hΓ)
+      (ih14 hΓ) (ih15 hΓ) (ih16 hΓ) (hS h15)
       (hS (.projDF h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16))
   | projIota h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14 h15 h16 h17 ih14 ih15 ih16 ih17 =>
     exact hH.projIota hΓ h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 (h14.mono hE) (h15.mono hE)

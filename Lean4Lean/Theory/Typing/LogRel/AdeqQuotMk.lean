@@ -302,15 +302,15 @@ theorem AdeqStmt.quotMkSpine (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCt
       (typ W [u] hL).1 (typ W ls' hR).2
 
 /-- `Quot.mk`'s constant case: given adequacy's cases for an environment `E₀` in which its
-codomain, the quotient, is typed (one with `Quot`), model soundness for `E₀`, and in `E₀` its
-spines at equivalent levels equal and their codomains equal. -/
+codomain, the quotient, is typed (one with `Quot`), model soundness for `E₀`, its spines at
+equivalent levels equal, and in `E₀` their codomains equal. -/
 theorem AdeqStmt.quotMk (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ₀ (env.IsType U))
     {E₀ : VEnv} (hE₀le : E₀ ≤ env) (hE₀o : E₀.Ordered)
     (hS : ∀ {Γ M N A}, E₀.IsDefEqStrong U Γ M N A → StrongSoundEq env U Γ M N A)
     (IH : AdequacyHyps (U := U) henv hU E₀ Γ₀)
     (hdf : env.defeqs quotDefEq) (hmk : env.constants ``Quot.mk = some quotMkConst)
     (hni : env.inducts ``Quot = none) {u : VLevel} (hu : u.WF U) {ls' : List VLevel} {w : VLevel}
-    (hspE : E₀.IsDefEq U (quotMkTele u).reverse
+    (hspE : env.IsDefEq U (quotMkTele u).reverse
       ((VExpr.const ``Quot.mk [u]).appN (VExpr.bvars 3 0))
       ((VExpr.const ``Quot.mk ls').appN (VExpr.bvars 3 0)) (quotMkCod [u]))
     (hBE : E₀.IsDefEq U (quotMkTele u).reverse (quotMkCod [u]) (quotMkCod ls') (.sort w))
@@ -326,7 +326,7 @@ theorem AdeqStmt.quotMk (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
   have hΔ : OnCtx ((quotMkTele u).reverse ++ Γ) (env.IsType U) :=
     OnCtx.append_closed hEo VEnv.LE.rfl hΓ onBs'
   have DB := IsDefEq.weak_closed hE₀o onBs hBE Γ
-  have Dsp := IsDefEq.weak_closed hE₀o onBs hspE Γ
+  have Dsp := IsDefEq.weak_closed hEo onBs' hspE Γ
   have HB : AdeqStmt (U := U) henv hU Γ₀ ((quotMkTele u).reverse ++ Γ)
       (quotMkCod [u]) (quotMkCod ls') (.sort w) :=
     LR.adequacy_of hM hE₀le hS hΓ₀ IH DB hΔ
@@ -335,7 +335,7 @@ theorem AdeqStmt.quotMk (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ�
       ((VExpr.const ``Quot.mk ls').appN (VExpr.bvars 3 0)) (quotMkCod [u]) := by
     intro ρ n m a hm ha hma
     exact AdeqStmt.quotMkSpine (U := U) (henv := henv) (hU := hU) (Γ₀ := Γ₀) hM henvW hΓ₀ hdf
-      hmk hni hΔ (Dsp.defeq.mono hE₀le) (hS DB) @HB hm ha hma
+      hmk hni hΔ Dsp.defeq (hS DB) @HB hm ha hma
   have hR : E₀.IsType U (quotMkTele u).reverse (quotMkCod [u]) := ⟨_, hBE.hasType.1⟩
   have H' : AdeqStmt (U := U) henv hU Γ₀ ((quotMkTele u).reverse ++ Γ)
       (etaSpine (quotMkTele u) (.const ``Quot.mk [u]))

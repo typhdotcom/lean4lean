@@ -829,9 +829,9 @@ theorem AdeqStmt.ctorSpine (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx 
       (typ W ls hL).1 (typ W ls' hR).2 (hsp.substDF hEo hΔ hΓ₀ (W.left.toSubstEq hΓ₀))
       (typ W ls hL).1
 
-/-- A constructor's constant case, for a constructor that is not a structure's: given adequacy's
-cases for an environment `E₀` in which its type's telescope and codomain are typed, model
-soundness for `E₀`, and in `E₀` its spines at equivalent levels equal and their codomains equal. -/
+/-- A constructor's constant case: given adequacy's cases for an environment `E₀` in which its
+type's telescope and codomain are typed, model soundness for `E₀`, its spines at equivalent levels
+equal, and in `E₀` their codomains equal. -/
 theorem AdeqStmt.ctor (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ₀ (env.IsType U))
     {E₀ : VEnv} (hE₀le : E₀ ≤ env) (hE₀o : E₀.Ordered)
     (hS : ∀ {Γ M N A}, E₀.IsDefEqStrong U Γ M N A → StrongSoundEq env U Γ M N A)
@@ -850,7 +850,7 @@ theorem AdeqStmt.ctor (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ₀
     (hicl : ∀ e ∈ c.indices, e.ClosedN (Ps.length + Ds.length))
     (hccl : (c.type.instL ls).ClosedN)
     (hTe : E₀.IsTele U [] (Ps ++ Ds)) {w : VLevel}
-    (hspE : E₀.IsDefEq U (Ps ++ Ds).reverse ((VExpr.const c.name ls).appN (VExpr.bvars (Ps.length + Ds.length) 0)) ((VExpr.const c.name ls').appN (VExpr.bvars (Ps.length + Ds.length) 0))
+    (hspE : env.IsDefEq U (Ps ++ Ds).reverse ((VExpr.const c.name ls).appN (VExpr.bvars (Ps.length + Ds.length) 0)) ((VExpr.const c.name ls').appN (VExpr.bvars (Ps.length + Ds.length) 0))
       (ctorCod s c Ps.length Ds.length ls))
     (hBE : E₀.IsDefEq U (Ps ++ Ds).reverse (ctorCod s c Ps.length Ds.length ls)
       (ctorCod s c Ps.length Ds.length ls') (.sort w))
@@ -862,7 +862,7 @@ theorem AdeqStmt.ctor (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ₀
   have hΔ : OnCtx ((Ps ++ Ds).reverse ++ Γ) (env.IsType U) :=
     OnCtx.append_closed hEo VEnv.LE.rfl hΓ onBs'
   have DB := IsDefEq.weak_closed hE₀o onBs hBE Γ
-  have Dsp := IsDefEq.weak_closed hE₀o onBs hspE Γ
+  have Dsp := IsDefEq.weak_closed hEo onBs' hspE Γ
   have HB : AdeqStmt (U := U) henv hU Γ₀ ((Ps ++ Ds).reverse ++ Γ)
       (ctorCod s c Ps.length Ds.length ls) (ctorCod s c Ps.length Ds.length ls') (.sort w) :=
     LR.adequacy_of hM hE₀le hS hΓ₀ IH DB hΔ
@@ -870,7 +870,7 @@ theorem AdeqStmt.ctor (hM : ModelEnv env) (henvW : env.WF) (hΓ₀ : OnCtx Γ₀
       (ctorCod s c Ps.length Ds.length ls) := by
     intro ρ n m a hm ha hma
     exact AdeqStmt.ctorSpine (U := U) (henv := henv) (hU := hU) (Γ₀ := Γ₀) hM henvW hΓ₀ hs hT hc
-      hnodup hci hcity hnd hstr hcty hPs hDs hnidx hDcl hicl hccl hΔ (Dsp.defeq.mono hE₀le) (hS DB)
+      hnodup hci hcity hnd hstr hcty hPs hDs hnidx hDcl hicl hccl hΔ Dsp.defeq (hS DB)
       @HB hm ha hma
   have hR : E₀.IsType U (Ps ++ Ds).reverse (ctorCod s c Ps.length Ds.length ls) :=
     ⟨_, hBE.hasType.1⟩
