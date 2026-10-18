@@ -2,17 +2,15 @@
 
 > **LLM-maintained and unaudited.** This fork's changes and documentation are
 > maintained with LLM agents and have not received an independent human audit.
-> Successful builds and machine-checked proofs do not establish that the
-> specification, assumptions, or implementation are correct. The main verification
-> theorem is conditional on two open metatheoretic assumptions, described below.
+> The main verification theorem is conditional on two open metatheoretic
+> assumptions, described below.
 
 This is a research fork of [digama0/lean4lean](https://github.com/digama0/lean4lean),
 an implementation of the Lean 4 kernel in mostly pure Lean 4, with a formal
 specification and proofs connecting the implementation to it. The implementation
 derives from Lean's C++ kernel and can share its bugs. This fork extends the
 inductive-type specification and verification, changes some kernel checks, and
-develops the remaining metatheory. It is not an independently audited replacement
-for Lean's kernel or an upstream release.
+develops the remaining metatheory.
 
 - [Verification status and trust assumptions](#verification-status-and-trust-assumptions)
 - [Build and test](#build-and-test)
@@ -30,17 +28,14 @@ for Lean's kernel or an upstream release.
 | Declaration checking, including flat and nested inductives and quotient initialization | `Lean4Lean.addDecl.WF` is proved **assuming `VEnv.Injective`**, as are the supporting results that need injectivity. |
 | Primitive projections, structure eta, recursor and quotient reduction | Specified and connected to the implementation; the verification uses the same injectivity hypothesis where needed. |
 | Shape model | Sound for well-formed environments. Proves that a sort cannot equal a pi type, and that equal sorts have equivalent universe levels, without the injectivity hypothesis. |
-| Injectivity of pi types and inductive type formers | **Open.** These are the two fields of [`VEnv.Injective`](Lean4Lean/Theory/Typing/Injectivity.lean), not proved instances. |
+| Injectivity of pi types and inductive type formers | **Open.** These are the two fields of [`VEnv.Injective`](Lean4Lean/Theory/Typing/Injectivity.lean). |
 | Logical relation intended to establish injectivity | Incomplete at a recursor's full application (`IndRecSat`), especially K-like reduction and indexed iota reduction. |
 | Church–Rosser and experimental developments | Unfinished. `NormalEq.parRed` has two `sorry` cases; `Experimental` contains further incomplete proofs. |
 
-There are no `sorry` proofs in the active `Verify` development. In particular,
-`#print axioms Lean4Lean.addDecl.WF` has no `sorryAx`. This does **not** discharge
-`VEnv.Injective`: it is an explicit argument to the theorem. The theorem states
-preservation of the formal environment invariant when declaration checking
-succeeds; it does not by itself prove consistency of the type theory.
-
-To inspect that boundary in Lean:
+The `Verify` development is `sorry`-free, so `addDecl.WF` depends on no `sorryAx`;
+`VEnv.Injective` enters as an explicit argument. The theorem states that
+successful declaration checking preserves the formal environment invariant;
+consistency of the type theory is a separate question. To check:
 
 ```lean
 import Lean4Lean.Verify
@@ -51,10 +46,8 @@ import Lean4Lean.Verify
 The verification also trusts the runtime-model axioms in
 [`Verify/Axioms.lean`](Lean4Lean/Verify/Axioms.lean), Lean's proof checker, and the
 compiler/runtime correspondence for native and opaque operations. The fork
-corrects some inherited axiom statements and removes others. Runtime comparison
-tests exercise the remaining models, but cannot prove those axioms. A review
-must examine the specification and the statements of the hypotheses as well as
-the proof terms.
+corrects some inherited axiom statements and removes others; runtime comparison
+tests exercise the rest.
 
 ## Build and test
 
@@ -69,9 +62,8 @@ lake build Lean4Lean.Tests Lean4Lean.Experimental
 ```
 
 The default build includes the library, executable, theory and verification.
-Tests and experimental modules are explicit additional targets. Expected `sorry`
-warnings in unfinished theory and experiments are not evidence that verification
-assumptions have been resolved.
+Tests and experimental modules are separate targets. Unfinished theory and
+experiments emit `sorry` warnings.
 
 | Target | Contents |
 | --- | --- |
@@ -82,14 +74,9 @@ assumptions have been resolved.
 | `lake build Lean4Lean.Tests` | Regression suite, including compile-time runtime-model checks |
 | `lake build Lean4Lean.Experimental` | Unfinished formalization experiments |
 
-The CI smoke tests exercise both replay modes:
-
-```nu
-lake exe lean4lean Init.Core
-lake exe lean4lean --fresh Init.System.IO
-```
-
 ## Run the checker
+
+CI runs both replay modes as smoke tests:
 
 ```nu
 lake exe lean4lean Init.Core
@@ -151,15 +138,11 @@ use `--fresh` when that distinction matters.
 
 These changes include deliberate acceptance differences from Lean's C++ kernel.
 See [divergences.md](divergences.md) for the behavior and reproducing tests, and
-[bugs-found.md](bugs-found.md) for upstream's existing bug catalogue. Neither
-matching replay results nor a passing regression suite establishes full
-compatibility.
+[bugs-found.md](bugs-found.md) for upstream's existing bug catalogue.
 
 ## Findings and regression tests
 
-The examples below are specific to the pinned toolchain. Claims about missing
-derivations and unfinished metatheory remain research claims, not established
-unsoundness results for Lean.
+The examples below are specific to the pinned toolchain.
 
 | Example | What is exercised |
 | --- | --- |
@@ -179,8 +162,8 @@ abstraction model similarly mishandled loose bound variables and repeated
 variables. The replacement models state simultaneous semantics; the old forms
 are derived for the closed, distinct-variable inputs where they apply. A third
 axiom, `mkLevelIMaxCore_eq`, equated two definitions that disagree on `imax 1 u`;
-it was unused and has been removed. Tests do not extend these models to inputs
-where the runtime aborts with an internal panic.
+it was unused and has been removed. The tests cover only inputs on which the
+runtime does not panic.
 
 ## Design and proof guide
 
@@ -263,11 +246,9 @@ results are used, with facts above the allowed scope set aside by a ceiling.
 [`ScopedEquivManager.lean`](Lean4Lean/ScopedEquivManager.lean) and its
 [verification](Lean4Lean/Verify/ScopedEquivManager.lean) handle labelled equivalences.
 
-Scope tracking has a measurable cost. Local development measurements of Lean
-core replay recorded 1155.5 billion user-mode instructions versus 990.4 billion
-before scope tracking, about 16.7% more. These are historical measurements,
-not a portable benchmark or a CI performance guarantee. Cache bookkeeping,
-larger state and the pair map account for much of the remaining overhead.
+Scope tracking costs about 16.7% on a local replay of Lean core (1155.5 versus
+990.4 billion user-mode instructions), mostly from cache bookkeeping, larger
+state and the pair map.
 
 Primitive recognizers likewise check retained closed terms outside the binders
 where they discovered them. The kernel checks annotation definitions as
@@ -282,17 +263,15 @@ The logical relation's remaining `IndRecSat` case must relate a recursor's
 reduct at the type of its full application. K-like and indexed iota reduction
 require a judgmental equality between the spine's indices and the constructor's
 indices. Turning that equality into a relation at the motive's argument shape
-is precisely the unresolved conversion problem.
+is the unresolved conversion problem.
 
-No counterexample to either injectivity assumption has been established here.
-Attempts to prove them by the current relation, or by induction on derivations,
-stop at this same step. The detailed notes below record arguments and obstacles;
-they are not additional formal results.
+No counterexample to either injectivity assumption is known. Attempts to prove
+them through the current relation, or by induction on derivations, stop at this
+same step; the notes below record those arguments informally.
 
-General strengthening is also not assumed. The binder-scope examples motivate
-why it is suspect, but an argument that a particular equality has no derivation
-is not a formal nonderivability proof. The implementation verification uses
-support, simulation and explicit domain checks instead.
+The verification also avoids assuming general strengthening, which the
+binder-scope examples suggest may fail, and uses support, simulation and
+explicit domain checks instead.
 
 <details>
 <summary>Research notes: the conversion gap and attempted injectivity arguments</summary>
@@ -408,7 +387,7 @@ injectivity serves; it has to come from the relation.
   there: a definition with an unused level parameter is equal at any two levels
   (`C.{0} ≡ C.{1}` for `def C.{u} : Type := Nat`), a definition can ignore its arguments, and a
   variable applied to proofs is equal at any two proofs.
-- Induction on derivations (scoping; nothing built). The invariant is a typed relation `Inv Γ e e' T`, defined by recursion on the head form of `T` under a deterministic type-level head
+- Induction on derivations (sketched, not formalized). The invariant is a typed relation `Inv Γ e e' T`, defined by recursion on the head form of `T` under a deterministic type-level head
   reduction (beta, delta, iota, projections' iota, the quotient's rule, and for recursors of
   large-eliminating propositions only the K-like step, firing when the spine's indices equal the
   constructor's judgmentally, so that it never overlaps ordinary iota):
@@ -419,10 +398,11 @@ injectivity serves; it has to come from the relation.
   - at a structure: projections are related (structure eta); at a proposition: nothing (proof
     irrelevance); at an inductive type: the least relation closed under constructors and
     neutrals.
-    The recursion is on universe level and structure: `Prop` contributes nothing, so impredicativity
-    does not enter, and types without a head form (`Acc.rec` unfolding forever) are covered by
-    the clause that transfers having one. `forallE_inv` and `indApp_inv` are its sort clause.
-    Unique typing at the components' sorts has to be carried along, as `IsDefEq.uniq` does.
+
+  The recursion is on universe level and structure: `Prop` contributes nothing, so impredicativity
+  does not enter, and types without a head form (`Acc.rec` unfolding forever) are covered by
+  the clause that transfers having one. `forallE_inv` and `indApp_inv` are its sort clause.
+  Unique typing at the components' sorts has to be carried along, as `IsDefEq.uniq` does.
 - The rules, with the fundamental lemma stated under related substitutions:
   - pass from the induction hypothesis: `symm`, `sortDF`, `forallEDF`, `lamDF` (substitution),
     `beta`, `eta`, `proofIrrel` (a proposition's clause is empty), `defeqDF` (the type equality is
@@ -473,5 +453,5 @@ Lean's kernel should be explicit. Reports about this fork should be filed here;
 establish whether an issue also occurs upstream before reporting it there.
 
 The project retains upstream's [Apache 2.0 license](LICENSE), copyright notices
-and author attribution. The LLM-maintenance disclaimer describes this fork's
-changes, not the authorship of the upstream project.
+and author attribution. The LLM-maintenance notice applies to this fork's
+changes, not to upstream.
