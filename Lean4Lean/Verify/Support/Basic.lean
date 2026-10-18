@@ -210,9 +210,18 @@ theorem SuppIn.instantiateRevList {S : Supp} {as : List Expr} (ha : ∀ a ∈ as
     intro e k h
     exact SuppIn.instantiate1 (ha a (.head _)) (ih (fun b hb => ha b (List.mem_cons_of_mem _ hb)) h)
 
+theorem SuppIn.instantiate' {S : Supp} {as : List Expr} (ha : ∀ a ∈ as, a.SuppIn S) :
+    ∀ {e : Expr} {d}, e.SuppIn S → (e.instantiate' as d).SuppIn S := by
+  intro e; induction e <;> intros <;> simp_all [SuppIn, Expr.instantiate']
+  split
+  · simp [SuppIn]
+  · split
+    · exact (ha _ (List.getElem_mem _)).liftLooseBVars
+    · simp [SuppIn]
+
 theorem SuppIn.instantiate {S : Supp} {e : Expr} {as : Array Expr}
     (ha : ∀ a ∈ as, a.SuppIn S) (h : e.SuppIn S) : (e.instantiate as).SuppIn S := by
-  rw [instantiate_eq]; exact SuppIn.instantiateList (fun a h => ha a (by simpa using h)) h
+  rw [instantiate_eq']; exact SuppIn.instantiate' (fun a h => ha a (by simpa using h)) h
 
 theorem SuppIn.instantiateRev {S : Supp} {e : Expr} {as : Array Expr}
     (ha : ∀ a ∈ as, a.SuppIn S) (h : e.SuppIn S) : (e.instantiateRev as).SuppIn S := by
@@ -237,6 +246,15 @@ theorem SuppIn.abstract1 {S : Supp} {v : FVarId} :
       (e.abstract1 v k).SuppIn S := by
   intro e; induction e <;> intros <;> simp_all [SuppIn, Expr.abstract1]
   split <;> simp_all [SuppIn]; exact (‹_ ∨ _›).resolve_right (Ne.symm ‹_›)
+
+theorem SuppIn.abstract' {S : Supp} {vs : List FVarId} : ∀ {e : Expr} {k},
+    e.SuppIn ⟨fun x => S.fv x ∨ x ∈ vs, S.lvl, S.const⟩ → (e.abstract' vs k).SuppIn S := by
+  intro e; induction e <;> intros <;> simp_all [SuppIn, Expr.abstract']
+  rename_i v _ h
+  split
+  · simp [SuppIn]
+  · rename_i hv; refine h.resolve_right fun hm => ?_
+    rw [List.idxOf?_eq_none_iff] at hv; exact hv (List.mem_reverse.2 hm)
 
 theorem SuppIn.abstractList {S : Supp} : ∀ {vs : List FVarId} {e : Expr} {k},
     e.SuppIn ⟨fun x => S.fv x ∨ x ∈ vs, S.lvl, S.const⟩ → (e.abstractList vs k).SuppIn S

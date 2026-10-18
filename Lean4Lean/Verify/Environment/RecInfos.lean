@@ -667,6 +667,7 @@ theorem mkForall_tele {lctx : LocalContext} {env : VEnv} {Us : List Name} {E : T
   · have h1 := TypeChecker.mkForall_agree (b := e) hag
     have h2 := hwf.mkForall_eq (arr := (fvs₂.map .fvar).toArray) (e := e) fvs₂.length hk (by
       rw [hT.fvarRevList fvs₂.length rfl hk]; simp [List.map_reverse])
+      (E.noBV ▸ he.closed).looseBVarRange_zero
     exact h1.trans h2
   · have := hwf.mkForall_trS henv he heT fvs₂.length hk
     rwa [TypeChecker.MLCtx.mkForall'_isTele fvs₂.length rfl hT hlen] at this

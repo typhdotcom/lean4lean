@@ -129,8 +129,8 @@ theorem mkBindingList_go_supp {S : Supp} (hd : S.const `_inhabitedExprDummy) {is
   | [], _, _, hb => hb
   | x :: ys, b, H, hb => by
     refine mkBindingList_go_supp hd ys (fun i hi d h => H (i + 1) (by simpa using hi) d h) ?_
-    have conv {e : Expr} (h : e.SuppIn (S.addFVars ys)) : (e.abstractList ys.reverse).SuppIn S :=
-      Expr.SuppIn.abstractList (Expr.SuppIn.mono (S := S.addFVars ys) (S' := ⟨fun x => S.fv x ∨ x ∈ ys.reverse, S.lvl,
+    have conv {e : Expr} (h : e.SuppIn (S.addFVars ys)) : (e.abstract' ys.reverse).SuppIn S :=
+      Expr.SuppIn.abstract' (Expr.SuppIn.mono (S := S.addFVars ys) (S' := ⟨fun x => S.fv x ∨ x ∈ ys.reverse, S.lvl,
         S.const⟩) ⟨fun z hz => by simpa [Supp.addFVars] using hz, fun _ => id, fun _ => id⟩ h)
     unfold LocalContext.mkBindingList1
     split
@@ -152,7 +152,7 @@ theorem mkBindingList_supp {S : Supp} (hd : S.const `_inhabitedExprDummy) {isLam
     (H : ∀ i (hi : i < xs.length) d, lctx.find? xs[i] = some d →
       d.SuppIn (S.addFVars (xs.take i)))
     (hb : b.SuppIn (S.addFVars xs)) : (lctx.mkBindingList isLambda xs b).SuppIn S := by
-  refine mkBindingList_go_supp hd _ (fun i hi d h => ?_) (Expr.SuppIn.abstractList hb)
+  refine mkBindingList_go_supp hd _ (fun i hi d h => ?_) (Expr.SuppIn.abstract' hb)
   simp only [List.length_reverse] at hi
   have e1 : xs.reverse[i] = xs[xs.length - 1 - i] := List.getElem_reverse ..
   rw [e1] at h

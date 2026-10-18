@@ -132,15 +132,15 @@ theorem _root_.Lean4Lean.TrExprS.abstractTop {env : VEnv} {Us : List Name} :
     simpa [bvCtx_snoc, TypeChecker.MLCtx.dropN] using H2
 
 theorem _root_.Lean.Expr.abstractRange_fvars (xs : List FVarId) (e : Expr) (i : Nat) :
-    e.abstractRange i (xs.map Expr.fvar).toArray = e.abstractList (xs.take i) := by
+    e.abstractRange i (xs.map Expr.fvar).toArray = e.abstract' (xs.take i) := by
   simp only [Expr.abstractRange_eq, List.extract_toArray, List.extract_eq_take_drop,
     List.drop_zero, Nat.sub_zero, ← List.map_take]
   rw [show ((List.take i xs).map Expr.fvar).toArray = ⟨(List.take i xs).map Expr.fvar⟩ from rfl,
-    Expr.abstract_eq]
+    Expr.abstract_eq']
 
 theorem _root_.Lean.Expr.abstract_fvars (xs : List FVarId) (e : Expr) :
-    e.abstract (xs.map Expr.fvar).toArray = e.abstractList xs := by
-  rw [show (xs.map Expr.fvar).toArray = ⟨xs.map Expr.fvar⟩ from rfl, Expr.abstract_eq]
+    e.abstract (xs.map Expr.fvar).toArray = e.abstract' xs := by
+  rw [show (xs.map Expr.fvar).toArray = ⟨xs.map Expr.fvar⟩ from rfl, Expr.abstract_eq']
 
 /-- Each variable on top of a telescope context is declared at a type that, abstracted over the
 variables before it, translates over them as bound variables. -/
@@ -1908,7 +1908,9 @@ theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       obtain ⟨hty, -⟩ := LocalDecl.erase_type he
       simp only [Array.getElem_mapIdx, List.getElem_toArray, List.getElem_map,
         LocalContext.findFVar?, Expr.fvarId!, hd']
-      rw [hty, Expr.abstractRange_fvars, ← hbase]
+      have hxnd : xfvs.Nodup := (List.nodup_append.1 hndx).2.1
+      rw [hty, Expr.abstractRange_fvars, Expr.abstract'_eq_abstractList
+        (Nat.le_of_eq (hMx.find?_closed hd).type) ((List.take_sublist ..).nodup hxnd), ← hbase]
       exact htrd
     · simp only [Array.toList_map, Expr.abstract_fvars]
       have hidxs : itIndices.toList = uiTy.getAppArgsList.drop pfvs.length := by
@@ -1916,6 +1918,8 @@ theorem ihInfo.WF {cT : VContext} {X : Name → Prop} {pre : List Name}
       rw [hidxs, List.forall₂_map_left_iff, ← hbase]
       refine Lean4Lean.List.Forall₂.imp (fun _ _ h => ?_) hisTr
       have h' : TrExprS cT.venv cT.lparams Mx.vlctx _ _ := h
+      rw [Expr.abstract'_eq_abstractList (Mx.noBV ▸ h'.closed).looseBVarRange_le
+        (List.nodup_append.1 hndx).2.1]
       simpa using TrExprS.abstractTop xfvs.length hI.tele rfl hxl hndx hkx [] nofun
         (by simpa using h')
   · intro dk n us ax hdk' hty hax

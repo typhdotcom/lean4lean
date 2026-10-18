@@ -112,34 +112,23 @@ theorem find?_ne {L : LocalContext} (H : L.WF) (h : L.find? fv = none) (hne : fv
 theorem wf_mk {L : LocalContext} (H : L.WF) (h : L.find? fv = none) :
     (L.mkLocalDecl fv n ty bi).WF = True := eq_true (H.mkLocalDecl h)
 
-theorem mkForall_list {L : LocalContext} {xs : List FVarId} {b : Expr}
-    (hx : ∀ x ∈ xs, ∃ decl, L.find? x = some decl) (nd : xs.Nodup) :
-    L.mkForall ⟨xs.map .fvar⟩ b =
-    xs.foldr (fun a e => LocalContext.mkBindingList1 false L [] a (e.abstract1 a)) b := by
-  rw [LocalContext.mkForall, LocalContext.mkBinding_eq, LocalContext.mkBindingList_eq_fold hx nd]
+theorem mkForall1 {L : LocalContext} :
+    L.mkForall #[.fvar a] b = LocalContext.mkBindingList false L [a] b :=
+  LocalContext.mkBinding_eq (xs := [a])
 
-theorem mkForall1 {L : LocalContext} (hx : ∀ x ∈ [a], ∃ decl, L.find? x = some decl) :
-    L.mkForall #[.fvar a] b = LocalContext.mkBindingList1 false L [] a (b.abstract1 a) :=
-  mkForall_list (xs := [a]) hx (by simp)
+theorem mkForall2 {L : LocalContext} :
+    L.mkForall #[.fvar a₁, .fvar a₂] b = LocalContext.mkBindingList false L [a₁, a₂] b :=
+  LocalContext.mkBinding_eq (xs := [a₁, a₂])
 
-theorem mkForall2 {L : LocalContext} (hx : ∀ x ∈ [a₁, a₂], ∃ decl, L.find? x = some decl)
-    (nd : [a₁, a₂].Nodup) :
-    L.mkForall #[.fvar a₁, .fvar a₂] b = List.foldr (fun a e =>
-      LocalContext.mkBindingList1 false L [] a (e.abstract1 a)) b [a₁, a₂] :=
-  mkForall_list hx nd
+theorem mkForall3 {L : LocalContext} :
+    L.mkForall #[.fvar a₁, .fvar a₂, .fvar a₃] b =
+      LocalContext.mkBindingList false L [a₁, a₂, a₃] b :=
+  LocalContext.mkBinding_eq (xs := [a₁, a₂, a₃])
 
-theorem mkForall3 {L : LocalContext} (hx : ∀ x ∈ [a₁, a₂, a₃], ∃ decl, L.find? x = some decl)
-    (nd : [a₁, a₂, a₃].Nodup) :
-    L.mkForall #[.fvar a₁, .fvar a₂, .fvar a₃] b = List.foldr (fun a e =>
-      LocalContext.mkBindingList1 false L [] a (e.abstract1 a)) b [a₁, a₂, a₃] :=
-  mkForall_list hx nd
-
-theorem mkForall4 {L : LocalContext}
-    (hx : ∀ x ∈ [a₁, a₂, a₃, a₄], ∃ decl, L.find? x = some decl)
-    (nd : [a₁, a₂, a₃, a₄].Nodup) :
-    L.mkForall #[.fvar a₁, .fvar a₂, .fvar a₃, .fvar a₄] b = List.foldr (fun a e =>
-      LocalContext.mkBindingList1 false L [] a (e.abstract1 a)) b [a₁, a₂, a₃, a₄] :=
-  mkForall_list hx nd
+theorem mkForall4 {L : LocalContext} :
+    L.mkForall #[.fvar a₁, .fvar a₂, .fvar a₃, .fvar a₄] b =
+      LocalContext.mkBindingList false L [a₁, a₂, a₃, a₄] b :=
+  LocalContext.mkBinding_eq (xs := [a₁, a₂, a₃, a₄])
 
 theorem g1 : G₀.curr = .num `_uniq 1 := rfl
 theorem g2 : G₀.next.curr = .num `_uniq 2 := rfl
@@ -216,6 +205,9 @@ theorem addQuot_eq {env : Environment} (h : env.quotInit = false) :
     not_false_eq_true, and_true, List.not_mem_nil, or_false, List.nodup_nil, exists_eq',
     forall_eq_or_imp, forall_eq, FVarId.mk.injEq, List.mem_cons, List.nodup_cons,
     Option.some.injEq, LocalContext.mkBindingList1, List.foldr, Expr.abstract1, Expr.abstractList,
+    LocalContext.mkBindingList, LocalContext.mkBindingList.core, LocalContext.mkBindingList.go,
+    Expr.abstract', List.reverse_cons, List.reverse_nil, List.nil_append, List.cons_append,
+    List.idxOf?_cons, List.idxOf?_nil, beq_iff_eq,
     if_false, if_true, Expr.arrow, Expr.prop, mkApp2, mkApp3]
   rfl
 
@@ -250,7 +242,9 @@ theorem checkEqType.WF {env : Environment} :
     simp (config := {decide := true, maxDischargeDepth := 30}) only [mkForall1, find?_self,
       wf₀, find?₀, g1, List.not_mem_nil, or_false, exists_eq', forall_eq,
       List.mem_cons, Option.some.injEq, LocalContext.mkBindingList1, Expr.abstract1,
-      Expr.abstractList, if_false, if_true, Expr.arrow, Expr.prop, bne,
+      Expr.abstractList, LocalContext.mkBindingList, LocalContext.mkBindingList.core,
+      LocalContext.mkBindingList.go, Expr.abstract', List.reverse_cons, List.reverse_nil,
+      List.nil_append, List.cons_append, List.idxOf?_cons, List.idxOf?_nil, beq_iff_eq, if_false, if_true, Expr.arrow, Expr.prop, bne,
       Bool.not_eq_true'] at hne
     rw [← Expr.eqv_eq]
     exact Bool.of_not_eq_false hne

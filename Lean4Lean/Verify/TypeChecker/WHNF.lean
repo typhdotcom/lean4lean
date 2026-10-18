@@ -96,6 +96,10 @@ theorem whnfCore'.WF {c : VContext} {s : VState} (he : c.TrExprS e e') :
         ⟨_, _, (List.take_append_drop (e.getAppArgsRevList.length - i) ..).symm, by simp; omega⟩
       simp [loop.cont, h5, List.take_of_length_le]
       rw [Expr.mkAppRevRange_eq_rev (l₁ := []) (l₂ := l₁) (l₃ := l₂) (by simp) (by rfl) (by rfl)]
+      rw [Expr.instantiate'_eq_instantiateList (by
+        have := h5 ▸ (c.mlctx.noBV ▸ he.closed).getAppArgsRevList
+        simp [or_imp, forall_and] at this
+        exact fun a ha => (this.2 a ha).looseBVarRange_zero)]
       have br := BetaReduce.inst_reduce (l₁ := l₂.reverse)
         [] (by simpa using h3) (Expr.instantiateList_append ..) (h := by
           have := h5 ▸ (c.mlctx.noBV ▸ he.closed).getAppArgsRevList

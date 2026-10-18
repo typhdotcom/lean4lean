@@ -291,17 +291,6 @@ using `mkData_eq` and friends, but this has not been done yet -/
 /-- This is because the `BEq` instance is implemented in C++ -/
 @[instance] axiom instLawfulBEqLevel : LawfulBEq Level
 
-@[inline] private def mkIMaxCore (u v : Level) (elseK : Unit → Level) : Level :=
-  if v.isNeverZero then mkLevelMax' u v
-  else if v.isZero then v
-  else if u.isZero || u matches .succ .zero then v
-  else if u == v then u
-  else elseK ()
-
-open private mkLevelIMaxCore from Lean.Level in
-/-- Workaround for https://github.com/leanprover/lean4/pull/7631#issuecomment-3289800246 -/
-@[simp] axiom mkLevelIMaxCore_eq (e : Expr) (n : Nat) : mkLevelIMaxCore = mkIMaxCore
-
 end Level
 
 namespace Expr
@@ -424,9 +413,32 @@ def instantiate1' (e : Expr) (subst : Expr) (d := 0) : Expr :=
   | e, [], _ => e
   | e, a :: as, k => instantiateList (instantiate1' e a k) as k
 
+/-- `Expr.instantiate`'s substitution: the loose bound variables `d`, `d + 1`, … are replaced
+simultaneously by `subst`, each lifted past the `d` binders it moves under, and those beyond are
+lowered past it. Unlike `instantiateList`, which substitutes one element at a time, the elements'
+own loose bound variables are left alone. -/
+def instantiate' (e : Expr) (subst : List Expr) (d := 0) : Expr :=
+  match e with
+  | .bvar i =>
+    if i < d then e
+    else if h : i - d < subst.length then subst[i - d].liftLooseBVars' 0 d
+    else .bvar (i - subst.length)
+  | .mdata m e => .mdata m (instantiate' e subst d)
+  | .proj s i e => .proj s i (instantiate' e subst d)
+  | .app f a => .app (instantiate' f subst d) (instantiate' a subst d)
+  | .lam n t b bi => .lam n (instantiate' t subst d) (instantiate' b subst (d+1)) bi
+  | .forallE n t b bi => .forallE n (instantiate' t subst d) (instantiate' b subst (d+1)) bi
+  | .letE n t v b bi =>
+    .letE n (instantiate' t subst d) (instantiate' v subst d) (instantiate' b subst (d+1)) bi
+  | .const ..
+  | .sort _
+  | .fvar _
+  | .mvar _
+  | .lit _ => e
+
 /-- This could be an `@[implemented_by]` -/
-@[simp] axiom instantiate_eq (e : Expr) (subst) :
-    e.instantiate subst = e.instantiateList subst.toList
+@[simp] axiom instantiate_eq' (e : Expr) (subst) :
+    e.instantiate subst = e.instantiate' subst.toList
 
 /-- This could be an `@[implemented_by]` -/
 @[simp] axiom instantiateRev_eq (e : Expr) (subst) :
@@ -459,9 +471,32 @@ def abstract1 (v : FVarId) : Expr → (k :_:= 0) → Expr
   | e, [], _ => e
   | e, a :: as, k => abstractList (abstract1 a e k) as k
 
+/-- `Expr.abstract`'s replacement of free variables by bound ones: the `i`th of `n` variables
+becomes `bvar (d + n - 1 - i)` under `d` binders, the last occurrence of a repeated variable
+winning, and the term's own loose bound variables are left alone. Unlike `abstractList`, which
+abstracts one variable at a time and shifts the loose bound variables past each, it agrees with
+the runtime on terms with loose bound variables and on repeated variables. -/
+def abstract' (e : Expr) (xs : List FVarId) (d := 0) : Expr :=
+  match e with
+  | .fvar v => match xs.reverse.idxOf? v with
+    | some j => .bvar (d + j)
+    | none => e
+  | .mdata m e => .mdata m (abstract' e xs d)
+  | .proj s i e => .proj s i (abstract' e xs d)
+  | .app f a => .app (abstract' f xs d) (abstract' a xs d)
+  | .lam n t b bi => .lam n (abstract' t xs d) (abstract' b xs (d+1)) bi
+  | .forallE n t b bi => .forallE n (abstract' t xs d) (abstract' b xs (d+1)) bi
+  | .letE n t v b bi =>
+    .letE n (abstract' t xs d) (abstract' v xs d) (abstract' b xs (d+1)) bi
+  | .bvar _
+  | .const ..
+  | .sort _
+  | .mvar _
+  | .lit _ => e
+
 /-- This could be an `@[implemented_by]` -/
-@[simp] axiom abstract_eq (e : Expr) (xs : List FVarId) :
-    e.abstract ⟨xs.map .fvar⟩ = e.abstractList xs
+@[simp] axiom abstract_eq' (e : Expr) (xs : List FVarId) :
+    e.abstract ⟨xs.map .fvar⟩ = e.abstract' xs
 
 /-- This could be an `@[implemented_by]` -/
 @[simp] axiom abstractRange_eq (e : Expr) (n : Nat) (xs : Array Expr) :

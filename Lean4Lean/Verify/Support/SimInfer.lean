@@ -113,7 +113,7 @@ theorem mkBindingList_agree {lctx₁ lctx₂ : LocalContext} {xs : List FVarId}
   obtain ⟨xs, rfl⟩ : ∃ xs', List.reverse xs' = xs := ⟨_, List.reverse_reverse _⟩
   simp only [LocalContext.mkBindingList, LocalContext.mkBindingList.core, List.reverse_reverse]
     at *
-  generalize b.abstractList _ = b
+  generalize b.abstract' _ = b
   induction xs generalizing b with
   | nil => rfl
   | cons x xs ih =>

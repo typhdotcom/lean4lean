@@ -196,16 +196,43 @@ theorem Opens.lctx {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') (hW :
       · rw [h2 _ hnd.1, LocalContext.find?_mkLocalDecl_self hW hx]; exact ⟨_, rfl⟩
       · exact h3 y hy
 
+/-- The variables a closed telescope is opened at are declared at closed types. -/
+theorem Opens.closed {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') (hW : lctx.WF)
+    (hfr : ∀ x ∈ xs, lctx.find? x = none) (hnd : xs.Nodup) (hty : ty.looseBVarRange' = 0) :
+    ty'.looseBVarRange' = 0 ∧ ∀ x ∈ xs, ∃ d, lctx'.find? x = some d ∧ d.Closed := by
+  induction H with
+  | nil => exact ⟨hty, nofun⟩
+  | @cons lctx x nm dom bi body xs lctx' ty' H ih =>
+    rw [List.nodup_cons] at hnd
+    have hx := hfr x (.head _)
+    have hW' := hW.mkLocalDecl (name := nm) (ty := dom) (bi := bi) (kind := .default) hx
+    have hfr' : ∀ y ∈ xs, (lctx.mkLocalDecl x nm dom bi).find? y = none := fun y hy => by
+      rw [LocalContext.find?_mkLocalDecl_ne hW hx (fun e => hnd.1 (e ▸ hy))]
+      exact hfr y (.tail _ hy)
+    simp only [Expr.looseBVarRange', Nat.max_eq_zero_iff] at hty
+    have hb : (body.instantiate1 (.fvar x)).looseBVarRange' = 0 := by
+      rw [Expr.instantiate1_eq]
+      have := Expr.instantiate1'_looseBVarRange (e := body) (a := .fvar x) (n := 0) (k := 0)
+        (by omega) (by simp [Expr.looseBVarRange'])
+      omega
+    obtain ⟨h1, h2⟩ := ih hW' hfr' hnd.2 hb
+    obtain ⟨-, h3, -⟩ := H.lctx hW' hfr' hnd.2
+    refine ⟨h1, fun y hy => ?_⟩
+    rcases List.mem_cons.1 hy with h | hy
+    · exact ⟨.cdecl lctx.decls.size x nm dom bi .default,
+        by rw [h, h3 _ hnd.1, LocalContext.find?_mkLocalDecl_self hW hx], hty.1⟩
+    · exact h2 y hy
+
 /-- Closing the variables a telescope was opened at puts back its binders, around any body. -/
 theorem Opens.mkForall {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') (hW : lctx.WF)
     (hfr : ∀ x ∈ xs, lctx.find? x = none) (hnd : xs.Nodup)
-    (hx : ∀ x ∈ xs, ty.SuppIn (FVOnly (· ≠ x))) (Z : Expr) :
+    (hx : ∀ x ∈ xs, ty.SuppIn (FVOnly (· ≠ x))) (hty : ty.looseBVarRange' = 0) (Z : Expr)
+    (hZ : Z.looseBVarRange' = 0) :
     lctx'.mkForall ⟨xs.map .fvar⟩ Z = setBody xs.length ty (Z.abstractList xs) := by
   rw [LocalContext.mkForall, LocalContext.mkBinding_eq]
-  obtain ⟨-, hfind, hsome⟩ := H.lctx hW hfr hnd
-  clear hfind
+  obtain ⟨-, hsome⟩ := H.closed hW hfr hnd hty
   induction H with
-  | nil => rfl
+  | nil => simp [setBody, Expr.abstractList]
   | @cons lctx x nm dom bi body xs lctx' ty' H ih =>
     rw [List.nodup_cons] at hnd
     have hx' := hfr x (.head _)
@@ -217,6 +244,12 @@ theorem Opens.mkForall {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') (
     have ih := ih hW' hfr' hnd.2 (fun y hy => by
       simp only [Expr.instantiate1_eq]
       exact Expr.SuppIn.instantiate1 (a := .fvar x) (S := FVOnly (· ≠ y)) (show x ≠ y from fun h => hnd.1 (h ▸ hy)) (hx y (.tail _ hy)).2)
+      (by
+        simp only [Expr.looseBVarRange', Nat.max_eq_zero_iff] at hty
+        rw [Expr.instantiate1_eq]
+        have := Expr.instantiate1'_looseBVarRange (e := body) (a := .fvar x) (n := 0) (k := 0)
+          (by omega) (by simp [Expr.looseBVarRange'])
+        omega)
       (fun y hy => hsome y (.tail _ hy))
     have hpeel := H.peel hnd.2 (fun y hy => by
       simp only [Expr.instantiate1_eq]
@@ -227,14 +260,14 @@ theorem Opens.mkForall {lctx ty xs lctx' ty'} (H : Opens lctx ty xs lctx' ty') (
     obtain ⟨-, h2, -⟩ := H.lctx hW' hfr' hnd.2
     have hfx : lctx'.find? x = some (.cdecl lctx.decls.size x nm dom bi .default) := by
       rw [h2 _ hnd.1, LocalContext.find?_mkLocalDecl_self hW hx']
-    rw [LocalContext.mkBindingList_cons (fun y hy => hsome y (.tail _ hy)) (List.nodup_cons.2 hnd),
-      ih]
+    rw [LocalContext.mkBindingList_cons hZ (fun y hy => hsome y (.tail _ hy))
+      (List.nodup_cons.2 hnd), ih]
     simp only [LocalContext.mkBindingList1, hfx, Expr.abstractList, Bool.false_eq_true,
       if_false, List.length_cons, setBody]
     simp only [Expr.instantiate1_eq]
     have e := Expr.abstract1_abstractList' (e := Z) (k := 0) (List.nodup_cons.2 hnd)
     rw [Nat.zero_add] at e
-    rw [setBody_abstract1 hps hb, Nat.zero_add, e]
+    rw [setBody_abstract1 hps hb, Nat.zero_add, e, Expr.abstract'_nil]
 
 /-! ### Hoare triples -/
 
@@ -874,6 +907,12 @@ theorem SuppIn.instantiateLevelParams {P : FVarId → Prop} {e : Expr} {ps ls}
   generalize (!ps.isEmpty && !ls.isEmpty) = red
   induction e <;> simp_all [Expr.instantiateLevelParamsCore', Expr.SuppIn, Level.LParamsIn.true]
 
+theorem instantiateLevelParams_looseBVarRange (e : Expr) (ps ls) :
+    (e.instantiateLevelParams ps ls).looseBVarRange' = e.looseBVarRange' := by
+  rw [Expr.instantiateLevelParams_eq]
+  generalize (!ps.isEmpty && !ls.isEmpty) = red
+  induction e <;> simp_all [Expr.instantiateLevelParamsCore', Expr.looseBVarRange']
+
 theorem SuppIn.setBody {S : Supp} {b : Expr} (hb : b.SuppIn S) :
     ∀ {n e}, e.SuppIn S → (setBody n e b).SuppIn S
   | 0, _, _ => hb
@@ -887,16 +926,71 @@ theorem _root_.Lean.LocalContext.find?_empty {x : FVarId} : ({} : LocalContext).
 
 /-- Closing a telescope opened at `xs` over a body mentioning only `xs` leaves no free
 variable. -/
+theorem abstract1_looseBVarRange {x : FVarId} : ∀ {e : Expr} {k},
+    (Expr.abstract1 x e k).looseBVarRange' ≤ max (e.looseBVarRange' + 1) (k + 1) := by
+  intro e; induction e with
+  | bvar i => intro k; simp only [Expr.abstract1, Expr.looseBVarRange']; split <;> omega
+  | fvar v => intro k; simp only [Expr.abstract1]; split <;> simp [Expr.looseBVarRange']
+  | app f a ihf iha =>
+    intro k; simp only [Expr.abstract1, Expr.looseBVarRange']
+    have := @ihf k; have := @iha k; omega
+  | lam n t b bi iht ihb | forallE n t b bi iht ihb =>
+    intro k; simp only [Expr.abstract1, Expr.looseBVarRange']
+    have := @iht k; have := @ihb (k + 1); omega
+  | letE n t v b bi iht ihv ihb =>
+    intro k; simp only [Expr.abstract1, Expr.looseBVarRange']
+    have := @iht k; have := @ihv k; have := @ihb (k + 1); omega
+  | mdata m e ih | proj s i e ih => intro k; simp only [Expr.abstract1, Expr.looseBVarRange']; exact ih
+  | _ => intro k; simp [Expr.abstract1, Expr.looseBVarRange']
+
+theorem abstractList_looseBVarRange : ∀ {xs : List FVarId} {e : Expr},
+    (Expr.abstractList e xs).looseBVarRange' ≤ e.looseBVarRange' + xs.length
+  | [], _ => by simp
+  | x :: xs, e => by
+    simp only [Expr.abstractList, List.length_cons]
+    have := abstractList_looseBVarRange (xs := xs) (e := Expr.abstract1 x e 0)
+    have := abstract1_looseBVarRange (x := x) (e := e) (k := 0)
+    omega
+
+theorem peel_looseBVarRange : ∀ {n e b k}, peel n e = some b → e.looseBVarRange' ≤ k →
+    b.looseBVarRange' ≤ k + n
+  | 0, _, _, _, h, he => by cases h; exact he
+  | n + 1, .forallE _ _ body _, b, k, h, he => by
+    simp only [peel] at h; simp only [Expr.looseBVarRange', Nat.max_le] at he
+    have := peel_looseBVarRange (e := body) (k := k + 1) h (by omega); omega
+  | _ + 1, .bvar .., _, _, h, _ | _ + 1, .fvar .., _, _, h, _ | _ + 1, .mvar .., _, _, h, _
+  | _ + 1, .sort .., _, _, h, _ | _ + 1, .const .., _, _, h, _ | _ + 1, .app .., _, _, h, _
+  | _ + 1, .lam .., _, _, h, _ | _ + 1, .letE .., _, _, h, _ | _ + 1, .lit .., _, _, h, _
+  | _ + 1, .mdata .., _, _, h, _ | _ + 1, .proj .., _, _, h, _ => by simp [peel] at h
+
+theorem setBody_looseBVarRange {b : Expr} : ∀ {n e k}, e.looseBVarRange' ≤ k →
+    b.looseBVarRange' ≤ k + n → (setBody n e b).looseBVarRange' ≤ k
+  | 0, _, _, _, hb => hb
+  | n + 1, .forallE _ d body _, k, he, hb => by
+    simp only [setBody, Expr.looseBVarRange', Nat.max_le] at he ⊢
+    have := setBody_looseBVarRange (b := b) (e := body) (n := n) (k := k + 1) (by omega)
+      (by omega)
+    exact ⟨he.1, by omega⟩
+  | _ + 1, .bvar .., _, he, _ | _ + 1, .fvar .., _, he, _ | _ + 1, .mvar .., _, he, _
+  | _ + 1, .sort .., _, he, _ | _ + 1, .const .., _, he, _ | _ + 1, .app .., _, he, _
+  | _ + 1, .lam .., _, he, _ | _ + 1, .letE .., _, he, _ | _ + 1, .lit .., _, he, _
+  | _ + 1, .mdata .., _, he, _ | _ + 1, .proj .., _, he, _ => he
+
+/-- Closing a closed telescope opened at `xs` over a closed body mentioning only `xs` leaves no
+free variable and no loose one. -/
 theorem Opens.mkForall_closed {ty xs lctx body} (H : Opens {} ty xs lctx body) (hnd : xs.Nodup)
     (hx : ∀ x ∈ xs, ty.SuppIn (FVOnly (· ≠ x))) (hty : ty.SuppIn (FVOnly fun _ => False))
-    {Z : Expr} (hZ : Z.SuppIn (FVOnly (· ∈ xs))) :
-    (lctx.mkForall (xs.map .fvar).toArray Z).SuppIn (FVOnly fun _ => False) := by
+    (hcl : ty.looseBVarRange' = 0)
+    {Z : Expr} (hZ : Z.SuppIn (FVOnly (· ∈ xs))) (hZc : Z.looseBVarRange' = 0) :
+    (lctx.mkForall (xs.map .fvar).toArray Z).SuppIn (FVOnly fun _ => False) ∧
+      (lctx.mkForall (xs.map .fvar).toArray Z).looseBVarRange' = 0 := by
   have : (xs.map Expr.fvar).toArray = ⟨xs.map .fvar⟩ := rfl
-  rw [this, H.mkForall .nil (fun _ _ => LocalContext.find?_empty) hnd hx]
-  refine SuppIn.setBody ?_ hty
-  exact Expr.SuppIn.abstractList (S := FVOnly fun _ => False)
-    (Expr.SuppIn.mono (S := FVOnly (· ∈ xs)) (S' := ⟨fun x => False ∨ x ∈ xs, fun _ => True,
-      fun _ => True⟩) ⟨fun _ h => Or.inr h, fun _ => id, fun _ => id⟩ hZ)
+  rw [this, H.mkForall .nil (fun _ _ => LocalContext.find?_empty) hnd hx hcl Z hZc]
+  refine ⟨SuppIn.setBody ?_ hty, Nat.le_zero.1 (setBody_looseBVarRange (Nat.le_of_eq hcl) ?_)⟩
+  · exact Expr.SuppIn.abstractList (S := FVOnly fun _ => False)
+      (Expr.SuppIn.mono (S := FVOnly (· ∈ xs)) (S' := ⟨fun x => False ∨ x ∈ xs, fun _ => True,
+        fun _ => True⟩) ⟨fun _ h => Or.inr h, fun _ => id, fun _ => id⟩ hZ)
+  · have := abstractList_looseBVarRange (xs := xs) (e := Z); omega
 
 theorem forall₂_mem_right {R : α → β → Prop} :
     ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ → ∀ {b}, b ∈ l₂ → ∃ a ∈ l₁, R a b
@@ -906,7 +1000,8 @@ theorem forall₂_mem_right {R : α → β → Prop} :
 /-- Every constant of `env` has a type without free variables, as the types of a translated
 environment do. -/
 def EnvClosed (env : Environment) : Prop :=
-  ∀ n ci, env.find? n = some ci → ci.type.SuppIn (FVOnly fun _ => False)
+  ∀ n ci, env.find? n = some ci →
+    ci.type.SuppIn (FVOnly fun _ => False) ∧ ci.type.looseBVarRange' = 0
 
 theorem instantiateForallParams_suppIn {e : Expr} {hi : Nat} {args : Array Expr} {v}
     {P : FVarId → Prop} (h : instantiateForallParams e hi args = .ok v)
@@ -915,14 +1010,18 @@ theorem instantiateForallParams_suppIn {e : Expr} {hi : Nat} {args : Array Expr}
   obtain ⟨b, hb, rfl⟩ := instantiateForallParams_ok h
   exact (SuppIn.peel hb he).instantiateRevRange ha
 
-/-- The types an auxiliary type is created with mention no free variable. -/
+/-- A type with no free or loose variables in its type or its constructors' types. -/
+def TypeClosed (T : InductiveType) : Prop :=
+  T.type.SuppIn (FVOnly fun _ => False) ∧ T.type.looseBVarRange' = 0 ∧
+    ∀ c ∈ T.ctors, c.type.SuppIn (FVOnly fun _ => False) ∧ c.type.looseBVarRange' = 0
+
+/-- The types an auxiliary type is created with mention no free or loose variable. -/
 theorem Created.closed {env : Environment} (henv : EnvClosed env) {cty xs lctx body}
     (H : Opens {} cty xs lctx body) (hnd : xs.Nodup) (hx : ∀ x ∈ xs, cty.SuppIn (FVOnly (· ≠ x)))
-    (hty : cty.SuppIn (FVOnly fun _ => False)) {params K T₀}
+    (hty : cty.SuppIn (FVOnly fun _ => False)) (htc : cty.looseBVarRange' = 0) {params K T₀}
     (hC : Created env lctx params (xs.map .fvar).toArray K T₀) :
-    T₀.type.SuppIn (FVOnly fun _ => False) ∧
-      ∀ c ∈ T₀.ctors, c.type.SuppIn (FVOnly fun _ => False) := by
-  obtain ⟨J, Ls, args, nI, Jv, v, -, hJ, -, -, hargs, hv, hT, -, hcs⟩ := hC
+    TypeClosed T₀ := by
+  obtain ⟨J, Ls, args, nI, Jv, v, -, hJ, hnI, hlb, hargs, hv, hT, -, hcs⟩ := hC
   have hargs' : ∀ a ∈ args, a.SuppIn (FVOnly (· ∈ xs)) := fun a ha =>
     Expr.SuppIn.mono (S := FVOnly (.fvar · ∈ (xs.map Expr.fvar).toArray)) (S' := FVOnly (· ∈ xs))
       ⟨fun _ h => by simpa using h, fun _ => id, fun _ => id⟩ (hargs a ha)
@@ -932,13 +1031,33 @@ theorem Created.closed {env : Environment} (henv : EnvClosed env) {cty xs lctx b
     instantiateForallParams_suppIn h (SuppIn.instantiateLevelParams (Expr.SuppIn.mono
       (S := FVOnly fun _ => False) (S' := FVOnly (· ∈ xs))
       ⟨fun _ h => False.elim h, fun _ => id, fun _ => id⟩ hci)) hargs'
-  refine ⟨hT ▸ H.mkForall_closed hnd hx hty (hcl (henv _ _ hJ) hv), fun c hc => ?_⟩
+  have hlc {ci : ConstantInfo} {v'} (hci : ci.type.looseBVarRange' = 0)
+      (h : instantiateForallParams (ci.type.instantiateLevelParams ci.levelParams Ls) nI args =
+        .ok v') : v'.looseBVarRange' = 0 := by
+    obtain ⟨b, hb, rfl⟩ := instantiateForallParams_ok h
+    have hb' := peel_looseBVarRange (k := 0) hb (Nat.le_of_eq
+      ((instantiateLevelParams_looseBVarRange _ _ _).trans hci))
+    have hex : ∀ a ∈ (args.extract 0 nI).toList, a.looseBVarRange' = 0 := by
+      intro a ha
+      rw [Array.toList_extract] at ha
+      simp [List.extract] at ha
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem ha
+      exact hlb i (by simp at hi; omega) _ (by simp [List.getElem_take])
+    rw [Expr.instantiateRevRange_eq, Expr.instantiateRev_eq_instantiateList
+      (fun a ha => hex a (Array.mem_toList_iff.2 ha))]
+    have := Expr.instantiateList_looseBVarRange (n := 0) (k := 0) (e := b)
+      (as := (args.extract 0 nI).toList.reverse) (by simp; omega)
+      (fun a ha => Nat.le_of_eq (hex a (List.mem_reverse.1 ha)))
+    omega
+  have hcons {n : Name} {ci : ConstantInfo} {v'} (h1 : env.find? n = some ci)
+      (h2 : instantiateForallParams (ci.type.instantiateLevelParams ci.levelParams Ls) nI args =
+        .ok v') :=
+    H.mkForall_closed hnd hx hty htc (hcl (henv _ ci h1).1 h2) (hlc (henv _ ci h1).2 h2)
+  refine ⟨hT ▸ (hcons hJ hv).1, hT ▸ (hcons hJ hv).2, fun c hc => ?_⟩
   obtain ⟨Jc, -, ⟨-, ci, v', hci, hv', hct⟩⟩ := forall₂_mem_right hcs hc
-  exact hct ▸ H.mkForall_closed hnd hx hty (hcl (henv _ _ hci) hv')
+  exact hct ▸ hcons hci hv'
 
-/-- A type with no free variables in its type or its constructors' types. -/
-def TypeClosed (T : InductiveType) : Prop :=
-  T.type.SuppIn (FVOnly fun _ => False) ∧ ∀ c ∈ T.ctors, c.type.SuppIn (FVOnly fun _ => False)
+
 
 /-- The auxiliary type `p.2`, recorded under the key `p.1.1` and the name `p.1.2`: created while
 processing a constructor of type `cty`, opened at the fresh variables `xs` in `lctx`. -/
@@ -1004,6 +1123,7 @@ def ParamsReserved (g : NameGenerator) (params : Array Expr) : Prop :=
 theorem ctorStep_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat}
     {params : Array Expr} {ctor : Constructor} {s c s'} (hP : params.size = nparams)
     (hpr : ParamsReserved s.ngen params) (hc : ctor.type.SuppIn (FVOnly fun _ => False))
+    (hcl : ctor.type.looseBVarRange' = 0)
     (h : ctorStep nparams params ctor env s = .ok (c, s')) :
     Grows env params nparams s s' ∧ CtorDone s'.nestedAux.toList s.lvls params nparams ctor c := by
   obtain ⟨lctx, body, Y, ho, hfv, E, R, hn, hty⟩ := ctorStep_spec hP hc h
@@ -1022,12 +1142,13 @@ theorem ctorStep_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat
   · rw [hg]; exact le_advance
   · obtain ⟨hp1, hp2⟩ := h3 p hp
     exact ⟨⟨hp1, _, _, lctx, body, ho, freshIds_length, hnd, hx, hpx, hp2⟩,
-      Created.closed henv ho hnd hx hc hp2⟩
+      Created.closed henv ho hnd hx hc hcl hp2⟩
 
 theorem ctors_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat}
     {params : Array Expr} (hP : params.size = nparams) :
     ∀ {cs₀ cs s s'}, Chain env (ctorStep nparams params) cs₀ cs s s' →
-      ParamsReserved s.ngen params → (∀ c ∈ cs₀, c.type.SuppIn (FVOnly fun _ => False)) →
+      ParamsReserved s.ngen params →
+      (∀ c ∈ cs₀, c.type.SuppIn (FVOnly fun _ => False) ∧ c.type.looseBVarRange' = 0) →
       Grows env params nparams s s' ∧
         List.Forall₂ (CtorDone s'.nestedAux.toList s.lvls params nparams) cs₀ cs := by
   intro cs₀ cs s s' H
@@ -1035,7 +1156,7 @@ theorem ctors_grows {env : Environment} (henv : EnvClosed env) {nparams : Nat}
   | nil => exact fun _ _ => ⟨.refl, .nil⟩
   | cons h1 _ ih =>
     intro hpr hc
-    obtain ⟨G1, D1⟩ := ctorStep_grows henv hP hpr (hc _ (.head _)) h1
+    obtain ⟨G1, D1⟩ := ctorStep_grows henv hP hpr (hc _ (.head _)).1 (hc _ (.head _)).2 h1
     obtain ⟨G2, D2⟩ := ih (fun p hp => let ⟨x, h, hr⟩ := hpr p hp; ⟨x, h, hr.mono G1.2.1⟩)
       fun c hc' => hc c (.tail _ hc')
     refine ⟨G1.trans G2, .cons (D1.mono G2.sub) ?_⟩
@@ -1114,7 +1235,7 @@ theorem run.loop_inv {env : Environment} (henv : EnvClosed env) {lparams : List 
       simp only [List.length_append] at hi'
       have hTmem : T ∈ types ++ auxs := List.mem_of_mem_drop (hTr ▸ List.mem_cons_self ..)
       rw [hT] at hv
-      obtain ⟨G, hcs⟩ := ctors_grows henv hP (mapM_ok hv) hpr (hcl T hTmem).2
+      obtain ⟨G, hcs⟩ := ctors_grows henv hP (mapM_ok hv) hpr (hcl T hTmem).2.2
       obtain ⟨hl1, hg1, new, hn1, ht1, hnew⟩ := G
       refine ⟨by simp [hl1, hl], hP, fun p hp => let ⟨x, h, hr⟩ := hpr p hp; ⟨x, h, hr.mono hg1⟩,
         auxs ++ new.map (·.2), ?_, ?_, ?_, dones ++ [{ T with ctors := ctors }], ?_, ?_⟩
@@ -1612,6 +1733,15 @@ theorem abstractList_eqv {e₁ e₂ : Expr} (h : e₁ == e₂) :
   | [], _ => h
   | _ :: _, _ => abstractList_eqv (abstract1_eqv h)
 
+theorem abstract'_eqv {xs : List FVarId} {e₁ e₂ : Expr} {k} :
+    e₁ == e₂ → Expr.abstract' e₁ xs k == Expr.abstract' e₂ xs k := by
+  simp [(· == ·)]; induction e₁ generalizing e₂ k
+  all_goals
+    cases e₂ <;> try change false = _ → _; rintro ⟨⟩
+    simp [Expr.abstract', Expr.eqv']
+  all_goals intros; subst_vars; try simp [*]
+  all_goals split <;> simp [Expr.eqv']
+
 theorem mkAppList_eqv {f₁ f₂ : Expr} (h : f₁ == f₂) :
     ∀ {as : List Expr}, Expr.mkAppList f₁ as == Expr.mkAppList f₂ as
   | [] => h
@@ -1660,6 +1790,47 @@ theorem looseBVarRange_abstractList : ∀ {xs : List FVarId} {e : Expr} {m},
 def InstantiateBVars : Prop :=
   ∀ (E : Expr) (n d : Nat), E.looseBVarRange' ≤ n → E.instantiateRev (bvs n d).toArray = E.liftLooseBVars' 0 d
 
+theorem bvs_reverse_getElem : ∀ {n d j : Nat} (h : j < (bvs n d).reverse.length),
+    (bvs n d).reverse[j] = .bvar (d + j)
+  | 0, _, _, h => by simp [bvs] at h
+  | n + 1, d, j, h => by
+    simp only [bvs, List.reverse_cons]
+    have hl : (bvs n d).reverse.length = n := by simp [bvs_length]
+    by_cases hj : j < n
+    · rw [List.getElem_append_left (by omega)]; exact bvs_reverse_getElem _
+    · have : j < n + 1 := by simpa [bvs, bvs_length] using h
+      rw [List.getElem_append_right (by omega)]; simp; omega
+
+theorem instantiate'_bvs {n d : Nat} : ∀ {E : Expr} {k},
+    E.looseBVarRange' ≤ n + k → E.instantiate' (bvs n d).reverse k = E.liftLooseBVars' k d := by
+  intro E; induction E with
+  | bvar i =>
+    intro k h; simp only [Expr.looseBVarRange'] at h
+    simp only [Expr.instantiate', Expr.liftLooseBVars']
+    by_cases hik : i < k
+    · simp [hik]
+    · have hl : i - k < (bvs n d).reverse.length := by simp [bvs_length]; omega
+      rw [if_neg hik, dif_pos hl, bvs_reverse_getElem]
+      simp [Expr.liftLooseBVars', hik]; omega
+  | app f a ihf iha =>
+    intro k h; simp only [Expr.looseBVarRange', Nat.max_le] at h
+    simp only [Expr.instantiate', Expr.liftLooseBVars', ihf h.1, iha h.2]
+  | lam _ t b _ iht ihb | forallE _ t b _ iht ihb =>
+    intro k h; simp only [Expr.looseBVarRange', Nat.max_le] at h
+    simp only [Expr.instantiate', Expr.liftLooseBVars', iht h.1, ihb (k := k + 1) (by omega)]
+  | letE _ t v b _ iht ihv ihb =>
+    intro k h; simp only [Expr.looseBVarRange', Nat.max_le] at h
+    simp only [Expr.instantiate', Expr.liftLooseBVars', iht h.1.1, ihv h.1.2,
+      ihb (k := k + 1) (by omega)]
+  | mdata _ e ih | proj _ _ e ih =>
+    intro k h; simp only [Expr.looseBVarRange'] at h
+    simp only [Expr.instantiate', Expr.liftLooseBVars', ih h]
+  | _ => intro k _; rfl
+
+theorem instantiateBVars : InstantiateBVars := fun E n d h => by
+  rw [Expr.instantiateRev_eq_instantiate']
+  simpa using instantiate'_bvs (d := d) (k := 0) (E := E) (by omega)
+
 section
 variable {f f' a a' d d' b b' t t' v v' e e' : Expr}
 
@@ -1688,13 +1859,46 @@ theorem looseBVarRange_mkAppList {m : Nat} : ∀ {f : Expr} {as : List Expr},
       (by simp only [Expr.looseBVarRange', Nat.max_le]; exact ⟨hf, ha a (.head _)⟩)
       fun b hb => ha b (.tail _ hb)
 
+theorem le_looseBVarRange_mkAppList : ∀ {f : Expr} {as : List Expr},
+    f.looseBVarRange' ≤ (Expr.mkAppList f as).looseBVarRange' ∧
+      ∀ a ∈ as, a.looseBVarRange' ≤ (Expr.mkAppList f as).looseBVarRange'
+  | _, [] => ⟨Nat.le_refl _, nofun⟩
+  | f, a :: as => by
+    have ⟨h1, h2⟩ := le_looseBVarRange_mkAppList (f := .app f a) (as := as)
+    simp only [Expr.looseBVarRange', Nat.max_le] at h1
+    refine ⟨by simp only [Expr.mkAppList]; omega, fun b hb => ?_⟩
+    rcases List.mem_cons.1 hb with rfl | hb
+    · simp only [Expr.mkAppList]; omega
+    · exact h2 b hb
+
+/-- A replacement by the auxiliary applications at the constructor's parameters introduces no
+loose variable. -/
+theorem Replaced.looseBVarRange_le {pairs : List (Expr × Name)} {lvls : List Level}
+    {params : Array Expr} {xs : List FVarId} {e Y : Expr}
+    (R : Replaced (NodeRep pairs lvls params (xs.map .fvar).toArray) e Y) :
+    Y.looseBVarRange' ≤ e.looseBVarRange' := by
+  induction R with
+  | node h =>
+    obtain ⟨I, Ls, args, nI, K, aux, rfl, hnI, -, -, -, rfl⟩ := h
+    have htd : args.toList = args.toList.take nI ++ args.toList.drop nI ++ [] := by simp
+    rw [Expr.mkAppRange_eq (args := args) htd (by simp [Nat.min_eq_left hnI]) (by simp),
+      mkAppN_eq_mkAppList, mkAppN_eq_mkAppList]
+    have hle := (le_looseBVarRange_mkAppList (f := .const I Ls) (as := args.toList)).2
+    exact looseBVarRange_mkAppList (looseBVarRange_mkAppList (by simp [Expr.looseBVarRange'])
+      (by simp [Expr.looseBVarRange'])) (fun a ha => hle a (List.mem_of_mem_drop ha))
+  | refl => exact Nat.le_refl _
+  | app _ _ ih1 ih2 | lam _ _ ih1 ih2 | forallE _ _ ih1 ih2 =>
+    simp only [Expr.looseBVarRange']; omega
+  | letE _ _ _ ih1 ih2 ih3 => simp only [Expr.looseBVarRange']; omega
+  | mdata _ ih | proj _ ih => exact ih
+
 theorem abstractList_const {xs : List FVarId} {d : Nat} {c : Name} {ls : List Level} :
     (Expr.const c ls).abstractList xs d = .const c ls := by
   induction xs <;> simp_all [Expr.abstractList, Expr.abstract1]
 
 theorem instantiateRev_eqv {e₁ e₂ : Expr} (h : e₁ == e₂) (as : Array Expr) :
     e₁.instantiateRev as == e₂.instantiateRev as := by
-  simp only [Expr.instantiateRev_eq, Expr.instantiate_eq]; exact Expr.instantiateList_eqv h
+  simp only [Expr.instantiateRev_eq_instantiate']; exact Expr.instantiate'_eqv h
 
 /-- Restoring a replaced nested occurrence, abstracted with the constructor's parameters, gives
 the occurrence back. -/
@@ -1702,7 +1906,7 @@ theorem restore_node {r : Result} {env' : Environment} {lparams : List Name}
     {auxRec : NameMap Name} {pairs : List (Expr × Name)} {ps xs : List FVarId}
     (hmap : r.aux2nested = auxMap pairs) (hnd : (pairs.map (·.2)).Nodup)
     (hpar : r.params = (ps.map .fvar).toArray) (hps : ps.Nodup) (hnp : r.nparams = xs.length)
-    (hxs : xs.Nodup)
+    (hxs : xs.Nodup) (hpl : ps.length = xs.length)
     (hrec : ∀ c ∈ pairs.map (·.2), auxRec.find? c = none) (hinst : InstantiateBVars)
     {I : Name} {Ls : List Level} {args : Array Expr} {nI : Nat} {K : Expr} {aux : Name}
     (hnI : nI ≤ args.size) (hlb : ∀ i < nI, ∀ a, args[i]? = some a → a.looseBVarRange' = 0)
@@ -1749,14 +1953,20 @@ theorem restore_node {r : Result} {env' : Environment} {lparams : List Name}
   have hKabs : K.abstract r.params == Nas.abstractList xs := by
     rw [hpar]
     show K.abstract ⟨ps.map .fvar⟩ == _
-    rw [Expr.abstract_eq]
-    refine BEq.trans (abstractList_eqv hK) ?_
+    rw [Expr.abstract_eq']
+    refine BEq.trans (abstract'_eqv hK) ?_
     rw [replaceParamsVal, hNas, ← hNas_def, hpar]
-    show ((Nas.abstract ⟨xs.map .fvar⟩).instantiateRev ⟨ps.map .fvar⟩).abstractList ps == _
-    rw [Expr.abstract_eq, Expr.instantiateRev_eq, Expr.instantiate_eq]
-    simp only [Array.toList_reverse]
-    rw [abstractList_instantiateList_fvars _ rfl hps (Expr.SuppIn.abstractList hNfv)]
-    exact Expr.eqv_refl _
+    show ((Nas.abstract ⟨xs.map .fvar⟩).instantiateRev ⟨ps.map .fvar⟩).abstract' ps == _
+    rw [Expr.abstract_eq', Expr.abstract'_eq_abstractList (by omega) hxs,
+      Expr.instantiateRev_eq_instantiateList (by simp [Expr.looseBVarRange'])]
+    rw [Expr.abstract'_eq_abstractList (k := 0) ?_ hps]
+    · rw [abstractList_instantiateList_fvars _ rfl hps (Expr.SuppIn.abstractList hNfv)]
+      exact Expr.eqv_refl _
+    · have := Expr.instantiateList_looseBVarRange (n := 0) (k := 0)
+        (e := Nas.abstractList xs) (as := (ps.map Expr.fvar).reverse)
+        (by have := abstractList_looseBVarRange (xs := xs) (e := Nas); simp; omega)
+        (by simp [Expr.looseBVarRange'])
+      simpa using this
   have hfind : r.aux2nested.find? aux = some K := hmap ▸ auxMap_find? hnd hmem
   have hauxrec : auxRec.find? aux = none := hrec _ (List.mem_map_of_mem (f := (·.2)) hmem)
   have hrest : ∀ R ∈ (args.toList.drop nI).map (·.abstractList xs d),
@@ -1861,7 +2071,8 @@ theorem Replaced.restore {r : Result} {env' : Environment} {lparams : List Name}
     {auxRec : NameMap Name} {pairs : List (Expr × Name)} {ps xs : List FVarId}
     (hmap : r.aux2nested = auxMap pairs) (hnd : (pairs.map (·.2)).Nodup)
     (hpar : r.params = (ps.map .fvar).toArray) (hps : ps.Nodup) (hnp : r.nparams = xs.length)
-    (hxs : xs.Nodup) (hrec : ∀ c ∈ pairs.map (·.2), auxRec.find? c = none)
+    (hxs : xs.Nodup) (hpl : ps.length = xs.length)
+    (hrec : ∀ c ∈ pairs.map (·.2), auxRec.find? c = none)
     (hinst : InstantiateBVars) {X Y : Expr}
     (R : Replaced (NodeRep pairs (lparams.map .param) r.params (xs.map .fvar).toArray) X Y)
     (hX : X.SuppIn ⟨(· ∈ xs), fun _ => True, NotAux r env' auxRec⟩) :
@@ -1876,7 +2087,7 @@ theorem Replaced.restore {r : Result} {env' : Environment} {lparams : List Name}
   induction R with
   | node h =>
     obtain ⟨I, Ls, args, nI, K, aux, rfl, hnI, hlb, hmem, hK, rfl⟩ := h
-    exact restore_node hmap hnd hpar hps hnp hxs hrec hinst hnI hlb hmem hK hX
+    exact restore_node hmap hnd hpar hps hnp hxs hpl hrec hinst hnI hlb hmem hK hX
   | refl => intro d; rw [restore_id (hfree hX d)]; exact Expr.eqv_refl _
   | @app F a F' a' R1 _ ih1 ih2 =>
     intro d
@@ -1963,16 +2174,21 @@ theorem CtorDone.restore {r : Result} {env' : Environment} {lparams : List Name}
     {auxRec : NameMap Name} {pairs : List (Expr × Name)} {ps : List FVarId} {nparams : Nat}
     (hmap : r.aux2nested = auxMap pairs) (hnd : (pairs.map (·.2)).Nodup)
     (hpar : r.params = (ps.map .fvar).toArray) (hps : ps.Nodup) (hnp : r.nparams = nparams)
+    (hpl : ps.length = nparams)
     (hrec : ∀ c ∈ pairs.map (·.2), auxRec.find? c = none) (hinst : InstantiateBVars)
     {c₀ c : Constructor} (H : CtorDone pairs (lparams.map .param) r.params nparams c₀ c)
-    (hc₀ : c₀.type.SuppIn (ConstOnly (NotAux r env' auxRec))) :
+    (hc₀ : c₀.type.SuppIn (ConstOnly (NotAux r env' auxRec)))
+    (hcl : c₀.type.looseBVarRange' = 0) :
     r.restoreNested env' lparams c.type auxRec == c₀.type := by
   obtain ⟨-, xs, lctx, body, Y, ho, hlen, hxs, hx, -, hfv, R, hty⟩ := H
   have hpeel := ho.peel hxs hx
+  have hY : Y.looseBVarRange' = 0 := Nat.le_zero.1 <| Nat.le_trans R.looseBVarRange_le <|
+    Nat.le_of_eq (ho.closed .nil (fun _ _ => LocalContext.find?_empty) hxs hcl).1
   rw [restoreNested_eq, hty, show (xs.map Expr.fvar).toArray = ⟨xs.map .fvar⟩ from rfl,
-    ho.mkForall .nil (fun _ _ => LocalContext.find?_empty) hxs hx]
+    ho.mkForall .nil (fun _ _ => LocalContext.find?_empty) hxs hx hcl Y hY]
   conv => lhs; arg 2; rw [← setBody_peel hpeel]
-  exact restore_setBody (R.restore hmap hnd hpar hps (hnp.trans hlen.symm) hxs hrec hinst
+  exact restore_setBody (R.restore hmap hnd hpar hps (hnp.trans hlen.symm) hxs
+    (hpl.trans hlen.symm) hrec hinst
     (SuppIn.combine hfv (ho.consts hc₀)) 0) (by rw [hpeel]; rfl) hc₀
 
 /-! ### Where the auxiliary constants sit -/
@@ -2442,14 +2658,16 @@ auxiliary constant sits at the parameters. -/
 theorem CtorDone.placed {isAux : Name → Bool} {pairs : List (Expr × Name)} {lvls : List Level}
     {params : Array Expr} {nparams : Nat} (hpa : ∀ p ∈ pairs, isAux p.2) {c₀ c : Constructor}
     (H : CtorDone pairs lvls params nparams c₀ c)
-    (hc₀ : c₀.type.SuppIn (ConstOnly (isAux · = false))) :
+    (hc₀ : c₀.type.SuppIn (ConstOnly (isAux · = false))) (hcl : c₀.type.looseBVarRange' = 0) :
     ∃ B, c.type = setBody nparams c₀.type B ∧ (peel nparams c₀.type).isSome ∧
       AuxPlaced isAux lvls nparams 0 B := by
   obtain ⟨-, xs, lctx, body, Y, ho, hlen, hxs, hx, -, -, R, hty⟩ := H
   have hpeel := ho.peel hxs hx
+  have hY : Y.looseBVarRange' = 0 := Nat.le_zero.1 <| Nat.le_trans R.looseBVarRange_le <|
+    Nat.le_of_eq (ho.closed .nil (fun _ _ => LocalContext.find?_empty) hxs hcl).1
   refine ⟨Y.abstractList xs, ?_, by rw [← hlen, hpeel]; rfl, ?_⟩
   · rw [hty, show (xs.map Expr.fvar).toArray = ⟨xs.map .fvar⟩ from rfl,
-      ho.mkForall .nil (fun _ _ => LocalContext.find?_empty) hxs hx, hlen]
+      ho.mkForall .nil (fun _ _ => LocalContext.find?_empty) hxs hx hcl Y hY, hlen]
   · rw [← hlen]
     exact R.auxPlaced hxs hpa (ho.consts hc₀) 0
 

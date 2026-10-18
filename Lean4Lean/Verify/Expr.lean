@@ -861,6 +861,50 @@ theorem instantiateList'_eq_self (h : e.looseBVarRange' ≤ k) : instantiateList
 theorem instantiateList_eq_self (h : e.looseBVarRange' = 0) : instantiateList e as = e := by
   induction as <;> simp [instantiateList, instantiate1_eq_self, *]
 
+theorem instantiate'_eq_self : e.looseBVarRange' ≤ k → instantiate' e as k = e := by
+  induction e generalizing k <;>
+    simp +contextual [*, looseBVarRange', instantiate', Nat.max_le]
+  omega
+
+@[simp] theorem instantiate'_nil : instantiate' e [] k = e := by
+  induction e generalizing k <;> simp [*, instantiate']
+
+/-- With a closed first element, simultaneous substitution is substituting it first. -/
+theorem instantiate'_cons (ha : a.looseBVarRange' = 0) :
+    instantiate' e (a :: as) k = instantiate' (instantiate1' e a k) as k := by
+  induction e generalizing k with simp [*, instantiate', instantiate1']
+  | bvar i =>
+    have hl : a.liftLooseBVars' 0 k = a := liftLooseBVars_eq_self (by omega)
+    by_cases h1 : i < k
+    · simp [h1, instantiate']
+    by_cases h2 : i = k
+    · subst h2; simp [hl, instantiate'_eq_self (e := a) (k := i) (as := as) (by omega)]
+    · have h3 : ¬i - 1 < k := by omega
+      simp only [h1, h2, if_false, instantiate', h3]
+      have h4 : i - k = (i - 1 - k) + 1 := by omega
+      by_cases h5 : i - 1 - k < as.length
+      · rw [dif_pos (by omega : i - k < as.length + 1), dif_pos h5]; simp [h4]
+      · rw [dif_neg (by omega : ¬i - k < as.length + 1), dif_neg h5]; congr 1; omega
+
+/-- Simultaneous substitution of closed terms is substituting them one at a time. -/
+theorem instantiate'_eq_instantiateList (h : ∀ a ∈ as, a.looseBVarRange' = 0) :
+    instantiate' e as k = instantiateList e as k := by
+  induction as generalizing e with
+  | nil => simp
+  | cons a as ih =>
+    rw [instantiate'_cons (h a (.head _)), ih fun b hb => h b (.tail _ hb)]; rfl
+
+/-- Free variables are closed, so substituting them is the same either way. -/
+@[simp] theorem instantiate'_map_fvar {xs : List FVarId} :
+    instantiate' e (xs.map .fvar) k = instantiateList e (xs.map .fvar) k :=
+  instantiate'_eq_instantiateList (by simp [looseBVarRange'])
+
+/-- `Expr.instantiate` on closed terms, one at a time. -/
+theorem instantiate_eq {e : Expr} {subst : Array Expr}
+    (h : ∀ a ∈ subst, a.looseBVarRange' = 0) :
+    e.instantiate subst = e.instantiateList subst.toList := by
+  rw [instantiate_eq', instantiate'_eq_instantiateList fun a ha => h a (Array.mem_toList_iff.1 ha)]
+
 theorem instantiate1'_liftLooseBVars :
     instantiate1' (liftLooseBVars' e s (d + 1)) a (s + d) = e.liftLooseBVars' s d := by
   induction e generalizing s <;>
@@ -968,13 +1012,19 @@ theorem instantiateList_instantiate1_comm (h : a.looseBVarRange' = 0) :
   congr 1; refine (instantiate1'_instantiate1' (j := 0) ..).trans ?_
   rw [liftLooseBVars_eq_self (by simp [h])]
 
-theorem instantiateRev_eq_instantiateList {e : Expr} {subst : Array Expr} :
-    instantiateRev e subst = instantiateList e subst.toList.reverse := by
+theorem instantiateRev_eq_instantiate' {e : Expr} {subst : Array Expr} :
+    instantiateRev e subst = instantiate' e subst.toList.reverse := by
   let ⟨subst⟩ := subst; simp
 
-theorem instantiateRev_push {e : Expr} {subst a} :
+theorem instantiateRev_eq_instantiateList {e : Expr} {subst : Array Expr}
+    (h : ∀ a ∈ subst, a.looseBVarRange' = 0) :
+    instantiateRev e subst = instantiateList e subst.toList.reverse := by
+  rw [instantiateRev_eq_instantiate', instantiate'_eq_instantiateList]
+  simpa using fun a ha => h a (Array.mem_toList_iff.1 ha)
+
+theorem instantiateRev_push {e : Expr} {subst a} (ha : a.looseBVarRange' = 0) :
     instantiateRev e (subst.push a) = instantiateRev (e.instantiate1' a) subst := by
-  let ⟨subst⟩ := subst; simp [instantiateList]
+  let ⟨subst⟩ := subst; simp [instantiate'_cons ha]
 
 theorem abstractList_eq_foldl {e : Expr} {as k} :
     abstractList e as k = List.foldl (fun e a => abstract1 a e k) e as := by
@@ -999,6 +1049,81 @@ theorem abstractRevList_reverse {e : Expr} {as k} :
 theorem abstractList_append {e : Expr} {as k} :
     abstractList e (as ++ as') k = abstractList (abstractList e as k) as' k := by
   simp [abstractList_eq_foldl]
+
+@[simp] theorem abstract'_nil : abstract' e [] k = e := by
+  induction e generalizing k <;> simp_all [abstract']
+
+/-- Abstracting one more variable after the others is what simultaneous abstraction does, on a
+term whose loose bound variables lie below the binders being abstracted. -/
+theorem abstract1_abstract' {e : Expr} {as : List FVarId} {k}
+    (h : e.looseBVarRange' ≤ k) (ha : a ∉ as) :
+    abstract1 a (abstract' e as k) k = abstract' e (as ++ [a]) k := by
+  induction e generalizing k with
+    simp_all [abstract', abstract1, looseBVarRange', Nat.max_le]
+  | bvar i => simp [abstract1, abstract', show i < k by omega]
+  | fvar v =>
+    by_cases hv : v = a
+    · subst hv
+      rw [List.idxOf?_eq_none_iff.2 (by simpa using ha)]
+      simp [abstract1, List.idxOf?_cons]
+    · have : List.idxOf? v (a :: as.reverse) = (as.reverse.idxOf? v).map (· + 1) := by
+        simp [List.idxOf?_cons, Ne.symm hv]
+      rw [this]
+      cases as.reverse.idxOf? v with
+      | none => simp [abstract1, Ne.symm hv]
+      | some j => simp [abstract1]; rw [if_neg (by omega)]; omega
+
+private theorem idxOf?_concat_self {v : FVarId} : ∀ {l : List FVarId}, v ∉ l → (l ++ [v]).idxOf? v = some l.length
+  | [], _ => by simp [List.idxOf?_cons]
+  | b :: l, h => by
+    simp at h
+    rw [List.cons_append, List.idxOf?_cons, idxOf?_concat_self h.2]; simp [Ne.symm h.1]
+private theorem idxOf?_concat_ne {v a : FVarId} (h : v ≠ a) : ∀ {l : List FVarId}, (l ++ [a]).idxOf? v = l.idxOf? v
+  | [] => by simp [List.idxOf?_cons, Ne.symm h]
+  | b :: l => by rw [List.cons_append, List.idxOf?_cons, idxOf?_concat_ne h, List.idxOf?_cons]
+private theorem idxOf?_lt {v : FVarId} : ∀ {l : List FVarId} {j}, l.idxOf? v = some j → j < l.length
+  | [], _, h => by simp at h
+  | b :: l, j, h => by
+    rw [List.idxOf?_cons] at h; split at h
+    · cases h; simp
+    · cases h' : l.idxOf? v <;> simp [h'] at h; subst h; have := idxOf?_lt h'; simp; omega
+
+/-- Abstracting one more variable outside the others, as `LocalContext.mkBinding` does for each
+binder's type. -/
+theorem abstract1_abstract'_cons {e : Expr} {as : List FVarId} {k}
+    (h : e.looseBVarRange' ≤ k) (ha : a ∉ as) :
+    abstract1 a (abstract' e as k) (k + as.length) = abstract' e (a :: as) k := by
+  induction e generalizing k with
+    simp_all [abstract', abstract1, looseBVarRange', Nat.max_le]
+  | bvar i => simp [abstract1, abstract', show i < k + as.length by omega]
+  | lam _ _ _ _ _ ih | forallE _ _ _ _ _ ih | letE _ _ _ _ _ _ _ ih =>
+    rw [← ih (by omega), Nat.add_right_comm]
+  | fvar v =>
+    by_cases hv : v = a
+    · subst hv
+      rw [List.idxOf?_eq_none_iff.2 (by simpa using ha), idxOf?_concat_self (by simpa using ha)]
+      simp [abstract1]
+    · rw [idxOf?_concat_ne hv]
+      cases hj : as.reverse.idxOf? v with
+      | none => simp [abstract1, Ne.symm hv]
+      | some j =>
+        have := idxOf?_lt hj; simp at this
+        simp [abstract1]; omega
+
+/-- Simultaneous abstraction is abstracting one variable at a time, for distinct variables and a
+term without loose bound variables at or above `k`. -/
+theorem abstract'_eq_abstractList {e : Expr} {xs : List FVarId} {k}
+    (h : e.looseBVarRange' ≤ k) (hnd : xs.Nodup) : abstract' e xs k = abstractList e xs k := by
+  obtain ⟨n, hn⟩ : ∃ n, xs.length = n := ⟨_, rfl⟩
+  induction n generalizing xs with
+  | zero => obtain rfl := List.eq_nil_of_length_eq_zero hn; simp
+  | succ n ih =>
+    obtain ⟨as, a, rfl⟩ : ∃ as a, xs = as ++ [a] := by
+      simpa using (List.eq_nil_or_concat xs).resolve_left (by rintro rfl; simp at hn)
+    obtain ⟨h1, -, h2⟩ := List.nodup_append.1 hnd
+    rw [abstractList_append, ← abstract1_abstract' h (fun h' => h2 _ h' _ (.head _) rfl),
+      ih h1 (by simpa using hn)]
+    rfl
 
 theorem abstract1_comm {e : Expr} {k} (h : a ≠ b) :
     abstract1 a (abstract1 b e k) k =
@@ -1203,6 +1328,15 @@ theorem instantiate1_eqv {e₁ e₂ : Expr} :
 theorem instantiateList_eqv {e₁ e₂ : Expr} (h : e₁ == e₂) :
     e₁.instantiateList as k == e₂.instantiateList as k := by
   induction as generalizing e₁ e₂ <;> simp [instantiate1_eqv, *]
+
+theorem instantiate'_eqv {e₁ e₂ : Expr} :
+    e₁ == e₂ → e₁.instantiate' as k == e₂.instantiate' as k := by
+  simp [(· == ·)]; induction e₁ generalizing e₂ k
+  all_goals
+    cases e₂ <;> try change false = _ → _; rintro ⟨⟩
+    simp [instantiate', eqv']
+  all_goals intros; subst_vars; try simp [*]
+  split <;> [skip; split] <;> simpa [(· == ·)] using eqv_refl _
 
 /-- Whether a subterm of `e`, `e` included, satisfies `p`. -/
 def anySub (p : Expr → Bool) : Expr → Bool

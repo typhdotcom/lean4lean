@@ -964,6 +964,24 @@ theorem MLCtx.WF.find?_eq {c : MLCtx} (wf : c.WF env Us) :
     c.lctx.find? x = c.decls.find? (x == ·.fvarId) := by
   simp [wf.tr.1.find?_eq_find?_toList, wf.toList_eq]
 
+theorem MLCtx.WF.decls_closed : ∀ {c : MLCtx}, c.WF env Us → ∀ d ∈ c.decls, d.Closed
+  | .nil, _, _, h => by cases h
+  | .vlam .., ⟨wf, _, h, _⟩, d, hd => by
+    simp only [decls, List.mem_cons] at hd
+    obtain rfl | hd := hd
+    · exact (MLCtx.noBV _ ▸ h.closed).looseBVarRange_zero
+    · exact wf.decls_closed d hd
+  | .vlet .., ⟨wf, _, h1, h2, _⟩, d, hd => by
+    simp only [decls, List.mem_cons] at hd
+    obtain rfl | hd := hd
+    · exact ⟨(MLCtx.noBV _ ▸ h1.closed).looseBVarRange_zero,
+        (MLCtx.noBV _ ▸ h2.closed).looseBVarRange_zero⟩
+    · exact wf.decls_closed d hd
+
+theorem MLCtx.WF.find?_closed {c : MLCtx} (wf : c.WF env Us) (h : c.lctx.find? x = some d) :
+    d.Closed := by
+  rw [wf.find?_eq] at h; exact wf.decls_closed d (List.mem_of_find?_eq_some h)
+
 inductive MLCtx.PartialForall : MLCtx → Nat → List FVarId → Expr → Prop where
   | nil : PartialForall c 0 [] e
   | vlam : PartialForall c n fvs (.forallE x ty (.abstract1 fv e) bi) →
@@ -989,12 +1007,13 @@ theorem MLCtx.PartialForall.sublist (H : MLCtx.PartialForall c n l e) : l <+ c.v
   | skip _ _ _ _ ih => exact ih.trans (List.sublist_cons_self ..)
 
 theorem MLCtx.WF.mkForall_partial {c : MLCtx} (wf : c.WF env Us) (n hn)
-    (harr : arr.toList.reverse = l.map .fvar) (hp : MLCtx.PartialForall c n l e) :
+    (harr : arr.toList.reverse = l.map .fvar) (hp : MLCtx.PartialForall c n l e)
+    (he : e.looseBVarRange' = 0) :
     c.lctx.mkForall arr e = c.mkForall n hn e := by
   have := congrArg (Array.mk ·.reverse) harr; simp at this
   rw [LocalContext.mkForall, this, ← List.map_reverse, LocalContext.mkBinding_eq,
-    LocalContext.mkBindingList_eq_fold, List.foldr_reverse]
-  · clear harr this
+    LocalContext.mkBindingList_eq_fold he, List.foldr_reverse]
+  · clear harr this he
     induction hp with
     | nil => simp
     | vlam hp ih | vlet hp ih =>
@@ -1017,20 +1036,21 @@ theorem MLCtx.WF.mkForall_partial {c : MLCtx} (wf : c.WF env Us) (n hn)
       simp [LocalDecl.fvarId]; rintro ⟨⟩
       have := (List.cons_sublist_cons.2 hp.sublist).nodup wf.fvars_nodup; simp_all
   · intro _ h
-    exact wf.tr.find?_eq_some.2 (hp.sublist.subset (List.mem_reverse.1 h))
+    obtain ⟨d, hd⟩ := wf.tr.find?_eq_some.2 (hp.sublist.subset (List.mem_reverse.1 h))
+    exact ⟨d, hd, wf.find?_closed hd⟩
   · exact List.nodup_reverse.2 (hp.sublist.nodup wf.fvars_nodup)
 
 theorem MLCtx.WF.mkForall_eq {c : MLCtx} (wf : c.WF env Us) (n hn)
-    (harr : arr.toList.reverse = (c.fvarRevList n hn).map .fvar) :
-    c.lctx.mkForall arr e = c.mkForall n hn e := mkForall_partial wf n hn harr .full
+    (harr : arr.toList.reverse = (c.fvarRevList n hn).map .fvar) (he : e.looseBVarRange' = 0) :
+    c.lctx.mkForall arr e = c.mkForall n hn e := mkForall_partial wf n hn harr .full he
 
 theorem MLCtx.WF.mkLambda_eq {c : MLCtx} (wf : c.WF env Us) (n hn)
-    (harr : arr.toList.reverse = (c.fvarRevList n hn).map .fvar) :
+    (harr : arr.toList.reverse = (c.fvarRevList n hn).map .fvar) (he : e.looseBVarRange' = 0) :
     c.lctx.mkLambda arr e = c.mkLambda n hn e := by
   have := congrArg (Array.mk ·.reverse) harr; simp at this
   rw [LocalContext.mkLambda, this, ← List.map_reverse, LocalContext.mkBinding_eq,
-    LocalContext.mkBindingList_eq_fold, List.foldr_reverse]
-  · clear harr this
+    LocalContext.mkBindingList_eq_fold he, List.foldr_reverse]
+  · clear harr this he
     induction n generalizing c e with
     | zero => simp
     | succ n ih =>
@@ -1045,7 +1065,9 @@ theorem MLCtx.WF.mkLambda_eq {c : MLCtx} (wf : c.WF env Us) (n hn)
           have := wf.fvarRevList_nodup (n+1) hn; simp_all
         · simp [LocalContext.mkBindingList1, wf.find?_eq, decls, LocalDecl.fvarId]
   · intro _ h
-    exact wf.tr.find?_eq_some.2 ((MLCtx.fvarRevList_prefix ..).subset (List.mem_reverse.1 h))
+    obtain ⟨d, hd⟩ := wf.tr.find?_eq_some.2
+      ((MLCtx.fvarRevList_prefix ..).subset (List.mem_reverse.1 h))
+    exact ⟨d, hd, wf.find?_closed hd⟩
   · exact List.nodup_reverse.2 (wf.fvarRevList_nodup ..)
 
 namespace Inner
