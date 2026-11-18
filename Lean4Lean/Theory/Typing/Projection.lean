@@ -333,7 +333,7 @@ telescope over the parameters, into whose context the context of all the fields 
 lifts, provided none of them mentions an earlier field that is `P` and each is still typed
 without them. -/
 theorem FieldsWF.keptTele {env : VEnv} {c : VConstructor} {Ds}
-    (H : d.FieldsWF env d.params.reverse 0 Ds c.fields)
+    (_ : d.FieldsWF env d.params.reverse 0 Ds c.fields)
     {P : Nat → Prop} {k : Nat} (hk : k ≤ c.fields.length)
     (hskip : ∀ i < k, ¬P i → ∀ f : VField, c.fields[i]? = some f →
       ∀ j < i, P j → f.type.Skips 1 (i - 1 - j))
@@ -358,7 +358,7 @@ theorem FieldsWF.keptTele {env : VEnv} {c : VConstructor} {Ds}
         rw [List.take_add_one, hfi]; simp
       simp only [KF, VConstructor.keptIdxBy_succ, VConstructor.keptLiftBy_succ, htake,
         List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append,
-        List.singleton_append, List.cons_append]
+        List.cons_append]
       split
       · simp only [List.append_nil]; exact ⟨.skip W, ht⟩
       · rename_i hPi
