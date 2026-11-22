@@ -258,6 +258,8 @@ def recName (j : Nat) : Name :=
 /-- The recursor eliminates into every sort, not only `Prop`. -/
 def LargeElim : Prop := d.largeElim
 
+instance : Decidable d.LargeElim := inferInstanceAs (Decidable (d.largeElim = true))
+
 /-- When the recursor may eliminate into every sort: when the block cannot be a proposition, and
 otherwise only for a single type with at most one constructor and no auxiliary types, every field
 of which is a proof or appears among the indices of the constructor's result, so that it is
@@ -276,16 +278,13 @@ follows from proof irrelevance and the iota rule, so it adds no rule. -/
 def IsKTarget : Prop :=
   d.level ≈ .zero ∧ ∃ T c, d.types = [T] ∧ d.aux = [] ∧ T.ctors = [c] ∧ c.fields = []
 
-open Classical in
-noncomputable def recUVars : Nat := if d.LargeElim then d.uvars + 1 else d.uvars
+def recUVars : Nat := if d.LargeElim then d.uvars + 1 else d.uvars
 
-open Classical in
 /-- The block's level parameters as the recursor sees them: after the motive's, when it has one. -/
-noncomputable def recLevels : List VLevel :=
+def recLevels : List VLevel :=
   if d.LargeElim then (List.range d.uvars).map (.param <| · + 1) else VLevel.params d.uvars
 
-open Classical in
-noncomputable def motiveLevel : VLevel := if d.LargeElim then .param 0 else .zero
+def motiveLevel : VLevel := if d.LargeElim then .param 0 else .zero
 
 /-! The recursor is built for block levels `ls` and motive sort `v`. -/
 section

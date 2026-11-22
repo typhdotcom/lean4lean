@@ -201,6 +201,17 @@ theorem addBlock_defeqs {env env' : VEnv} (h : env.addBlock d = some env') :
     env'.defeqs = env.defeqs := by
   unfold addBlock at h; split at h <;> cases h; rfl
 
+theorem _root_.List.exists_mem_of_findIdx?_eq_some {p : α → Bool} :
+    ∀ {l : List α} {i : Nat}, l.findIdx? p = some i → ∃ a ∈ l, p a = true
+  | [], _, h => by rw [List.findIdx?_nil] at h; cases h
+  | a :: l, _, h => by
+    rw [List.findIdx?_cons] at h
+    split at h
+    · exact ⟨a, List.mem_cons_self, ‹_›⟩
+    · obtain ⟨j, hj, -⟩ := Option.map_eq_some_iff.1 h
+      obtain ⟨b, hb, hp⟩ := List.exists_mem_of_findIdx?_eq_some hj
+      exact ⟨b, List.mem_cons_of_mem _ hb, hp⟩
+
 theorem addBlock_le {env env' : VEnv} (h : env.addBlock d = some env') : env ≤ env' := by
   unfold addBlock at h; split at h <;> cases h; rename_i hn
   refine ⟨id, id, fun {n b} h' => ?_⟩
@@ -208,9 +219,8 @@ theorem addBlock_le {env env' : VEnv} (h : env.addBlock d = some env') : env ≤
   split
   · rename_i t ht
     obtain ⟨T, hT, rfl⟩ : ∃ T ∈ d.types, T.name = n := by
-      have := List.findIdx?_eq_some_iff_getElem.1 ht
-      obtain ⟨h1, h2, -⟩ := this
-      exact ⟨_, List.getElem_mem h1, by simpa using h2⟩
+      obtain ⟨T, hT, hp⟩ := List.exists_mem_of_findIdx?_eq_some ht
+      exact ⟨T, hT, by simpa using hp⟩
     have := List.all_eq_true.1 hn T hT
     simp [h'] at this
   · exact h'
